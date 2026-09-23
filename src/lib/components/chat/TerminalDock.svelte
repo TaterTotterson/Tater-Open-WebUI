@@ -86,7 +86,7 @@
 								exit_code: result.exit_code,
 								offset: result.next_offset,
 								loaded: true,
-								finished: result.status === 'done'
+								finished: result.status !== 'running'
 							}
 						: item
 				);

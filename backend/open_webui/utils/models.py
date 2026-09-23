@@ -25,6 +25,7 @@ from open_webui.utils.plugin import (
     get_functions_cache,
     get_function_module_from_cache,
 )
+from open_webui.utils.tater_profile import is_reserved_hydra_model
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -52,7 +53,12 @@ async def fetch_ollama_models(request: Request, user: UserModel = None):
 
 async def fetch_openai_models(request: Request, user: UserModel = None):
     openai_response = await openai.get_all_models(request, user=user)
-    return openai_response['data']
+    hydra_model = await Config.get('tater.hydra_model')
+    return [
+        model
+        for model in openai_response['data']
+        if not is_reserved_hydra_model(model, hydra_model)
+    ]
 
 
 async def get_all_base_models(request: Request, user: UserModel = None):

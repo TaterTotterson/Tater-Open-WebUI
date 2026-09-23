@@ -44,6 +44,8 @@ from open_webui.models.config import Config
 from open_webui.models.groups import Groups
 from open_webui.models.tools import Tools
 from open_webui.models.users import UserModel
+from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID
+from open_webui.local_terminal.tools import get_local_terminal_tools
 from open_webui.tools.builtin import (
     add_memory,
     ask_user,
@@ -1367,6 +1369,10 @@ async def get_terminal_tools(
     - Loads specs from cache
     - Builds callables that route through the terminal proxy
     """
+    if terminal_id == LOCAL_TERMINAL_ID:
+        metadata = extra_params.get('__metadata__', {})
+        return get_local_terminal_tools(user.id, metadata.get('chat_id'))
+
     connections = await Config.get('terminal_server.connections', []) or []
     connection = next(
         (terminal_connection for terminal_connection in connections if terminal_connection.get('id') == terminal_id),

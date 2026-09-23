@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from open_webui.config import TERMINAL_PROXY_HEADERS
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
 from open_webui.events import EVENTS, publish_event
+from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID
 from open_webui.models.config import Config
 from open_webui.models.groups import Groups
 from open_webui.utils.access_control import has_connection_access
@@ -90,7 +91,7 @@ async def list_terminal_servers(request: Request, user=Depends(get_verified_user
     connections = await Config.get('terminal_server.connections', []) or []
     user_group_ids = {group.id for group in await Groups.get_groups_by_member_id(user.id)}
 
-    return [
+    external_servers = [
         {
             'id': connection.get('id', ''),
             'url': connection.get('url', ''),
@@ -100,6 +101,16 @@ async def list_terminal_servers(request: Request, user=Depends(get_verified_user
         }
         for connection in connections
         if connection.get('enabled', True) and await has_connection_access(user, connection, user_group_ids)
+    ]
+    return [
+        {
+            'id': LOCAL_TERMINAL_ID,
+            'url': '',
+            'name': 'This computer',
+            'contexts': {'chat': {'context_id': 'default'}},
+            'config': {'chat_uploads': 'filesystem'},
+        },
+        *external_servers,
     ]
 
 

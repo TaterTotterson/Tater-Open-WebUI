@@ -46,7 +46,7 @@
 	import AdminTabIcon from '$lib/components/admin/Settings/AdminTabIcon.svelte';
 	import AdminGeneral from '$lib/components/admin/Settings/General.svelte';
 	import AdminAuthentication from '$lib/components/admin/Settings/Authentication.svelte';
-	import AdminConnections from '$lib/components/admin/Settings/Connections.svelte';
+	import AdminTater from '$lib/components/admin/Settings/Tater.svelte';
 	import AdminModels from '$lib/components/admin/Settings/Models.svelte';
 	import AdminSubagents from '$lib/components/admin/Settings/Subagents.svelte';
 	import AdminEvaluations from '$lib/components/admin/Settings/Evaluations.svelte';
@@ -279,8 +279,8 @@
 		},
 		{
 			id: 'admin:connections',
-			titleKey: 'settings.admin.connections.title',
-			title: $i18n.t('settings.admin.connections.title'),
+			titleKey: 'Tater',
+			title: 'Tater',
 			searchPrefixes: ['settings.admin.connections.']
 		},
 		{
@@ -855,11 +855,7 @@
 			{:else if selectedTab === 'admin:authentication'}
 				<AdminAuthentication />
 			{:else if selectedTab === 'admin:connections'}
-				<AdminConnections
-					on:save={() => {
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
+				<AdminTater />
 			{:else if selectedTab === 'admin:models'}
 				<AdminModels bind:tabState />
 			{:else if selectedTab === 'admin:subagents'}

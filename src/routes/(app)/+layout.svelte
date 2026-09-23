@@ -234,7 +234,7 @@
 			return;
 		}
 
-		selectedTerminalId.set(localStorage.selectedTerminalId ?? null);
+		selectedTerminalId.set(localStorage.selectedTerminalId ?? 'local');
 
 		const loadToolServers = setToolServers().catch((e) => {
 			console.error('Failed to load tool servers:', e);

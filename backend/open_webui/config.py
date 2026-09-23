@@ -37,6 +37,12 @@ from open_webui.env import (
 )
 from open_webui.models.config import Config
 from open_webui.utils.json_codec import JSONCodec
+from open_webui.utils.tater_profile import (
+    DEFAULT_TATER_API_BASE_URL,
+    DEFAULT_TATER_BASE_MODEL,
+    DEFAULT_TATER_HYDRA_MODEL,
+    normalize_tater_api_base_url,
+)
 
 
 async def seed_registered_defaults():
@@ -234,7 +240,7 @@ ENABLE_DIRECT_INTEGRATIONS = os.getenv('ENABLE_DIRECT_INTEGRATIONS', 'False').lo
 # OLLAMA_BASE_URL
 ####################################
 
-ENABLE_OLLAMA_API = os.getenv('ENABLE_OLLAMA_API', 'True').lower() == 'true'
+ENABLE_OLLAMA_API = False
 
 OLLAMA_API_BASE_URL = os.getenv('OLLAMA_API_BASE_URL', 'http://localhost:11434/api')
 
@@ -319,44 +325,24 @@ if _ollama_api_configs:
 ENABLE_OPENAI_API = os.getenv('ENABLE_OPENAI_API', 'True').lower() == 'true'
 
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-OPENAI_API_BASE_URL = os.getenv('OPENAI_API_BASE_URL', '')
+OPENAI_API_KEY = os.getenv('TATER_API_KEY', '')
+OPENAI_API_BASE_URL = normalize_tater_api_base_url(
+    os.getenv('TATER_API_BASE_URL', DEFAULT_TATER_API_BASE_URL)
+)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_API_BASE_URL = os.getenv('GEMINI_API_BASE_URL', '')
 
 
-if OPENAI_API_BASE_URL == '':
-    OPENAI_API_BASE_URL = 'https://api.openai.com/v1'
-else:
-    if OPENAI_API_BASE_URL.endswith('/'):
-        OPENAI_API_BASE_URL = OPENAI_API_BASE_URL[:-1]
-
-OPENAI_API_KEYS = os.getenv('OPENAI_API_KEYS', '')
-OPENAI_API_KEYS = OPENAI_API_KEYS if OPENAI_API_KEYS != '' else OPENAI_API_KEY
-
-OPENAI_API_KEYS = [url.strip() for url in OPENAI_API_KEYS.split(';')]
-OPENAI_API_KEYS = OPENAI_API_KEYS
-
-OPENAI_API_BASE_URLS = os.getenv('OPENAI_API_BASE_URLS', '')
-OPENAI_API_BASE_URLS = OPENAI_API_BASE_URLS if OPENAI_API_BASE_URLS != '' else OPENAI_API_BASE_URL
-
-OPENAI_API_BASE_URLS = [
-    url.strip() if url != '' else 'https://api.openai.com/v1' for url in OPENAI_API_BASE_URLS.split(';')
-]
-OPENAI_API_BASE_URLS = OPENAI_API_BASE_URLS
-
-OPENAI_API_CONFIGS = {}
-_openai_api_configs = os.getenv('OPENAI_API_CONFIGS', '')
-if _openai_api_configs:
-    try:
-        parsed = JSONCodec.loads(_openai_api_configs)
-        if isinstance(parsed, dict):
-            OPENAI_API_CONFIGS = parsed
-        else:
-            log.warning('OPENAI_API_CONFIGS must be a JSON object, ignoring')
-    except (JSONCodec.JSONDecodeError, TypeError):
-        log.warning('OPENAI_API_CONFIGS is not valid JSON, ignoring')
+OPENAI_API_KEYS = [OPENAI_API_KEY]
+OPENAI_API_BASE_URLS = [OPENAI_API_BASE_URL]
+OPENAI_API_CONFIGS = {
+    '0': {
+        'enable': True,
+        'provider': 'tater',
+        'connection_type': 'external',
+    }
+}
 
 # Get the actual OpenAI API key based on the base URL
 OPENAI_API_KEY = ''
@@ -1671,9 +1657,9 @@ ENABLE_PASSWORD_AUTH = os.getenv('ENABLE_PASSWORD_AUTH', 'True').lower() == 'tru
 
 DEFAULT_LOCALE = os.getenv('DEFAULT_LOCALE', '')
 
-DEFAULT_MODELS = os.getenv('DEFAULT_MODELS', None)
+DEFAULT_MODELS = os.getenv('TATER_BASE_MODEL', DEFAULT_TATER_BASE_MODEL)
 
-DEFAULT_PINNED_MODELS = os.getenv('DEFAULT_PINNED_MODELS', None)
+DEFAULT_PINNED_MODELS = DEFAULT_MODELS
 
 # None uses the frontend's localized defaults; an empty list disables suggestions.
 try:
@@ -1706,6 +1692,9 @@ except Exception as e:
     log.exception(f'Error loading DEFAULT_MODEL_PARAMS: {e}')
     default_model_params = {}
 
+# Tater's current text-only base endpoint does not preserve native OpenAI tool
+# calls. Use Open WebUI's structured tool planner until that contract changes.
+default_model_params['function_calling'] = 'legacy'
 DEFAULT_MODEL_PARAMS = default_model_params
 
 
@@ -2829,6 +2818,8 @@ DEFAULT_CONFIG = {
     'openai.api_keys': OPENAI_API_KEYS,
     'openai.api_base_urls': OPENAI_API_BASE_URLS,
     'openai.api_configs': OPENAI_API_CONFIGS,
+    'tater.base_model': DEFAULT_MODELS,
+    'tater.hydra_model': os.getenv('TATER_HYDRA_MODEL', DEFAULT_TATER_HYDRA_MODEL),
     'models.base_models_cache': ENABLE_BASE_MODELS_CACHE,
     'tool_server.connections': TOOL_SERVER_CONNECTIONS,
     'oauth.client.timeout': OAUTH_CLIENT_TIMEOUT,

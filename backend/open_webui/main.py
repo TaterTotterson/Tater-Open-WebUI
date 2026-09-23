@@ -162,6 +162,7 @@ from open_webui.routers import (
     groups,
     images,
     knowledge,
+    local_terminal,
     memories,
     models,
     notes,
@@ -173,6 +174,7 @@ from open_webui.routers import (
     retrieval,
     scim,
     skills,
+    tater,
     tasks,
     terminals,
     tools,
@@ -842,6 +844,7 @@ app.mount('/ws', socket_app)
 
 app.include_router(ollama.router, prefix='/ollama', tags=['ollama'])
 app.include_router(openai.router, prefix='/openai', tags=['openai'])
+app.include_router(tater.router, prefix='/api/v1/tater', tags=['tater'])
 
 
 app.include_router(pipelines.router, prefix='/api/v1/pipelines', tags=['pipelines'])
@@ -878,6 +881,7 @@ app.include_router(evaluations.router, prefix='/api/v1/evaluations', tags=['eval
 if ENABLE_ADMIN_ANALYTICS:
     app.include_router(analytics.router, prefix='/api/v1/analytics', tags=['analytics'])
 app.include_router(utils.router, prefix='/api/v1/utils', tags=['utils'])
+app.include_router(local_terminal.router, prefix='/api/v1/terminals', tags=['local-terminal'])
 app.include_router(terminals.router, prefix='/api/v1/terminals', tags=['terminals'])
 app.include_router(automations.router, prefix='/api/v1/automations', tags=['automations'])
 app.include_router(calendar.router, prefix='/api/v1/calendars', tags=['calendars'])
