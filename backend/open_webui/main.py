@@ -47,7 +47,6 @@ from open_webui.config import (
     CACHE_DIR,
     CORS_ALLOW_ORIGIN,
     DEFAULT_LOCALE,
-    ENABLE_ADMIN_ANALYTICS,
     # Admin
     ENABLE_ADMIN_CHAT_ACCESS,
     ENABLE_ADMIN_EXPORT,
@@ -74,7 +73,6 @@ from open_webui.config import (
     seed_registered_defaults,
 )
 from open_webui.constants import ERROR_MESSAGES, TASKS
-from open_webui.utils.recurrence import RecurrenceEvaluationTimeout
 from open_webui.env import (
     USE_SLIM,
     AIOHTTP_CLIENT_SESSION_SSL,
@@ -93,7 +91,6 @@ from open_webui.env import (
     ENABLE_OTEL,
     ENABLE_PLUGINS,
     ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
-    ENABLE_PYODIDE_FILE_PERSISTENCE,
     # SCIM
     ENABLE_SCIM,
     ENABLE_SIGNUP_PASSWORD_CONFIRMATION,
@@ -111,7 +108,6 @@ from open_webui.env import (
     REDIS_TASK_TTL,
     REDIS_URL,
     RESET_CONFIG_ON_START,
-    SAFE_MODE,
     SCIM_TOKEN,
     VERSION,
     WEBSOCKET_HEARTBEAT_INTERVAL,
@@ -142,30 +138,22 @@ from open_webui.models.access_grants import AccessGrants
 from open_webui.models.channels import Channels
 from open_webui.models.chats import ChatForm, Chats
 from open_webui.models.config import Config
-from open_webui.models.functions import Functions
 from open_webui.models.messages import Messages
 from open_webui.models.models import Models, normalize_model_tags
 from open_webui.models.users import Users
 from open_webui.routers import (
-    analytics,
     audio,
     auths,
-    automations,
-    calendar,
-    channels,
     chats,
     configs,
-    evaluations,
     files,
     folders,
-    functions,
     groups,
     images,
     knowledge,
     local_terminal,
     memories,
     models,
-    notes,
     notifications,
     ollama,
     openai,
@@ -269,7 +257,6 @@ from open_webui.utils.oauth import (
     recover_static_oauth_client_metadata,
     resolve_oauth_client_info,
 )
-from open_webui.utils.plugin import install_tool_and_function_dependencies
 from open_webui.utils.redis import get_redis_client
 from open_webui.utils.session_pool import cleanup_response, get_client_timeout, get_session, stream_wrapper
 from open_webui.utils.tool_approval import (
@@ -278,10 +265,6 @@ from open_webui.utils.tool_approval import (
     resolve_tool_call_output,
 )
 from open_webui.utils.tools import set_terminal_servers, set_tool_servers
-
-if SAFE_MODE:
-    print('SAFE MODE ENABLED')
-    # Functions.deactivate_all_functions() is awaited in lifespan below
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -381,14 +364,6 @@ async def lifespan(app: FastAPI):
             # Disable signup since we now have an admin
             await Config.upsert({'ui.enable_signup': False})
 
-    if SAFE_MODE:
-        await Functions.deactivate_all_functions()
-
-    # This should be blocking (sync) so functions are not deactivated on first /get_models calls
-    # when the first user lands on the / route.
-    log.info('Installing external dependencies of functions and tools...')
-    await install_tool_and_function_dependencies()
-
     app.state.redis = get_redis_client(async_mode=True)
 
     if app.state.redis is not None:
@@ -401,10 +376,6 @@ async def lifespan(app: FastAPI):
 
     app.state.periodic_usage_pool_cleanup = asyncio.create_task(periodic_usage_pool_cleanup())
     app.state.periodic_session_pool_cleanup = asyncio.create_task(periodic_session_pool_cleanup())
-
-    from open_webui.utils.automations import scheduler_worker_loop
-
-    app.state.scheduler_worker_loop = asyncio.create_task(scheduler_worker_loop(app))
 
     if await Config.get('models.base_models_cache'):
         try:
@@ -493,8 +464,6 @@ async def lifespan(app: FastAPI):
 
     app.state.periodic_usage_pool_cleanup.cancel()
     app.state.periodic_session_pool_cleanup.cancel()
-    app.state.scheduler_worker_loop.cancel()
-
     await publish_event(app, EVENTS.SYSTEM_SHUTDOWN_COMPLETED, source='system')
 
 
@@ -512,11 +481,6 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
-
-
-@app.exception_handler(RecurrenceEvaluationTimeout)
-async def recurrence_timeout_handler(request: Request, exc: RecurrenceEvaluationTimeout):
-    return JSONResponse(status_code=400, content={'detail': str(exc)})
 
 
 # Used by readiness checks to gate traffic until startup work is done.
@@ -860,9 +824,7 @@ app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
 
 
-app.include_router(channels.router, prefix='/api/v1/channels', tags=['channels'])
 app.include_router(chats.router, prefix='/api/v1/chats', tags=['chats'])
-app.include_router(notes.router, prefix='/api/v1/notes', tags=['notes'])
 
 
 app.include_router(models.router, prefix='/api/v1/models', tags=['models'])
@@ -876,15 +838,9 @@ app.include_router(memories.router, prefix='/api/v1/memories', tags=['memories']
 app.include_router(folders.router, prefix='/api/v1/folders', tags=['folders'])
 app.include_router(groups.router, prefix='/api/v1/groups', tags=['groups'])
 app.include_router(files.router, prefix='/api/v1/files', tags=['files'])
-app.include_router(functions.router, prefix='/api/v1/functions', tags=['functions'])
-app.include_router(evaluations.router, prefix='/api/v1/evaluations', tags=['evaluations'])
-if ENABLE_ADMIN_ANALYTICS:
-    app.include_router(analytics.router, prefix='/api/v1/analytics', tags=['analytics'])
 app.include_router(utils.router, prefix='/api/v1/utils', tags=['utils'])
 app.include_router(local_terminal.router, prefix='/api/v1/terminals', tags=['local-terminal'])
 app.include_router(terminals.router, prefix='/api/v1/terminals', tags=['terminals'])
-app.include_router(automations.router, prefix='/api/v1/automations', tags=['automations'])
-app.include_router(calendar.router, prefix='/api/v1/calendars', tags=['calendars'])
 
 # SCIM 2.0 API for identity management
 if ENABLE_SCIM:
@@ -2269,10 +2225,6 @@ async def get_app_config(request: Request):
         'direct.integrations.enable',
         'folders.enable',
         'folders.max_file_count',
-        'channels.enable',
-        'calendar.enable',
-        'automations.enable',
-        'notes.enable',
         'chat.context_compaction.enable',
         'chat.tool_permissions.enable',
         'web.search.enable',
@@ -2349,7 +2301,6 @@ async def get_app_config(request: Request):
                     'enable_api_keys': config.get('auth.enable_api_keys'),
                     'enable_password_change_form': config.get('ui.enable_password_change_form'),
                     'enable_version_update_check': ENABLE_VERSION_UPDATE_CHECK,
-                    'enable_pyodide_file_persistence': ENABLE_PYODIDE_FILE_PERSISTENCE,
                     'enable_public_active_users_count': ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
                     'enable_easter_eggs': ENABLE_EASTER_EGGS,
                     'enable_direct_connections': config.get('direct.enable'),
@@ -2357,10 +2308,6 @@ async def get_app_config(request: Request):
                     'enable_plugins': ENABLE_PLUGINS,
                     'enable_folders': config.get('folders.enable'),
                     'folder_max_file_count': config.get('folders.max_file_count'),
-                    'enable_channels': config.get('channels.enable'),
-                    'enable_calendar': config.get('calendar.enable'),
-                    'enable_automations': config.get('automations.enable'),
-                    'enable_notes': config.get('notes.enable'),
                     'enable_context_compaction': config.get('chat.context_compaction.enable'),
                     'enable_tool_permissions': config.get('chat.tool_permissions.enable'),
                     'enable_web_search': config.get('web.search.enable'),
@@ -2376,7 +2323,6 @@ async def get_app_config(request: Request):
                     'enable_user_status': config.get('users.enable_status'),
                     'enable_admin_export': ENABLE_ADMIN_EXPORT,
                     'enable_admin_chat_access': ENABLE_ADMIN_CHAT_ACCESS,
-                    'enable_admin_analytics': ENABLE_ADMIN_ANALYTICS,
                     'enable_google_drive_integration': config.get('google_drive.enable'),
                     'enable_onedrive_integration': config.get('onedrive.enable'),
                     'enable_memories': config.get('memories.enable'),

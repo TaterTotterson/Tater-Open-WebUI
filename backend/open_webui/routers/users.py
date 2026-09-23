@@ -217,12 +217,9 @@ class SharingPermissions(BaseModel):
     public_tools: bool = False
     skills: bool = False
     public_skills: bool = False
-    notes: bool = False
-    public_notes: bool = False
     folders: bool = False
     public_chats: bool = False
     open_chats: bool = False
-    public_calendars: bool = False
 
 
 class AccessGrantsPermissions(BaseModel):
@@ -258,8 +255,6 @@ class ChatPermissions(BaseModel):
 
 class FeaturesPermissions(BaseModel):
     api_keys: bool = False
-    notes: bool = True
-    channels: bool = True
     folders: bool = True
     direct_tool_servers: bool = False
 
@@ -267,8 +262,6 @@ class FeaturesPermissions(BaseModel):
     image_generation: bool = True
     code_interpreter: bool = True
     memories: bool = True
-    automations: bool = False
-    calendar: bool = True
     webhooks: bool = False
 
 

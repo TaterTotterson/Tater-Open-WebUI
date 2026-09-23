@@ -23,11 +23,8 @@ The upstream build transformed 6,366 modules and exhausted Node's default heap.
 After this slice, the production build transforms 6,078 modules and completes
 with the default Node 22 heap.
 
-## Intentionally deferred
+## Follow-up
 
-The backend still contains inherited routers, database tables, migrations, and
-Python dependencies for some removed UI features. Removing those separately
-keeps failures attributable and protects shared chat/authentication code.
-
-The next cleanup slice should remove unused backend routers first, then prune
-Python and npm dependencies only after import and migration checks pass.
+The first backend cleanup slice is now documented in
+`docs/BACKEND_CLEANUP.md`. Shared database models and migrations remain until
+their chat, file, folder, and WebSocket dependencies can be separated safely.

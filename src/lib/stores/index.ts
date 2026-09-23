@@ -351,7 +351,6 @@ type Config = {
 		enable_image_generation: boolean;
 		enable_admin_export: boolean;
 		enable_admin_chat_access: boolean;
-		enable_admin_analytics: boolean;
 		enable_context_compaction?: boolean;
 		enable_tool_permissions?: boolean;
 		enable_community_sharing: boolean;

@@ -1814,18 +1814,7 @@ USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_PUBLIC_SHARING = (
 )
 
 
-USER_PERMISSIONS_NOTES_ALLOW_SHARING = os.getenv('USER_PERMISSIONS_NOTES_ALLOW_SHARING', 'False').lower() == 'true'
-
-USER_PERMISSIONS_NOTES_ALLOW_PUBLIC_SHARING = (
-    os.getenv('USER_PERMISSIONS_NOTES_ALLOW_PUBLIC_SHARING', 'False').lower() == 'true'
-)
-
 USER_PERMISSIONS_FOLDERS_ALLOW_SHARING = os.getenv('USER_PERMISSIONS_FOLDERS_ALLOW_SHARING', 'False').lower() == 'true'
-
-
-USER_PERMISSIONS_CALENDAR_ALLOW_PUBLIC_SHARING = (
-    os.getenv('USER_PERMISSIONS_CALENDAR_ALLOW_PUBLIC_SHARING', 'False').lower() == 'true'
-)
 
 USER_PERMISSIONS_ACCESS_GRANTS_ALLOW_USERS = (
     os.getenv('USER_PERMISSIONS_ACCESS_GRANTS_ALLOW_USERS', 'True').lower() == 'true'
@@ -1906,17 +1895,9 @@ USER_PERMISSIONS_FEATURES_CODE_INTERPRETER = (
 
 USER_PERMISSIONS_FEATURES_FOLDERS = os.getenv('USER_PERMISSIONS_FEATURES_FOLDERS', 'True').lower() == 'true'
 
-USER_PERMISSIONS_FEATURES_NOTES = os.getenv('USER_PERMISSIONS_FEATURES_NOTES', 'True').lower() == 'true'
-
-USER_PERMISSIONS_FEATURES_CHANNELS = os.getenv('USER_PERMISSIONS_FEATURES_CHANNELS', 'True').lower() == 'true'
-
 USER_PERMISSIONS_FEATURES_API_KEYS = os.getenv('USER_PERMISSIONS_FEATURES_API_KEYS', 'False').lower() == 'true'
 
 USER_PERMISSIONS_FEATURES_MEMORIES = os.getenv('USER_PERMISSIONS_FEATURES_MEMORIES', 'True').lower() == 'true'
-
-USER_PERMISSIONS_FEATURES_AUTOMATIONS = os.getenv('USER_PERMISSIONS_FEATURES_AUTOMATIONS', 'False').lower() == 'true'
-
-USER_PERMISSIONS_FEATURES_CALENDAR = os.getenv('USER_PERMISSIONS_FEATURES_CALENDAR', 'True').lower() == 'true'
 
 USER_PERMISSIONS_FEATURES_USER_WEBHOOKS = (
     os.getenv('USER_PERMISSIONS_FEATURES_USER_WEBHOOKS', 'False').lower() == 'true'
@@ -1953,12 +1934,9 @@ DEFAULT_USER_PERMISSIONS = {
         'public_tools': USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING,
         'skills': USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_SHARING,
         'public_skills': USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_PUBLIC_SHARING,
-        'notes': USER_PERMISSIONS_NOTES_ALLOW_SHARING,
-        'public_notes': USER_PERMISSIONS_NOTES_ALLOW_PUBLIC_SHARING,
         'folders': USER_PERMISSIONS_FOLDERS_ALLOW_SHARING,
         'public_chats': USER_PERMISSIONS_CHAT_ALLOW_PUBLIC_SHARING,
         'open_chats': USER_PERMISSIONS_CHAT_ALLOW_OPEN_SHARING,
-        'public_calendars': USER_PERMISSIONS_CALENDAR_ALLOW_PUBLIC_SHARING,
     },
     'access_grants': {
         'allow_users': USER_PERMISSIONS_ACCESS_GRANTS_ALLOW_USERS,
@@ -1990,17 +1968,13 @@ DEFAULT_USER_PERMISSIONS = {
     'features': {
         # General features
         'api_keys': USER_PERMISSIONS_FEATURES_API_KEYS,
-        'notes': USER_PERMISSIONS_FEATURES_NOTES,
         'folders': USER_PERMISSIONS_FEATURES_FOLDERS,
-        'channels': USER_PERMISSIONS_FEATURES_CHANNELS,
         'direct_tool_servers': USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS,
         # Chat features
         'web_search': USER_PERMISSIONS_FEATURES_WEB_SEARCH,
         'image_generation': USER_PERMISSIONS_FEATURES_IMAGE_GENERATION,
         'code_interpreter': USER_PERMISSIONS_FEATURES_CODE_INTERPRETER,
         'memories': USER_PERMISSIONS_FEATURES_MEMORIES,
-        'automations': USER_PERMISSIONS_FEATURES_AUTOMATIONS,
-        'calendar': USER_PERMISSIONS_FEATURES_CALENDAR,
         'webhooks': USER_PERMISSIONS_FEATURES_USER_WEBHOOKS,
     },
     'settings': {
@@ -2014,14 +1988,6 @@ ENABLE_FOLDERS = os.getenv('ENABLE_FOLDERS', 'True').lower() == 'true'
 
 FOLDER_MAX_FILE_COUNT = os.getenv('FOLDER_MAX_FILE_COUNT', '')
 
-ENABLE_CHANNELS = os.getenv('ENABLE_CHANNELS', 'False').lower() == 'true'
-
-CHANNEL_MODEL_RESPONSE_MODE = os.getenv('CHANNEL_MODEL_RESPONSE_MODE', 'thread')
-
-ENABLE_CALENDAR = os.getenv('ENABLE_CALENDAR', 'False').lower() == 'true'
-
-ENABLE_AUTOMATIONS = os.getenv('ENABLE_AUTOMATIONS', 'False').lower() == 'true'
-
 ENABLE_SUBAGENTS = os.getenv('ENABLE_SUBAGENTS', 'False').lower() == 'true'
 SUBAGENTS_BACKGROUND_ENABLED = os.getenv('SUBAGENTS_BACKGROUND_ENABLED', 'False').lower() == 'true'
 SUBAGENTS_MAX_CONCURRENT = int(os.getenv('SUBAGENTS_MAX_CONCURRENT', '20'))
@@ -2029,14 +1995,6 @@ SUBAGENTS_MAX_ASYNC = int(os.getenv('SUBAGENTS_MAX_ASYNC', '20'))
 SUBAGENTS_MAX_ITERATIONS = int(os.getenv('SUBAGENTS_MAX_ITERATIONS', '30'))
 SUBAGENTS_MAX_OUTPUT = int(os.getenv('SUBAGENTS_MAX_OUTPUT', '30000'))
 SUBAGENTS_SYSTEM_PROMPT = os.getenv('SUBAGENTS_SYSTEM_PROMPT', '')
-
-AUTOMATION_MAX_COUNT = os.getenv('AUTOMATION_MAX_COUNT', '')
-
-AUTOMATION_MIN_INTERVAL = os.getenv('AUTOMATION_MIN_INTERVAL', '')
-
-AUTOMATION_AUTH_TOKEN_EXPIRES_IN = os.getenv('AUTOMATION_AUTH_TOKEN_EXPIRES_IN', '1h')
-
-ENABLE_NOTES = os.getenv('ENABLE_NOTES', 'False').lower() == 'true'
 
 ENABLE_USER_STATUS = os.getenv('ENABLE_USER_STATUS', 'True').lower() == 'true'
 
@@ -2079,8 +2037,6 @@ BYPASS_ADMIN_ACCESS_CONTROL = (
     ).lower()
     == 'true'
 )
-
-ENABLE_ADMIN_ANALYTICS = os.getenv('ENABLE_ADMIN_ANALYTICS', 'True').lower() == 'true'
 
 ENABLE_COMMUNITY_SHARING = os.getenv('ENABLE_COMMUNITY_SHARING', 'True').lower() == 'true'
 
@@ -3092,10 +3048,6 @@ DEFAULT_CONFIG = {
     'user.permissions': USER_PERMISSIONS,
     'folders.enable': ENABLE_FOLDERS,
     'folders.max_file_count': FOLDER_MAX_FILE_COUNT,
-    'channels.enable': ENABLE_CHANNELS,
-    'channels.model_response_mode': CHANNEL_MODEL_RESPONSE_MODE,
-    'calendar.enable': ENABLE_CALENDAR,
-    'automations.enable': ENABLE_AUTOMATIONS,
     'subagents.enable': ENABLE_SUBAGENTS,
     'subagents.background_enabled': SUBAGENTS_BACKGROUND_ENABLED,
     'subagents.max_concurrent': SUBAGENTS_MAX_CONCURRENT,
@@ -3103,10 +3055,6 @@ DEFAULT_CONFIG = {
     'subagents.max_iterations': SUBAGENTS_MAX_ITERATIONS,
     'subagents.max_output': SUBAGENTS_MAX_OUTPUT,
     'subagents.system_prompt': SUBAGENTS_SYSTEM_PROMPT,
-    'automations.max_count': AUTOMATION_MAX_COUNT,
-    'automations.min_interval': AUTOMATION_MIN_INTERVAL,
-    'automations.auth_token_expires_in': AUTOMATION_AUTH_TOKEN_EXPIRES_IN,
-    'notes.enable': ENABLE_NOTES,
     'users.enable_status': ENABLE_USER_STATUS,
     'evaluation.arena.enable': ENABLE_EVALUATION_ARENA_MODELS,
     'evaluation.arena.models': EVALUATION_ARENA_MODELS,

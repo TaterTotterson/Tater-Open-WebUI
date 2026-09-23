@@ -25,12 +25,9 @@ export const DEFAULT_PERMISSIONS = {
 		public_tools: false,
 		skills: false,
 		public_skills: false,
-		notes: false,
-		public_notes: false,
 		folders: false,
 		public_chats: false,
-		open_chats: false,
-		public_calendars: false
+		open_chats: false
 	},
 	access_grants: {
 		allow_users: true,
@@ -61,16 +58,12 @@ export const DEFAULT_PERMISSIONS = {
 	},
 	features: {
 		api_keys: false,
-		notes: true,
-		channels: true,
 		folders: true,
 		direct_tool_servers: false,
 		web_search: true,
 		image_generation: true,
 		code_interpreter: true,
 		memories: true,
-		automations: false,
-		calendar: true,
 		webhooks: false
 	},
 	settings: {

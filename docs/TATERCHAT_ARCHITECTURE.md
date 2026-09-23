@@ -136,7 +136,7 @@ The normal agent prompt will emphasize:
 4. Add the `tater_hydra` delegation tool using the normal Chat Completions endpoint. See
    [`TATER_HYDRA.md`](TATER_HYDRA.md).
 5. Install the focused system prompt and robust multi-tool loop.
-6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. The first frontend slice is complete; backend router and dependency removal remains deliberately separate.
+6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. The first frontend and backend-surface slices are complete; tightly coupled provider, media, retrieval, and persistence code remains for later slices.
 7. Rebrand permitted surfaces, package the standalone app, and add security/audit documentation.
 
 ## Security boundary
