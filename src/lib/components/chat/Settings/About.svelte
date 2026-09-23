@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getVersionUpdates } from '$lib/apis';
-	import { getOllamaVersion } from '$lib/apis/ollama';
 	import { WEBUI_BUILD_HASH, WEBUI_VERSION } from '$lib/constants';
 	import { WEBUI_NAME, config, showChangelog } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
@@ -11,8 +10,6 @@
 	import UserSettingSection from './UserSettingSection.svelte';
 
 	const i18n: any = getContext('i18n');
-
-	let ollamaVersion = '';
 
 	let updateAvailable = null;
 	let version = {
@@ -38,10 +35,6 @@
 	};
 
 	onMount(async () => {
-		ollamaVersion = await getOllamaVersion(localStorage.token).catch((error) => {
-			return '';
-		});
-
 		if ($config?.features?.enable_version_update_check) {
 			checkForVersionUpdates();
 		}
@@ -108,14 +101,6 @@
 				{/if}
 			</UserSettingRow>
 		</UserSettingSection>
-
-		{#if ollamaVersion}
-			<UserSettingSection title={$i18n.t('settings.personal.about.sections.ollamaVersion.title')}>
-				<div class="text-xs text-gray-600 dark:text-gray-400">
-					{ollamaVersion ?? 'N/A'}
-				</div>
-			</UserSettingSection>
-		{/if}
 
 		<UserSettingSection title={$i18n.t('settings.personal.about.sections.community.title')}>
 			{#if $config?.license_metadata}

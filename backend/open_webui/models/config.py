@@ -20,10 +20,9 @@ from sqlalchemy import JSON, BigInteger, Column, Text, delete, select
 
 log = logging.getLogger(__name__)
 
-API_CONFIG_KEYS = ('openai.api_configs', 'ollama.api_configs')
+API_CONFIG_KEYS = ('openai.api_configs',)
 DICT_CONFIG_KEY_ALIASES = {
     'openai.api_configs': ('OPENAI_API_CONFIGS',),
-    'ollama.api_configs': ('OLLAMA_API_CONFIGS',),
     'rag.mineru_params': ('MINERU_PARAMS',),
     'rag.docling_params': ('DOCLING_PARAMS',),
     'web.search.linkup_search_params': ('LINKUP_SEARCH_PARAMS',),

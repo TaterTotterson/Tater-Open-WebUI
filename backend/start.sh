@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Container entry point for Open WebUI.
-# Handles secret key generation, optional Ollama/CUDA/Playwright setup,
+# Handles secret key generation, optional CUDA/Playwright setup,
 # HuggingFace Space deployment, and launches the uvicorn server.
 # ---------------------------------------------------------------------------
 
@@ -11,7 +11,7 @@ set -euo pipefail
 # expansion. The two can't be combined inline (`${VAR:-default,,}` makes
 # the default literal `,,`), so we normalise once up front and the simple
 # `${VAR,,}` form stays safe under `set -u` everywhere else.
-: "${USE_SLIM_DOCKER:=}" "${WEB_LOADER_ENGINE:=}" "${USE_OLLAMA_DOCKER:=}" "${USE_CUDA_DOCKER:=}"
+: "${USE_SLIM_DOCKER:=}" "${WEB_LOADER_ENGINE:=}" "${USE_CUDA_DOCKER:=}"
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "$SCRIPT_DIR" || exit 1
@@ -47,13 +47,6 @@ if [[ -z "${WEBUI_SECRET_KEY:-}" && -z "${WEBUI_JWT_SECRET_KEY:-}" ]]; then
 
   echo "Loading WEBUI_SECRET_KEY from ${KEY_FILE}"
   WEBUI_SECRET_KEY=$(cat "$KEY_FILE")
-fi
-
-# ── Ollama (bundled Docker image) ────────────────────────────────────────────
-
-if [[ "${USE_OLLAMA_DOCKER,,}" == "true" ]]; then
-  echo "Starting bundled ollama serve..."
-  ollama serve &
 fi
 
 # ── CUDA library paths ──────────────────────────────────────────────────────

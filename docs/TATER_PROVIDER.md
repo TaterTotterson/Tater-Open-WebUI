@@ -20,7 +20,6 @@ example, use `http://tater-host:8501/v1`; TaterChat appends `/models` and
 Saving the profile performs these changes atomically:
 
 - enables the single OpenAI-compatible connection;
-- disables the inherited Ollama provider;
 - makes the normal model the default and pinned model;
 - reserves the Hydra model and removes it from the normal model picker;
 - clears the cached model list so the new connection is used immediately.

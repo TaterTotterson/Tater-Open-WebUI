@@ -2,7 +2,6 @@
 # Initialize device type args
 # use build args in the docker build command with --build-arg="BUILDARG=true"
 ARG USE_CUDA=false
-ARG USE_OLLAMA=false
 ARG USE_SLIM=false
 ARG USE_PERMISSION_HARDENING=false
 # Tested with cu117 for CUDA 11 and cu121 for CUDA 12 (default)
@@ -57,7 +56,6 @@ FROM python:3.11-slim-bookworm AS base
 
 # Use args
 ARG USE_CUDA
-ARG USE_OLLAMA
 ARG USE_CUDA_VER
 ARG USE_SLIM
 ARG USE_PERMISSION_HARDENING
@@ -74,7 +72,6 @@ ENV PYTHONUNBUFFERED=1
 ENV ENV=prod \
     PORT=8080 \
     # pass build args to the build
-    USE_OLLAMA_DOCKER=${USE_OLLAMA} \
     USE_CUDA_DOCKER=${USE_CUDA} \
     USE_SLIM_DOCKER=${USE_SLIM} \
     USE_CUDA_DOCKER_VER=${USE_CUDA_VER} \
@@ -83,8 +80,7 @@ ENV ENV=prod \
     USE_AUXILIARY_EMBEDDING_MODEL_DOCKER=${USE_AUXILIARY_EMBEDDING_MODEL}
 
 ## Basis URL Config ##
-ENV OLLAMA_BASE_URL="/ollama" \
-    OPENAI_API_BASE_URL=""
+ENV OPENAI_API_BASE_URL=""
 
 ## API Key and Security Config ##
 ENV OPENAI_API_KEY="" \
@@ -133,9 +129,9 @@ RUN echo -n 00000000-0000-0000-0000-000000000000 > $HOME/.cache/chroma/telemetry
 # Make sure the user has access to the app and root directory
 RUN chown -R $UID:$GID /app $HOME
 
-# Slim cannot bundle a local model server or GPU runtime.
-RUN if [ "$USE_SLIM" = "true" ] && { [ "$USE_CUDA" = "true" ] || [ "$USE_OLLAMA" = "true" ]; }; then \
-    echo "USE_SLIM cannot be combined with USE_CUDA or USE_OLLAMA" >&2; exit 1; fi
+# Slim cannot bundle a GPU runtime.
+RUN if [ "$USE_SLIM" = "true" ] && [ "$USE_CUDA" = "true" ]; then \
+    echo "USE_SLIM cannot be combined with USE_CUDA" >&2; exit 1; fi
 
 # Keep the slim runtime free of local document/audio processing tools.
 # Git-based tool requirements require the standard image.
@@ -145,8 +141,6 @@ RUN apt-get update && \
     && if [ "$USE_SLIM" != "true" ]; then \
     apt-get install -y --no-install-recommends \
     git build-essential pandoc gcc libmariadb-dev ffmpeg libsm6 libxext6; \
-    fi && if [ "$USE_OLLAMA" = "true" ]; then \
-    apt-get install -y --no-install-recommends zstd; \
     fi && rm -rf /var/lib/apt/lists/*
 
 # install python dependencies
@@ -186,14 +180,6 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.10,source=/uv,target=/bin/uv \
 # Keep this out of the default image to avoid the extra image bloat; deployments
 # with read-only site-packages can uncomment it and bake the model in.
 # RUN python -m spacy download en_core_web_sm
-
-# Install Ollama if requested
-RUN if [ "$USE_OLLAMA" = "true" ]; then \
-    date +%s > /tmp/ollama_build_hash && \
-    echo "Cache broken at timestamp: `cat /tmp/ollama_build_hash`" && \
-    curl -fsSL https://ollama.com/install.sh | sh && \
-    rm -rf /var/lib/apt/lists/*; \
-    fi
 
 # copy embedding weight from build
 # RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2

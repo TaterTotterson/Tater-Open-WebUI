@@ -11,7 +11,6 @@ import { getTerminalServerConnections, setTerminalServerConnections } from '$lib
 
 /**
  * Add an OpenAI-compatible API connection at the system level.
- * Mirrors the logic in admin/Settings/Connections.svelte.
  */
 export const addOpenAIConnection = async (
 	token: string,
@@ -44,8 +43,7 @@ export const addOpenAIConnection = async (
 };
 
 /**
- * Remove an OpenAI-compatible API connection by URL at the system level.
- * Re-indexes OPENAI_API_CONFIGS to match the admin delete pattern.
+ * Remove an OpenAI-compatible API connection by URL and re-index its config.
  */
 export const removeOpenAIConnection = async (token: string, url: string) => {
 	const current = await getOpenAIConfig(token);
@@ -60,7 +58,7 @@ export const removeOpenAIConnection = async (token: string, url: string) => {
 	const newUrls = urls.filter((_: string, i: number) => i !== idx);
 	const newKeys = keys.filter((_: string, i: number) => i !== idx);
 
-	// Re-index configs (mirrors admin/Settings/Connections.svelte onDelete)
+	// Re-index configs after deleting the matching URL/key pair.
 	const newConfigs: Record<string, any> = {};
 	newUrls.forEach((_: string, newIdx: number) => {
 		newConfigs[newIdx] = configs[newIdx < idx ? newIdx : newIdx + 1];

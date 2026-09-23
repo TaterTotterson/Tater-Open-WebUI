@@ -328,9 +328,7 @@ async def create_new_model(
             if base_model.get('preset') or not base_model_id:
                 continue
 
-            if form_data.id == base_model_id or (
-                base_model.get('owned_by') == 'ollama' and form_data.id == base_model_id.split(':', 1)[0]
-            ):
+            if form_data.id == base_model_id:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail=ERROR_MESSAGES.MODEL_ID_TAKEN,
@@ -582,8 +580,6 @@ async def import_models(
                                         continue
 
                                     base_model_ids.add(base_model_id)
-                                    if base_model.get('owned_by') == 'ollama':
-                                        base_model_ids.add(base_model_id.split(':', 1)[0])
 
                             if model_id in base_model_ids:
                                 log.warning(
@@ -1041,7 +1037,7 @@ async def update_model_access_by_id(
 ):
     model = await Models.get_model_by_id(form_data.id, db=db)
 
-    # Non-preset models (e.g. direct Ollama/OpenAI models) may not have a DB
+    # Non-preset models from direct OpenAI-compatible connections may not have a DB
     # entry yet. Create a minimal one so access grants can be stored.
     if not model:
         if user.role != 'admin':

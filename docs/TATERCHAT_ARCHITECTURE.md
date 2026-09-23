@@ -86,9 +86,8 @@ The local runtime must provide:
 
 These features are outside the initial TaterChat product and should be removed only after the retained paths have tests:
 
-- Ollama connection and model-management paths;
+- additional chat-provider connection and model-management paths;
 - RAG, knowledge bases, embeddings, rerankers, and vector databases;
-- image generation, speech, transcription, and media-provider integrations;
 - channels, notes, calendar, and Open WebUI automations;
 - model arenas, evaluations, analytics, and telemetry;
 - SCIM, LDAP, enterprise groups, and cloud storage integrations;
@@ -97,6 +96,10 @@ These features are outside the initial TaterChat product and should be removed o
 - external terminal-server configuration after the bundled runtime replaces it.
 
 Some code in these areas may remain temporarily when shared imports make immediate removal risky. Routes and navigation should disappear before dependency deletion.
+
+Image generation/editing, speech, transcription, and their media UI are part
+of the retained TaterChat experience. Their provider configuration can be
+narrowed later without removing the user-facing media capabilities.
 
 ## Agent loop requirements
 
@@ -136,7 +139,7 @@ The normal agent prompt will emphasize:
 4. Add the `tater_hydra` delegation tool using the normal Chat Completions endpoint. See
    [`TATER_HYDRA.md`](TATER_HYDRA.md).
 5. Install the focused system prompt and robust multi-tool loop.
-6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. The first frontend and backend-surface slices are complete, and remote Python Pipelines have been removed. Image and audio stay as UI features; tightly coupled legacy providers, retrieval, and persistence code remain for later slices.
+6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. The first frontend and backend-surface slices are complete; remote Python Pipelines and the general Ollama provider have been removed. Image and audio stay as UI features. Retrieval retains its separate optional Ollama embedding client until that subsystem is handled independently.
 7. Rebrand permitted surfaces, package the standalone app, and add security/audit documentation.
 
 ## Security boundary

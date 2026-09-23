@@ -2,7 +2,6 @@
 	import { marked } from 'marked';
 
 	import { getContext, tick } from 'svelte';
-	import dayjs from '$lib/dayjs';
 
 	import { mobile, settings, user } from '$lib/stores';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
@@ -119,29 +118,7 @@
 			</div>
 
 			<div class="flex shrink-0 items-center gap-1.5">
-				{#if item.model.owned_by === 'ollama'}
-					{#if (item.model.ollama?.details?.parameter_size ?? '') !== ''}
-						<div class="flex items-center translate-y-[0.5px]">
-							<Tooltip
-								content={`${
-									item.model.ollama?.details?.quantization_level
-										? item.model.ollama?.details?.quantization_level + ' '
-										: ''
-								}${
-									item.model.ollama?.size
-										? `(${(item.model.ollama?.size / 1024 ** 3).toFixed(1)}GB)`
-										: ''
-								}`}
-								className="self-end"
-							>
-								<span
-									class="line-clamp-1 text-[0.6875rem] font-normal text-gray-500 dark:text-gray-400"
-									>{item.model.ollama?.details?.parameter_size ?? ''}</span
-								>
-							</Tooltip>
-						</div>
-					{/if}
-				{:else if item.model.provider === 'lmstudio' || item.model.provider === 'llama.cpp'}
+				{#if item.model.provider === 'lmstudio' || item.model.provider === 'llama.cpp'}
 					{@const parameterSize =
 						item.model.params_string ?? item.model.details?.parameter_size ?? ''}
 					{@const quantization =
@@ -165,15 +142,7 @@
 
 				{#if item.model.loaded}
 					<div class="flex items-center px-0.5">
-						<Tooltip
-							content={item.model.ollama?.expires_at &&
-							new Date(item.model.ollama?.expires_at * 1000) > new Date()
-								? `${$i18n.t('Unloads {{FROM_NOW}}', {
-										FROM_NOW: dayjs(item.model.ollama?.expires_at * 1000).fromNow()
-									})}`
-								: `${$i18n.t('Loaded')}`}
-							className="self-end"
-						>
+						<Tooltip content={`${$i18n.t('Loaded')}`} className="self-end">
 							<div class=" flex items-center">
 								<span class="relative flex size-1.5">
 									<span

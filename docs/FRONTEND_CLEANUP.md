@@ -13,6 +13,10 @@ terminal, file navigation, and Tater configuration paths.
 - Their navigation, search actions, attachment menus, model-edit links, and admin switches.
 - The Pyodide worker, browser sandbox, file navigator, preparation script, and npm dependency.
 - Special Markdown rendering and navigation for removed notes and channels.
+- Ollama connection, model-management, pull/download, model metadata, version,
+  and provider-specific advanced-parameter UI.
+- The now-unreachable generic provider administration and personal connection
+  component trees; the focused Tater settings page is the provider setup UI.
 
 The corresponding feature defaults are off. Plugins also default off so a new
 TaterChat install does not expose the inherited extension surface accidentally.
@@ -20,8 +24,11 @@ TaterChat install does not expose the inherited extension surface accidentally.
 ## Verification
 
 The upstream build transformed 6,366 modules and exhausted Node's default heap.
-After this slice, the production build transforms 6,078 modules and completes
+After this slice, the production build transforms 6,076 modules and completes
 with the default Node 22 heap.
+
+Image and audio components remain part of the active product and are not
+included in provider cleanup.
 
 ## Follow-up
 

@@ -18,6 +18,9 @@ used by its terminal-first work loop.
   subagents.
 - The remote Python Pipelines router, admin component, frontend API client,
   event catalog entries, and chat/task inlet and outlet interception hooks.
+- The general-purpose Ollama router, model discovery, chat and embedding
+  dispatch, configuration keys, unload path, bundled-server Docker option, and
+  startup launcher.
 
 TaterChat retains `ask_user`, `create_tasks`, and `update_task` as UI-native
 coordination tools. Its unrestricted local terminal and conditional
@@ -28,6 +31,10 @@ Image generation/editing and audio transcription/speech are intentionally
 retained as TaterChat UI capabilities. Surface tests require both routers to
 remain registered.
 
+Retrieval still has an independent `RAG_OLLAMA_BASE_URL` option for remote
+embedding generation. That is not a chat provider and remains only until the
+retrieval subsystem is handled as its own cleanup slice.
+
 ## Compatibility boundary
 
 Database tables and migrations are retained in this pass so existing databases
@@ -36,9 +43,9 @@ because shared chat, file, folder, and WebSocket modules still reference it.
 Those references need to be separated before the dormant modules can be safely
 deleted.
 
-Legacy provider, retrieval, memory, and knowledge routers are deferred. They
-cross shared model discovery and message-processing paths and should be removed
-as their own measured slices.
+Retrieval, memory, knowledge, and remaining optional OpenAI-compatible
+provider-management code are deferred. They cross shared model discovery and
+message-processing paths and should be removed as their own measured slices.
 
 ## Verification
 

@@ -33,7 +33,6 @@ class TaterProfileTests(unittest.TestCase):
         self.assertEqual(updates['openai.api_base_urls'], ['https://tater.example/v1'])
         self.assertEqual(updates['openai.api_keys'], ['secret'])
         self.assertEqual(updates['ui.default_models'], 'tater/base')
-        self.assertFalse(updates['ollama.enable'])
         self.assertEqual(updates['openai.api_configs']['0']['provider'], 'tater')
         self.assertEqual(updates['models.default_params']['function_calling'], 'legacy')
 

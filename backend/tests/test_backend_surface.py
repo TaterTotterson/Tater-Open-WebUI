@@ -9,6 +9,7 @@ MAIN_PATH = BACKEND_ROOT / 'main.py'
 BUILTINS_PATH = BACKEND_ROOT / 'tools' / 'builtin.py'
 TOOLS_PATH = BACKEND_ROOT / 'utils' / 'tools.py'
 MIDDLEWARE_PATH = BACKEND_ROOT / 'utils' / 'middleware.py'
+CONFIG_PATH = BACKEND_ROOT / 'config.py'
 
 
 class BackendSurfaceTests(unittest.TestCase):
@@ -23,13 +24,14 @@ class BackendSurfaceTests(unittest.TestCase):
             '/api/v1/functions',
             '/api/v1/notes',
             '/api/v1/pipelines',
+            "prefix='/ollama'",
         )
 
         for prefix in removed_prefixes:
             self.assertNotIn(prefix, source)
 
     def test_isolated_router_modules_are_deleted(self):
-        removed_modules = ('analytics', 'calendar', 'evaluations', 'functions', 'notes', 'pipelines')
+        removed_modules = ('analytics', 'calendar', 'evaluations', 'functions', 'notes', 'ollama', 'pipelines')
 
         for module in removed_modules:
             self.assertFalse((BACKEND_ROOT / 'routers' / f'{module}.py').exists())
@@ -70,6 +72,14 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("prefix='/api/v1/images'", source)
         self.assertTrue((BACKEND_ROOT / 'routers' / 'audio.py').exists())
         self.assertTrue((BACKEND_ROOT / 'routers' / 'images.py').exists())
+
+    def test_general_ollama_provider_is_removed_but_rag_option_remains(self):
+        config_source = CONFIG_PATH.read_text(encoding='utf-8')
+
+        self.assertNotIn("'ollama.enable'", config_source)
+        self.assertNotIn("'ollama.base_urls'", config_source)
+        self.assertNotIn("'ollama.api_configs'", config_source)
+        self.assertIn("'rag.ollama.base_url'", config_source)
 
 
 if __name__ == '__main__':

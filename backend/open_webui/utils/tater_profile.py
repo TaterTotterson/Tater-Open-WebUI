@@ -61,7 +61,6 @@ def build_tater_profile_updates(
                 'connection_type': 'external',
             }
         },
-        'ollama.enable': False,
         'tater.base_model': base_model,
         'tater.hydra_model': hydra_model,
         'models.default_params': {'function_calling': 'legacy'},
