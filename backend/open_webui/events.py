@@ -552,18 +552,6 @@ class EventDefinitions(BaseModel):
     PROMPT_ACCESS_UPDATED: EventDefinition = EventDefinition(
         name='prompt.access_updated', description='Prompt access was updated.', message='Prompt access updated'
     )
-    PIPELINE_UPLOADED: EventDefinition = EventDefinition(
-        name='pipeline.uploaded', description='A pipeline was uploaded.', message='Pipeline uploaded'
-    )
-    PIPELINE_ADDED: EventDefinition = EventDefinition(
-        name='pipeline.added', description='A pipeline was added.', message='Pipeline added'
-    )
-    PIPELINE_DELETED: EventDefinition = EventDefinition(
-        name='pipeline.deleted', description='A pipeline was deleted.', message='Pipeline deleted'
-    )
-    PIPELINE_VALVES_UPDATED: EventDefinition = EventDefinition(
-        name='pipeline.valves_updated', description='Pipeline valves were updated.', message='Pipeline valves updated'
-    )
     CALENDAR_CREATED: EventDefinition = EventDefinition(
         name='calendar.created', description='A calendar was created.', message='Calendar created'
     )

@@ -57,7 +57,7 @@ async def fetch_openai_models(request: Request, user: UserModel = None):
     return [
         model
         for model in openai_response['data']
-        if not is_reserved_hydra_model(model, hydra_model)
+        if not is_reserved_hydra_model(model, hydra_model) and not model.get('pipeline')
     ]
 
 

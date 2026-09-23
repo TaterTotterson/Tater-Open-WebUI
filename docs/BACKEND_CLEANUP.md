@@ -16,11 +16,17 @@ used by its terminal-first work loop.
 - Open WebUI's inherited built-in tools for memory, retrieval, web search,
   image generation, code execution, chat search, notifications, skills, and
   subagents.
+- The remote Python Pipelines router, admin component, frontend API client,
+  event catalog entries, and chat/task inlet and outlet interception hooks.
 
 TaterChat retains `ask_user`, `create_tasks`, and `update_task` as UI-native
 coordination tools. Its unrestricted local terminal and conditional
 `tater_hydra` tool remain separate runtime tools and are not affected by the
 built-in-tool reduction.
+
+Image generation/editing and audio transcription/speech are intentionally
+retained as TaterChat UI capabilities. Surface tests require both routers to
+remain registered.
 
 ## Compatibility boundary
 
@@ -30,9 +36,9 @@ because shared chat, file, folder, and WebSocket modules still reference it.
 Those references need to be separated before the dormant modules can be safely
 deleted.
 
-Provider, retrieval, audio, image, memory, knowledge, and pipeline routers are
-also deferred. They cross shared model discovery and message-processing paths
-and should be removed as their own measured slice.
+Legacy provider, retrieval, memory, and knowledge routers are deferred. They
+cross shared model discovery and message-processing paths and should be removed
+as their own measured slices.
 
 ## Verification
 

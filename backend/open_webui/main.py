@@ -157,7 +157,6 @@ from open_webui.routers import (
     notifications,
     ollama,
     openai,
-    pipelines,
     prompts,
     retrieval,
     scim,
@@ -811,7 +810,6 @@ app.include_router(openai.router, prefix='/openai', tags=['openai'])
 app.include_router(tater.router, prefix='/api/v1/tater', tags=['tater'])
 
 
-app.include_router(pipelines.router, prefix='/api/v1/pipelines', tags=['pipelines'])
 app.include_router(tasks.router, prefix='/api/v1/tasks', tags=['tasks'])
 app.include_router(images.router, prefix='/api/v1/images', tags=['images'])
 
@@ -859,10 +857,7 @@ if ENABLE_SCIM:
 async def get_models(request: Request, refresh: bool = False, user=Depends(get_verified_user)):
     all_models = await get_all_models(request, refresh=refresh, user=user)
 
-    # Filter out filter pipelines
-    models = [
-        model for model in all_models if not ('pipeline' in model and model['pipeline'].get('type', None) == 'filter')
-    ]
+    models = all_models
 
     # Chat requests resolve models by ID from request.app.state.MODELS, where
     # duplicate IDs collapse to the last model. Return the same effective list.
@@ -1037,7 +1032,7 @@ async def embeddings(request: Request, form_data: dict, user=Depends(get_verifie
 
     This handler:
       - Performs user/model checks and dispatches to the correct backend.
-      - Supports OpenAI, Ollama, arena models, pipelines, and any compatible provider.
+      - Supports the configured model providers through a compatible API.
 
     Args:
         request (Request): Request context.
@@ -1870,8 +1865,8 @@ async def resolve_chat_message_tool_call(
     }
 
 
-# Expose as app.state so internal callers (e.g. automations) can
-# use the full pipeline without importing from main.py (avoids circular deps).
+# Expose as app.state so internal callers can use the chat completion handler
+# without importing from main.py (avoids circular dependencies).
 app.state.CHAT_COMPLETION_HANDLER = chat_completion
 
 
@@ -1971,7 +1966,7 @@ async def generate_messages(
 
     Accepts the Anthropic Messages API format, converts internally to OpenAI
     Chat Completions format, routes through the existing chat completion
-    pipeline, then converts the response back to Anthropic Messages format.
+    handler, then converts the response back to Anthropic Messages format.
 
     Supports both streaming and non-streaming requests.
     All models configured in Open WebUI are accessible via this endpoint.

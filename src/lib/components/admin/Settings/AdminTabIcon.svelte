@@ -8,7 +8,6 @@
 	import Link from '$lib/components/icons/Link.svelte';
 	import Lock from '$lib/components/icons/Lock.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
-	import QueueList from '$lib/components/icons/QueueList.svelte';
 	import SettingsAlt from '$lib/components/icons/SettingsAlt.svelte';
 	import SoundHigh from '$lib/components/icons/SoundHigh.svelte';
 	import UserCircle from '$lib/components/icons/UserCircle.svelte';
@@ -83,8 +82,6 @@
 	<SoundHigh {className} {strokeWidth} />
 {:else if id === 'images'}
 	<Photo {className} {strokeWidth} />
-{:else if id === 'pipelines'}
-	<QueueList {className} {strokeWidth} />
 {:else if id === 'db'}
 	<Database {className} {strokeWidth} />
 {/if}
