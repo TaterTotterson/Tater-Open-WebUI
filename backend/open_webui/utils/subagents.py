@@ -326,12 +326,9 @@ async def delegate(
         'features': features,
         'files': copy.deepcopy(metadata.get('files') or []),
         'variables': copy.deepcopy(metadata.get('variables') or {}),
-        'direct': bool(metadata.get('direct')),
     }
     if not run.get('model_id'):
         return 'Error: model context is required.'
-    if run.get('direct'):
-        return 'Error: sub-agents are unavailable for direct connections.'
     if file_ids:
         requested_file_ids = {str(file_id) for file_id in file_ids if file_id}
         run['files'] = [

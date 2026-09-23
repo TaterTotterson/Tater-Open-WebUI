@@ -6,7 +6,6 @@ import json
 import logging
 import mimetypes
 import os
-import random
 import re
 import sys
 import textwrap
@@ -2441,35 +2440,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     # -> Chat Code Interpreter (Form Data Update) -> (Default) Chat Tools Function Calling
     # -> Chat Files
 
-    # Arena model resolution — pick the sub-model now so all downstream
-    # processing (knowledge, capabilities, tools, params) uses its settings
-    # instead of the empty arena wrapper.
-    if model.get('owned_by') == 'arena':
-        arena_model_ids = model.get('info', {}).get('meta', {}).get('model_ids')
-        arena_filter_mode = model.get('info', {}).get('meta', {}).get('filter_mode')
-        if arena_model_ids and arena_filter_mode == 'exclude':
-            arena_model_ids = [
-                available_model['id']
-                for available_model in request.app.state.MODELS.values()
-                if available_model.get('owned_by') != 'arena' and available_model['id'] not in arena_model_ids
-            ]
-
-        if isinstance(arena_model_ids, list) and arena_model_ids:
-            selected_model_id = random.choice(arena_model_ids)
-        else:
-            arena_model_ids = [
-                available_model['id']
-                for available_model in request.app.state.MODELS.values()
-                if available_model.get('owned_by') != 'arena'
-            ]
-            selected_model_id = random.choice(arena_model_ids)
-
-        selected_model = request.app.state.MODELS.get(selected_model_id)
-        if selected_model:
-            model = selected_model
-            form_data['model'] = selected_model_id
-            metadata['selected_model_id'] = selected_model_id
-
     # Captured before apply_params_to_form_data pops 'params'; populates metadata['system_prompt'] below
     model_system_prompt = (form_data.get('params') or {}).get('system')
 
@@ -2526,13 +2496,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         form_data['messages'].append({'role': 'user', 'content': regeneration_prompt})
 
     if is_saved_chat_id(chat_id) and user_message_id:
-        if getattr(request.state, 'direct', False) and hasattr(request.state, 'model'):
-            compaction_models = {
-                **dict(request.app.state.MODELS.items()),
-                request.state.model['id']: request.state.model,
-            }
-        else:
-            compaction_models = request.app.state.MODELS
+        compaction_models = request.app.state.MODELS
 
         system_message = get_system_message(form_data.get('messages', []))
         system_prompt = get_content_from_message(system_message) if system_message else ''
@@ -2597,12 +2561,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     }
     # Initialize events to store additional event to be sent to the client
     # Initialize contexts and citation
-    if getattr(request.state, 'direct', False) and hasattr(request.state, 'model'):
-        models = {
-            request.state.model['id']: request.state.model,
-        }
-    else:
-        models = request.app.state.MODELS
+    models = request.app.state.MODELS
 
     task_model_id = get_task_model_id(
         form_data['model'],
@@ -4301,16 +4260,6 @@ async def non_streaming_chat_response_handler(response, ctx):
                         }
                     )
 
-            if 'selected_model_id' in response_data and save_to_chat:
-                await Chats.upsert_message_to_chat_by_id_and_message_id(
-                    metadata['chat_id'],
-                    metadata['message_id'],
-                    {
-                        'selectedModelId': response_data['selected_model_id'],
-                    },
-                    touch=False,
-                )
-
             choices = response_data.get('choices', [])
             response_output = response_data.get('output')
             content = choices[0].get('message', {}).get('content') if choices else ''
@@ -5156,28 +5105,11 @@ async def streaming_chat_response_handler(response, ctx):
                                 )
 
                             if data:
-                                if 'event' in data and not getattr(request.state, 'direct', False):
+                                if 'event' in data:
                                     await event_emitter(data.get('event', {}))
 
-                                if 'selected_model_id' in data:
-                                    model_id = data['selected_model_id']
-                                    if save_to_chat:
-                                        await Chats.upsert_message_to_chat_by_id_and_message_id(
-                                            metadata['chat_id'],
-                                            metadata['message_id'],
-                                            {
-                                                'selectedModelId': model_id,
-                                            },
-                                            touch=False,
-                                        )
-                                    await event_emitter(
-                                        {
-                                            'type': 'chat:completion',
-                                            'data': data,
-                                        }
-                                    )
                                 # Check for Responses API events (type field starts with "response.")
-                                elif data.get('type', '').startswith('response.'):
+                                if data.get('type', '').startswith('response.'):
                                     response_data_type = data.get('type', '')
                                     response_data_is_delta = response_data_type.endswith('.delta')
                                     output, response_metadata = handle_responses_streaming_event(data, output)

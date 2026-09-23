@@ -43,7 +43,7 @@ from open_webui.models.models import (
     Models,
 )
 from open_webui.storage.provider import Storage
-from open_webui.utils.access_control import filter_allowed_access_grants, has_access, has_permission
+from open_webui.utils.access_control import filter_allowed_access_grants, has_permission
 from open_webui.utils.access_control.files import has_access_to_file
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.chat_variables import get_chat_variables_schema
@@ -798,18 +798,6 @@ async def get_model_profile_image(
         ):
             profile_image_url = (meta or {}).get('profile_image_url')
             updated_at = model_updated_at
-
-    # Fallback: check arena models stored in config (not in the DB)
-    if not profile_image_url:
-        arena_models = await Config.get('evaluation.arena.models', []) or []
-        for arena_model in arena_models:
-            if arena_model.get('id') == id:
-                arena_meta = arena_model.get('meta', {})
-                if bypass_access_control or await has_access(
-                    user.id, permission='read', access_grants=arena_meta.get('access_grants', []), db=db
-                ):
-                    profile_image_url = arena_meta.get('profile_image_url')
-                break
 
     if profile_image_url:
         if profile_image_url.startswith('http'):

@@ -2780,7 +2780,7 @@
 	};
 
 	const chatCompletionEventHandler = async (data, message, chatId) => {
-		const { id, done, choices, content, output, sources, selected_model_id, error, usage } = data;
+		const { id, done, choices, content, output, sources, error, usage } = data;
 
 		// Store raw OR-aligned output items from backend
 		if (output) {
@@ -2833,11 +2833,6 @@
 				navigator.vibrate(5);
 			}
 			dispatchCallOverlayAudio(message);
-		}
-
-		if (selected_model_id) {
-			message.selectedModelId = selected_model_id;
-			message.arena = true;
 		}
 
 		if (usage) {
@@ -3876,9 +3871,7 @@
 			responseMessage.done = false;
 			await tick();
 
-			const model = $models
-				.filter((m) => m.id === (responseMessage?.selectedModelId ?? responseMessage.model))
-				.at(0);
+			const model = $models.filter((m) => m.id === responseMessage.model).at(0);
 
 			if (model) {
 				await sendMessageSocket(

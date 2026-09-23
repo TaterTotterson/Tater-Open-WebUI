@@ -485,17 +485,16 @@
 			type: 'rating',
 			data: {
 				...(updatedMessage?.annotation ? updatedMessage.annotation : {}),
-				model_id: message?.selectedModelId ?? message.model,
+				model_id: message.model,
 				...(history.messages[message.parentId].childrenIds.length > 1
 					? {
 							sibling_model_ids: history.messages[message.parentId].childrenIds
 								.filter((id) => id !== message.id)
-								.map((id) => history.messages[id]?.selectedModelId ?? history.messages[id].model)
+								.map((id) => history.messages[id].model)
 						}
 					: {})
 			},
 			meta: {
-				arena: message ? message.arena : false,
 				model_id: message.model,
 				message_id: message.id,
 				message_index: messages.length,

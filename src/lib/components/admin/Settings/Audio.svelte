@@ -10,7 +10,7 @@
 		getModels as _getModels,
 		getVoices as _getVoices
 	} from '$lib/apis/audio';
-	import { config, settings } from '$lib/stores';
+	import { config } from '$lib/stores';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
@@ -89,10 +89,7 @@
 		if (TTS_ENGINE === '') {
 			models = [];
 		} else {
-			const res = await _getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			).catch((e) => {
+			const res = await _getModels(localStorage.token).catch((e) => {
 				toast.error(`${e}`);
 			});
 

@@ -11,7 +11,7 @@
 		type TaterProfileInput,
 		type TaterProfileVerification
 	} from '$lib/apis/tater';
-	import { config, models, settings } from '$lib/stores';
+	import { config, models } from '$lib/stores';
 
 	const dispatch = createEventDispatcher();
 	const inputClass =
@@ -44,16 +44,7 @@
 	});
 
 	const refreshModels = async () => {
-		await models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections
-					? ($settings?.directConnections ?? null)
-					: null,
-				false,
-				true
-			)
-		);
+		await models.set(await getModels(localStorage.token, false, true));
 	};
 
 	const save = async () => {

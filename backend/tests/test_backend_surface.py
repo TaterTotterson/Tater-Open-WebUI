@@ -10,6 +10,8 @@ BUILTINS_PATH = BACKEND_ROOT / 'tools' / 'builtin.py'
 TOOLS_PATH = BACKEND_ROOT / 'utils' / 'tools.py'
 MIDDLEWARE_PATH = BACKEND_ROOT / 'utils' / 'middleware.py'
 CONFIG_PATH = BACKEND_ROOT / 'config.py'
+OPENAI_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'openai.py'
+CHAT_UTILS_PATH = BACKEND_ROOT / 'utils' / 'chat.py'
 
 
 class BackendSurfaceTests(unittest.TestCase):
@@ -80,6 +82,38 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertNotIn("'ollama.base_urls'", config_source)
         self.assertNotIn("'ollama.api_configs'", config_source)
         self.assertIn("'rag.ollama.base_url'", config_source)
+
+    def test_direct_provider_and_arena_runtime_are_removed(self):
+        config_source = CONFIG_PATH.read_text(encoding='utf-8')
+        main_source = MAIN_PATH.read_text(encoding='utf-8')
+        chat_source = CHAT_UTILS_PATH.read_text(encoding='utf-8')
+
+        for removed_key in (
+            "'direct.enable'",
+            "'direct.integrations.enable'",
+            "'evaluation.arena.enable'",
+            "'evaluation.arena.models'",
+        ):
+            self.assertNotIn(removed_key, config_source)
+
+        self.assertNotIn('request.state.direct', main_source)
+        self.assertNotIn('generate_direct_chat_completion', chat_source)
+        self.assertNotIn("owned_by') == 'arena'", chat_source)
+
+    def test_generic_provider_management_routes_are_removed(self):
+        source = OPENAI_ROUTER_PATH.read_text(encoding='utf-8')
+
+        for route in (
+            "@router.get('/config')",
+            "@router.post('/config/update')",
+            "@router.post('/verify')",
+            "@router.get('/models/{url_idx}')",
+            "@router.get('/models/{url_idx}/catalog')",
+            "@router.post('/models/{url_idx}/download')",
+            "@router.post('/models/{url_idx}/load')",
+            "@router.post('/models/{url_idx}/unload')",
+        ):
+            self.assertNotIn(route, source)
 
 
 if __name__ == '__main__':

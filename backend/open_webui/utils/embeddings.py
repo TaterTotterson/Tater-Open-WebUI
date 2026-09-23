@@ -43,23 +43,13 @@ async def generate_embeddings(
                 **request.state.metadata,
             }
 
-    # If "direct" flag present, use only that model
-    if getattr(request.state, 'direct', False) and hasattr(request.state, 'model'):
-        models = {
-            request.state.model['id']: request.state.model,
-        }
-    else:
-        models = request.app.state.MODELS
-
     model_id = form_data.get('model')
-    if model_id not in models:
+    if model_id not in request.app.state.MODELS:
         raise Exception('Model not found')
-    model = models[model_id]
+    model = request.app.state.MODELS[model_id]
 
-    # Access filtering
-    if not getattr(request.state, 'direct', False):
-        if not bypass_filter and user.role == 'user':
-            await check_model_access(user, model)
+    if not bypass_filter and user.role == 'user':
+        await check_model_access(user, model)
 
     return await openai_embeddings(
         request=request,

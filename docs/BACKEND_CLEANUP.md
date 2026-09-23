@@ -21,6 +21,13 @@ used by its terminal-first work loop.
 - The general-purpose Ollama router, model discovery, chat and embedding
   dispatch, configuration keys, unload path, bundled-server Docker option, and
   startup launcher.
+- Browser-direct model dispatch and its WebSocket completion bridge.
+- Arena model registration, random model selection, response wrapping, and
+  runtime configuration.
+- Generic OpenAI-compatible connection editing, verification, per-connection
+  model listing, and provider model download/load/unload/delete routes.
+- Direct-model branches in chat, embeddings, actions, tasks, compaction,
+  timers, and subagents.
 
 TaterChat retains `ask_user`, `create_tasks`, and `update_task` as UI-native
 coordination tools. Its unrestricted local terminal and conditional
@@ -37,15 +44,16 @@ retrieval subsystem is handled as its own cleanup slice.
 
 ## Compatibility boundary
 
-Database tables and migrations are retained in this pass so existing databases
-remain upgradeable. Channel and automation model code also remains temporarily
+Database tables, migrations, and the legacy feedback `arena` column are
+retained so existing databases remain upgradeable. Channel and automation
+model code also remains temporarily
 because shared chat, file, folder, and WebSocket modules still reference it.
 Those references need to be separated before the dormant modules can be safely
 deleted.
 
-Retrieval, memory, knowledge, and remaining optional OpenAI-compatible
-provider-management code are deferred. They cross shared model discovery and
-message-processing paths and should be removed as their own measured slices.
+Retrieval, memory, and knowledge code are deferred. They cross shared model
+discovery and message-processing paths and should be removed as their own
+measured slices.
 
 ## Verification
 

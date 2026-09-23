@@ -228,13 +228,6 @@ if CUSTOM_NAME:
 
 
 ####################################
-# DIRECT CONNECTIONS
-####################################
-
-ENABLE_DIRECT_CONNECTIONS = os.getenv('ENABLE_DIRECT_CONNECTIONS', 'False').lower() == 'true'
-ENABLE_DIRECT_INTEGRATIONS = os.getenv('ENABLE_DIRECT_INTEGRATIONS', 'False').lower() == 'true'
-
-####################################
 # OPENAI_API
 ####################################
 
@@ -1915,32 +1908,6 @@ SUBAGENTS_SYSTEM_PROMPT = os.getenv('SUBAGENTS_SYSTEM_PROMPT', '')
 
 ENABLE_USER_STATUS = os.getenv('ENABLE_USER_STATUS', 'True').lower() == 'true'
 
-ENABLE_EVALUATION_ARENA_MODELS = os.getenv('ENABLE_EVALUATION_ARENA_MODELS', 'True').lower() == 'true'
-try:
-    evaluation_arena_models = JSONCodec.loads(os.getenv('EVALUATION_ARENA_MODELS', '[]'))
-    if not isinstance(evaluation_arena_models, list) or not all(
-        isinstance(model, dict) for model in evaluation_arena_models
-    ):
-        raise ValueError('EVALUATION_ARENA_MODELS must be a JSON list of objects')
-except Exception as e:
-    log.exception(f'Error loading EVALUATION_ARENA_MODELS: {e}')
-    evaluation_arena_models = []
-
-EVALUATION_ARENA_MODELS = evaluation_arena_models
-
-DEFAULT_ARENA_MODEL = {
-    'id': 'arena-model',
-    'name': 'Arena Model',
-    'meta': {
-        # LICENSE covers this Open WebUI fallback logo.
-        # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-        # https://docs.openwebui.com/license.
-        'profile_image_url': '/favicon.png',
-        'description': 'Submit your questions to anonymous AI chatbots and vote on the best response.',
-        'model_ids': None,
-    },
-}
-
 WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
 
 ENABLE_ADMIN_EXPORT = os.getenv('ENABLE_ADMIN_EXPORT', 'True').lower() == 'true'
@@ -2682,8 +2649,6 @@ ENABLE_LDAP_GROUP_CREATION = os.getenv('ENABLE_LDAP_GROUP_CREATION', 'False').lo
 LDAP_ATTRIBUTE_FOR_GROUPS = os.getenv('LDAP_ATTRIBUTE_FOR_GROUPS', 'memberOf')
 
 DEFAULT_CONFIG = {
-    'direct.enable': ENABLE_DIRECT_CONNECTIONS,
-    'direct.integrations.enable': ENABLE_DIRECT_INTEGRATIONS,
     'openai.enable': ENABLE_OPENAI_API,
     'openai.api_keys': OPENAI_API_KEYS,
     'openai.api_base_urls': OPENAI_API_BASE_URLS,
@@ -2970,8 +2935,6 @@ DEFAULT_CONFIG = {
     'subagents.max_output': SUBAGENTS_MAX_OUTPUT,
     'subagents.system_prompt': SUBAGENTS_SYSTEM_PROMPT,
     'users.enable_status': ENABLE_USER_STATUS,
-    'evaluation.arena.enable': ENABLE_EVALUATION_ARENA_MODELS,
-    'evaluation.arena.models': EVALUATION_ARENA_MODELS,
     'webhook_url': WEBHOOK_URL,
     'ui.enable_community_sharing': ENABLE_COMMUNITY_SHARING,
     'ui.enable_message_rating': ENABLE_MESSAGE_RATING,

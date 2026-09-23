@@ -236,7 +236,6 @@ from open_webui.utils.middleware import (
     process_chat_response,
 )
 from open_webui.utils.misc import get_response_error_detail, merge_model_params
-from open_webui.utils.model_ids import strip_provider_model_prefix
 from open_webui.utils.models import (
     check_model_access,
     get_all_base_models,
@@ -612,12 +611,6 @@ async def initialize_runtime_config(app: FastAPI):
                         f'{type(e).__name__}: {e}' if str(e) else type(e).__name__,
                     )
 
-    arena_models = await Config.get('evaluation.arena.models', []) or []
-    if any('access_control' in m.get('meta', {}) for m in arena_models):
-        for model in arena_models:
-            migrate_access_control(model.get('meta', {}))
-        await Config.upsert({'evaluation.arena.models': arena_models})
-
     app.state.EMBEDDING_FUNCTION = None
     app.state.RERANKING_FUNCTION = None
     app.state.ef = None
@@ -893,75 +886,6 @@ async def get_base_models(request: Request, user=Depends(get_admin_user)):
     return {'data': models}
 
 
-class ModelUnloadForm(BaseModel):
-    model: str
-
-
-@app.post('/api/models/unload')
-async def unload_model(request: Request, form_data: ModelUnloadForm, user=Depends(get_admin_user)):
-    """
-    Unified model unload endpoint.
-    Resolves the provider that owns the model and calls its native unload mechanism.
-    Supports OpenAI-compatible providers that expose an unload mechanism.
-    """
-    model_id = form_data.model
-
-    openai_models = getattr(request.app.state, 'OPENAI_MODELS', None) or {}
-
-    seen = set()
-    while model_id not in openai_models and model_id not in seen:
-        seen.add(model_id)
-        model_info = await Models.get_model_by_id(model_id)
-        if not model_info or not model_info.base_model_id:
-            break
-        model_id = model_info.base_model_id
-
-    # --- OpenAI-compatible providers ---
-    if model_id in openai_models:
-        openai_config = await Config.get_many('openai.api_configs', 'openai.api_base_urls', 'openai.api_keys')
-        openai_api_configs = openai_config.get('openai.api_configs') or {}
-        openai_base_urls = openai_config.get('openai.api_base_urls') or []
-        openai_api_keys = openai_config.get('openai.api_keys') or []
-        model_info = openai_models[model_id]
-        idx = model_info.get('urlIdx')
-        api_config = openai_api_configs.get(str(idx), {})
-        provider = api_config.get('provider', '')
-        base_url = openai_base_urls[idx]
-        key = openai_api_keys[idx] if idx < len(openai_api_keys) else ''
-
-        if provider == 'llama.cpp':
-            root_url = base_url.rstrip('/').removesuffix('/v1')
-            actual_model = strip_provider_model_prefix(model_id, api_config.get('prefix_id'))
-            try:
-                timeout = aiohttp.ClientTimeout(total=30)
-                async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-                    headers = {
-                        'Content-Type': 'application/json',
-                        **({'Authorization': f'Bearer {key}'} if key else {}),
-                    }
-                    async with session.post(
-                        f'{root_url}/models/unload',
-                        json={'model': actual_model},
-                        headers=headers,
-                    ) as r:
-                        if not r.ok:
-                            detail = await r.text()
-                            raise HTTPException(status_code=r.status, detail=detail)
-                        return await r.json()
-            except HTTPException:
-                raise
-            except Exception as e:
-                log.exception(f'Failed to unload model via llama.cpp: {e}')
-                raise HTTPException(status_code=500, detail=str(e))
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f'Provider "{provider or "default"}" does not support model unloading',
-            )
-
-    raise HTTPException(status_code=404, detail=f'Model "{model_id}" not found')
-
-
 ##################################
 # Embeddings
 ##################################
@@ -992,17 +916,6 @@ async def embeddings(request: Request, form_data: dict, user=Depends(get_verifie
     return await generate_embeddings(request, form_data, user)
 
 
-async def _set_direct_model(request: Request, model_item: dict, user) -> None:
-    model_meta = (model_item.get('info') or {}).get('meta') or {}
-    knowledge_items = model_meta.get('knowledge')
-    if knowledge_items:
-        from open_webui.utils.access_control.files import get_accessible_folder_files
-
-        model_meta['knowledge'] = await get_accessible_folder_files(knowledge_items, user)
-    request.state.direct = True
-    request.state.model = model_item
-
-
 @app.post('/api/chat/completions')
 @app.post('/api/v1/chat/completions')  # Experimental: Compatibility with OpenAI API
 async def chat_completion(
@@ -1014,7 +927,7 @@ async def chat_completion(
         await get_all_models(request, user=user)
 
     model_id = form_data.get('model', None)
-    model_item = form_data.pop('model_item', {})
+    form_data.pop('model_item', None)
     tasks = form_data.pop('background_tasks', None)
 
     metadata = {}
@@ -1022,44 +935,35 @@ async def chat_completion(
         model_info = None
         fallback_model = None
         missing_base_model = False
-        if not model_item.get('direct', False):
-            if model_id not in request.app.state.MODELS:
-                raise Exception('Model not found')
+        if model_id not in request.app.state.MODELS:
+            raise Exception('Model not found')
 
-            model = request.app.state.MODELS[model_id]
-            model_info = await Models.get_model_by_id(model_id)
-            missing_base_model = bool(
-                model_info and model_info.base_model_id and model_info.base_model_id not in request.app.state.MODELS
+        model = request.app.state.MODELS[model_id]
+        model_info = await Models.get_model_by_id(model_id)
+        missing_base_model = bool(
+            model_info and model_info.base_model_id and model_info.base_model_id not in request.app.state.MODELS
+        )
+
+        if missing_base_model and ENABLE_CUSTOM_MODEL_FALLBACK:
+            fallback_model_id = next(
+                (
+                    model_id.strip()
+                    for model_id in ((await Config.get('ui.default_models')) or '').split(',')
+                    if model_id.strip()
+                ),
+                None,
             )
+            if fallback_model_id:
+                fallback_model = request.app.state.MODELS.get(fallback_model_id)
 
-            if missing_base_model and ENABLE_CUSTOM_MODEL_FALLBACK:
-                fallback_model_id = next(
-                    (
-                        model_id.strip()
-                        for model_id in ((await Config.get('ui.default_models')) or '').split(',')
-                        if model_id.strip()
-                    ),
-                    None,
-                )
-                if fallback_model_id:
-                    fallback_model = request.app.state.MODELS.get(fallback_model_id)
-
-            # Check if user has access to the model
-            if not BYPASS_MODEL_ACCESS_CONTROL and (user.role != 'admin' or not BYPASS_ADMIN_ACCESS_CONTROL):
-                try:
-                    access_model_info = (
-                        model_info.model_copy(update={'base_model_id': None})
-                        if fallback_model is not None
-                        else model_info
-                    )
-                    await check_model_access(user, model, model_info=access_model_info)
-                    if fallback_model is not None:
-                        await check_model_access(user, fallback_model)
-                except Exception as e:
-                    raise e
-        else:
-            model = model_item
-            await _set_direct_model(request, model, user)
+        # Check if user has access to the model
+        if not BYPASS_MODEL_ACCESS_CONTROL and (user.role != 'admin' or not BYPASS_ADMIN_ACCESS_CONTROL):
+            access_model_info = (
+                model_info.model_copy(update={'base_model_id': None}) if fallback_model is not None else model_info
+            )
+            await check_model_access(user, model, model_info=access_model_info)
+            if fallback_model is not None:
+                await check_model_access(user, fallback_model)
 
         # Read before the fallback below can rebind model to a different one.
         model_capabilities = ((model.get('info') or {}).get('meta') or {}).get('capabilities') or {}
@@ -1180,7 +1084,6 @@ async def chat_completion(
             'variables': form_data.get('variables', {}),
             'chat_variables': chat_variables,
             'model': model,
-            'direct': model_item.get('direct', False),
             'params': {
                 'stream_delta_chunk_size': stream_delta_chunk_size,
                 'reasoning_tags': reasoning_tags,
@@ -1992,10 +1895,7 @@ async def chat_completed(request: Request, form_data: dict, user=Depends(get_ver
     await verify_chat_ownership(form_data.get('chat_id'), user)
 
     try:
-        model_item = form_data.pop('model_item', {})
-
-        if model_item.get('direct', False):
-            await _set_direct_model(request, model_item, user)
+        form_data.pop('model_item', None)
 
         return await chat_completed_handler(request, form_data, user)
     except Exception as e:
@@ -2010,10 +1910,7 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user=De
     await verify_chat_ownership(form_data.get('chat_id'), user)
 
     try:
-        model_item = form_data.pop('model_item', {})
-
-        if model_item.get('direct', False):
-            await _set_direct_model(request, model_item, user)
+        form_data.pop('model_item', None)
 
         return await chat_action_handler(request, action_id, form_data, user)
     except Exception as e:
@@ -2159,8 +2056,6 @@ async def get_app_config(request: Request):
         'ui.enable_login_form',
         'auth.enable_api_keys',
         'ui.enable_password_change_form',
-        'direct.enable',
-        'direct.integrations.enable',
         'folders.enable',
         'folders.max_file_count',
         'chat.context_compaction.enable',
@@ -2241,8 +2136,6 @@ async def get_app_config(request: Request):
                     'enable_version_update_check': ENABLE_VERSION_UPDATE_CHECK,
                     'enable_public_active_users_count': ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
                     'enable_easter_eggs': ENABLE_EASTER_EGGS,
-                    'enable_direct_connections': config.get('direct.enable'),
-                    'enable_direct_integrations': config.get('direct.integrations.enable', False),
                     'enable_plugins': ENABLE_PLUGINS,
                     'enable_folders': config.get('folders.enable'),
                     'folder_max_file_count': config.get('folders.max_file_count'),

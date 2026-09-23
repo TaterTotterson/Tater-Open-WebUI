@@ -125,7 +125,7 @@
 			taskConfig.TASK_MODEL_PARAMS = taskConfig.TASK_MODEL_PARAMS ?? {};
 
 			workspaceModels = await getBaseModels(localStorage.token);
-			baseModels = await getModels(localStorage.token, null, false);
+			baseModels = await getModels(localStorage.token, false);
 
 			models = baseModels.map((m: any) => {
 				const workspaceModel = workspaceModels.find((wm: any) => wm.id === m.id);

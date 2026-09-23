@@ -24,9 +24,6 @@ export const isApp = writable(false);
 export const appInfo = writable(null);
 export const appData = writable(null);
 
-// Frontend
-export const MODEL_DOWNLOAD_POOL = writable({});
-
 export const mobile = writable(false);
 
 export const socket: Writable<null | Socket> = writable(null);
@@ -172,7 +169,7 @@ type BaseModel = {
 	id: string;
 	name: string;
 	info?: ModelConfig;
-	owned_by: 'openai' | 'arena';
+	owned_by: 'openai';
 };
 
 export interface OpenAIModel extends BaseModel {
@@ -223,7 +220,6 @@ type Settings = {
 	scrollOnResponseGeneration?: boolean;
 	showFilesOnTerminalSelect?: boolean;
 	terminalFileDisplay?: 'sidebar' | 'inline';
-	directConnections?: null;
 	chatBubble?: boolean;
 	copyFormatted?: boolean;
 	models?: string[];
@@ -322,8 +318,6 @@ type Config = {
 		enable_memories: boolean;
 		enable_plugins?: boolean;
 		enable_autocomplete_generation: boolean;
-		enable_direct_connections: boolean;
-		enable_direct_integrations?: boolean;
 		enable_version_update_check: boolean;
 		folder_max_file_count?: number;
 		websocket_heartbeat_interval?: number | null;

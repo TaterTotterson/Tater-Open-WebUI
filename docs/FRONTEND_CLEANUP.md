@@ -17,6 +17,13 @@ terminal, file navigation, and Tater configuration paths.
   and provider-specific advanced-parameter UI.
 - The now-unreachable generic provider administration and personal connection
   component trees; the focused Tater settings page is the provider setup UI.
+- Browser-direct connections and completion RPC handling.
+- Generic provider model discovery, download queues, load/eject controls, and
+  their client APIs.
+- Arena configuration, random-model response metadata, and arena-specific
+  rating UI.
+- The final orphaned workspace model screen, editor, and editor-only selector
+  components. The shared knowledge picker and audio voice input remain.
 
 The corresponding feature defaults are off. Plugins also default off so a new
 TaterChat install does not expose the inherited extension surface accidentally.

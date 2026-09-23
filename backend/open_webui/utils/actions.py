@@ -32,19 +32,12 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
     if not request.app.state.MODELS:
         await get_all_models(request, user=user)
 
-    if getattr(request.state, 'direct', False) and hasattr(request.state, 'model'):
-        models = {
-            request.state.model['id']: request.state.model,
-        }
-    else:
-        models = request.app.state.MODELS
-
     data = form_data
     model_id = data['model']
 
-    if model_id not in models:
+    if model_id not in request.app.state.MODELS:
         raise Exception('Model not found')
-    model = models[model_id]
+    model = request.app.state.MODELS[model_id]
 
     # Availability gate — keep this route consistent with the actions a model
     # actually surfaces to the client. Executing admin-authored Function code is
@@ -53,9 +46,7 @@ async def chat_action(request: Request, action_id: str, form_data: dict, user: A
     if action.type != 'action' or not action.is_active:
         raise Exception(f'Action not available: {action_id}')
 
-    # Direct connections carry a client-supplied model the caller already owns,
-    # so scope the model-bound checks to server-resolved models.
-    if not getattr(request.state, 'direct', False) and user.role != 'admin':
+    if user.role != 'admin':
         await check_model_access(user, model)
         # model['actions'] entries are '<function_id>' or '<function_id>.<sub_id>';
         # the function id is always the prefix.

@@ -31,7 +31,7 @@ from open_webui.env import (
     MODELS_CACHE_TTL,
     REDIS_KEY_PREFIX,
 )
-from open_webui.events import EVENTS, publish_event, publish_model_provider_request_failed
+from open_webui.events import publish_model_provider_request_failed
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.config import Config
 from open_webui.models.groups import Groups
@@ -39,7 +39,7 @@ from open_webui.models.models import Models
 from open_webui.models.users import UserModel
 from open_webui.utils.access_control import check_model_access, has_permission
 from open_webui.utils.anthropic import ANTHROPIC_VERSION, get_anthropic_models, is_anthropic_url
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.headers import get_custom_headers, include_user_info_headers
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import convert_logit_bias_input_to_json
@@ -238,80 +238,6 @@ def get_microsoft_entra_id_access_token():
 
 router = APIRouter()
 
-LLAMACPP_LOADED_STATES = {'loaded', 'sleeping'}
-LLAMACPP_UNLOADED_STATES = {'loading', 'unloaded'}
-MODEL_MANAGEMENT_ENDPOINTS = {
-    'llama.cpp': {
-        'list': '/models',
-        'download': '/models',
-        'delete': '/models',
-        'load': '/models/load',
-        'unload': '/models/unload',
-        'sse': '/models/sse',
-    },
-    'lmstudio': {
-        'list': '/api/v1/models',
-        'download': '/api/v1/models/download',
-        'download_status': '/api/v1/models/download/status/{job_id}',
-        'load': '/api/v1/models/load',
-        'unload': '/api/v1/models/unload',
-    },
-}
-
-
-def get_model_management_root_url(url: str, provider: str) -> str:
-    root_url = url.rstrip('/')
-    if provider in ('llama.cpp', 'lmstudio'):
-        for suffix in ('/api/v1', '/api/v0', '/v1'):
-            if root_url.endswith(suffix):
-                return root_url.removesuffix(suffix)
-
-    return root_url
-
-
-def get_provider_model_loaded_state(model: dict, provider: str, manual_model_ids: bool = False) -> bool | None:
-    if provider == 'lmstudio':
-        if model.get('loaded_instances'):
-            return True
-
-        state = model.get('state')
-        if state == 'loaded':
-            return True
-        if state == 'not-loaded':
-            return False
-
-        return None
-
-    if provider != 'llama.cpp':
-        return None
-
-    status = model.get('status')
-    if isinstance(status, dict):
-        value = status.get('value')
-        if value in LLAMACPP_LOADED_STATES:
-            return True
-        if value in LLAMACPP_UNLOADED_STATES:
-            return False
-
-    if not manual_model_ids and 'status' not in model:
-        return True
-
-    return None
-
-
-OPENAI_CONFIG_KEYS = {
-    'ENABLE_OPENAI_API': 'openai.enable',
-    'OPENAI_API_BASE_URLS': 'openai.api_base_urls',
-    'OPENAI_API_KEYS': 'openai.api_keys',
-    'OPENAI_API_CONFIGS': 'openai.api_configs',
-}
-
-
-async def get_openai_config() -> dict:
-    values = await Config.get_many(*OPENAI_CONFIG_KEYS.values())
-    return {field: values[storage_key] for field, storage_key in OPENAI_CONFIG_KEYS.items() if storage_key in values}
-
-
 async def get_openai_runtime_config() -> tuple[bool, list[str], list[str], dict]:
     values = await Config.get_many('openai.enable', 'openai.api_base_urls', 'openai.api_keys', 'openai.api_configs')
     return (
@@ -352,100 +278,6 @@ async def clear_openai_model_cache(request: Request):
         models.clear()
     else:
         request.app.state.MODELS = {}
-
-
-async def get_model_management_connection(url_idx: int) -> tuple[str, str, dict, str]:
-    if not await Config.get('openai.enable'):
-        raise HTTPException(status_code=503, detail='OpenAI API is disabled')
-
-    try:
-        url, key, api_config = await get_openai_connection(url_idx)
-    except IndexError:
-        raise HTTPException(status_code=404, detail='Connection not found')
-
-    provider = api_config.get('provider', '')
-    if provider not in MODEL_MANAGEMENT_ENDPOINTS:
-        raise HTTPException(
-            status_code=400,
-            detail=f'Provider "{provider or "default"}" does not support model management',
-        )
-
-    return get_model_management_root_url(url, provider), key, api_config, provider
-
-
-def get_model_management_path(provider: str, operation: str, path_params: dict | None = None) -> str:
-    try:
-        path = MODEL_MANAGEMENT_ENDPOINTS[provider][operation]
-    except KeyError:
-        raise HTTPException(status_code=400, detail=f'Provider "{provider}" does not support {operation}')
-
-    return path.format(**(path_params or {}))
-
-
-def get_model_management_payload(provider: str, operation: str, payload: dict | None) -> dict | None:
-    if provider == 'lmstudio' and operation == 'unload' and payload:
-        return {'instance_id': payload.get('instance_id') or payload.get('model')}
-
-    return payload
-
-
-async def send_model_management_request(
-    request: Request,
-    url_idx: int,
-    operation: str,
-    method: str = 'GET',
-    payload: dict | None = None,
-    query: dict | None = None,
-    path_params: dict | None = None,
-    stream: bool = False,
-    user: UserModel | None = None,
-):
-    root_url, key, api_config, provider = await get_model_management_connection(url_idx)
-    path = get_model_management_path(provider, operation, path_params=path_params)
-    payload = get_model_management_payload(provider, operation, payload)
-    headers, cookies = await get_headers_and_cookies(request, root_url, key, api_config, user=user)
-
-    response = None
-    streaming = False
-    try:
-        session = await get_session()
-        response = await session.request(
-            method,
-            f'{root_url}{path}',
-            json=payload,
-            params=query,
-            headers=headers,
-            cookies=cookies,
-            ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            timeout=get_client_timeout(stream=stream),
-        )
-
-        if not response.ok:
-            try:
-                error = await response.json(loads=JSONCodec.loads)
-            except Exception:
-                error = await response.text()
-            raise HTTPException(status_code=response.status, detail=error)
-
-        if stream:
-            streaming = True
-            return StreamingResponse(
-                stream_wrapper(response, passthrough=True),
-                status_code=response.status,
-                headers=_clean_proxy_headers(response.headers),
-            )
-
-        try:
-            return await response.json(loads=JSONCodec.loads)
-        except Exception:
-            return {'success': True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=response.status if response else 500, detail=str(e))
-    finally:
-        if not streaming:
-            await cleanup_response(response)
 
 
 async def get_anthropic_request_target(request: Request, form_data: dict, user: UserModel):
@@ -536,62 +368,6 @@ async def count_anthropic_tokens(request: Request, form_data: dict, user: UserMo
         raise HTTPException(status_code=502, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
     finally:
         await cleanup_response(response)
-
-
-@router.get('/config')
-async def get_config(request: Request, user=Depends(get_admin_user)):
-    return await get_openai_config()
-
-
-class OpenAIConfigForm(BaseModel):
-    ENABLE_OPENAI_API: bool | None = None
-    OPENAI_API_BASE_URLS: list[str]
-    OPENAI_API_KEYS: list[str]
-    OPENAI_API_CONFIGS: dict
-
-
-@router.post('/config/update')
-async def update_config(request: Request, form_data: OpenAIConfigForm, user=Depends(get_admin_user)):
-    api_keys = form_data.OPENAI_API_KEYS
-
-    if len(api_keys) > len(form_data.OPENAI_API_BASE_URLS):
-        api_keys = api_keys[: len(form_data.OPENAI_API_BASE_URLS)]
-    elif len(api_keys) < len(form_data.OPENAI_API_BASE_URLS):
-        api_keys = [*api_keys, *([''] * (len(form_data.OPENAI_API_BASE_URLS) - len(api_keys)))]
-
-    valid_keys = set(map(str, range(len(form_data.OPENAI_API_BASE_URLS))))
-    api_configs = {key: value for key, value in form_data.OPENAI_API_CONFIGS.items() if key in valid_keys}
-
-    await Config.upsert(
-        {
-            'openai.enable': form_data.ENABLE_OPENAI_API,
-            'openai.api_base_urls': form_data.OPENAI_API_BASE_URLS,
-            'openai.api_keys': api_keys,
-            'openai.api_configs': api_configs,
-        }
-    )
-
-    await clear_openai_model_cache(request)
-
-    await publish_event(
-        request,
-        EVENTS.MODEL_PROVIDER_CONFIG_UPDATED,
-        actor=user,
-        subject_id='openai',
-        subject_type='model.provider_config',
-        data={
-            'provider': 'openai',
-            'enabled': form_data.ENABLE_OPENAI_API,
-            'base_url_count': len(form_data.OPENAI_API_BASE_URLS),
-        },
-    )
-
-    return {
-        'ENABLE_OPENAI_API': form_data.ENABLE_OPENAI_API,
-        'OPENAI_API_BASE_URLS': form_data.OPENAI_API_BASE_URLS,
-        'OPENAI_API_KEYS': api_keys,
-        'OPENAI_API_CONFIGS': api_configs,
-    }
 
 
 @router.post('/audio/speech')
@@ -793,7 +569,7 @@ async def get_filtered_models(models, user, db=None):
 async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
     log.info('get_all_models()')
 
-    enable_openai_api, api_base_urls, _, api_configs = await get_openai_runtime_config()
+    enable_openai_api, api_base_urls, _, _ = await get_openai_runtime_config()
     if not enable_openai_api:
         request.app.state.OPENAI_MODELS = {}
         return {'data': []}
@@ -818,8 +594,6 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
             if model_list is not None and 'error' not in model_list:
                 base_url = api_base_urls[idx]
                 hostname = urlparse(base_url).hostname if base_url else None
-                api_config = api_configs.get(str(idx), api_configs.get(base_url, {}))
-
                 for model in model_list:
                     model_id = model.get('id') or model.get('name')
 
@@ -839,14 +613,6 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
                             'urlIdx': idx,
                         }
 
-                        loaded = get_provider_model_loaded_state(
-                            model,
-                            provider,
-                            manual_model_ids=bool(api_config.get('model_ids')),
-                        )
-                        if loaded is not None:
-                            merged['loaded'] = loaded
-
                         models[model_id] = merged
 
         return models
@@ -859,293 +625,16 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
 
 
 @router.get('/models')
-@router.get('/models/{url_idx}')
-async def get_models(request: Request, url_idx: int | None = None, user=Depends(get_verified_user)):
-    if url_idx is not None and user.role != 'admin':
-        raise HTTPException(status_code=401, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-
+async def get_models(request: Request, user=Depends(get_verified_user)):
     if not await Config.get('openai.enable'):
         raise HTTPException(status_code=503, detail='OpenAI API is disabled')
 
-    models = {
-        'data': [],
-    }
-
-    if url_idx is None:
-        models = await get_all_models(request, user=user)
-    else:
-        url, key, api_config = await get_openai_connection(url_idx)
-
-        r = None
-        async with aiohttp.ClientSession(
-            trust_env=True,
-            timeout=_MODEL_LIST_TIMEOUT,
-        ) as session:
-            try:
-                headers, cookies = await get_headers_and_cookies(request, url, key, api_config, user=user)
-
-                if api_config.get('azure') or api_config.get('provider') == 'azure':
-                    models = {
-                        'data': api_config.get('model_ids', []) or [],
-                        'object': 'list',
-                    }
-                elif is_anthropic_url(url):
-                    models = await get_anthropic_models(url, key, user=user)
-                    if models is None:
-                        raise Exception('Failed to connect to Anthropic API')
-                else:
-                    async with session.get(
-                        f'{url}/models',
-                        headers=headers,
-                        cookies=cookies,
-                        ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                    ) as r:
-                        if r.status != 200:
-                            error_detail = f'HTTP Error: {r.status}'
-                            try:
-                                res = await r.json(loads=JSONCodec.loads)
-                                if 'error' in res:
-                                    error_detail = f'External Error: {res["error"]}'
-                            except Exception:
-                                pass
-                            raise Exception(error_detail)
-
-                        response_data = await r.json(loads=JSONCodec.loads)
-
-                        if 'api.openai.com' in url:
-                            response_data['data'] = [
-                                model
-                                for model in response_data.get('data', [])
-                                if not any(name in model['id'] for name in _UNSUPPORTED_OPENAI_MODEL_KEYWORDS)
-                            ]
-
-                        models = response_data
-            except aiohttp.ClientError as e:
-                # ClientError covers all aiohttp requests issues
-                log.exception(f'Client error: {str(e)}')
-                # LICENSE covers this Open WebUI error identifier.
-                # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-                # https://docs.openwebui.com/license.
-                raise HTTPException(status_code=500, detail='Open WebUI: Server Connection Error')
-            except Exception as e:
-                log.exception(f'Unexpected error: {e}')
-                error_detail = f'Unexpected error: {str(e)}'
-                raise HTTPException(status_code=500, detail=error_detail)
+    models = await get_all_models(request, user=user)
 
     if user.role == 'user' and not BYPASS_MODEL_ACCESS_CONTROL:
         models['data'] = await get_filtered_models(models, user)
 
     return models
-
-
-class ProviderModelOperationForm(BaseModel):
-    model: str
-    model_config = ConfigDict(extra='allow')
-
-
-@router.get('/models/{url_idx}/catalog')
-async def get_provider_model_catalog(request: Request, url_idx: int, user=Depends(get_admin_user)):
-    return await send_model_management_request(request, url_idx, 'list', user=user)
-
-
-@router.post('/models/{url_idx}/download')
-async def download_provider_model(
-    request: Request,
-    url_idx: int,
-    form_data: ProviderModelOperationForm,
-    user=Depends(get_admin_user),
-):
-    root_url, _, api_config, provider = await get_model_management_connection(url_idx)
-    payload = form_data.model_dump(exclude_none=True)
-    payload['model'] = strip_provider_model_prefix(payload['model'], api_config.get('prefix_id'))
-
-    result = await send_model_management_request(request, url_idx, 'download', 'POST', payload, user=user)
-    await clear_openai_model_cache(request)
-    await publish_event(
-        request,
-        EVENTS.MODEL_PROVIDER_MODEL_CREATED,
-        actor=user,
-        subject_id=payload['model'],
-        data={'provider': provider, 'url_idx': url_idx, 'base_url': root_url},
-    )
-    return result
-
-
-@router.get('/models/{url_idx}/download/status/{job_id}')
-async def get_provider_model_download_status(
-    request: Request,
-    url_idx: int,
-    job_id: str,
-    user=Depends(get_admin_user),
-):
-    return await send_model_management_request(
-        request,
-        url_idx,
-        'download_status',
-        path_params={'job_id': job_id},
-        user=user,
-    )
-
-
-@router.post('/models/{url_idx}/load')
-async def load_provider_model(
-    request: Request,
-    url_idx: int,
-    form_data: ProviderModelOperationForm,
-    user=Depends(get_admin_user),
-):
-    _, _, api_config, _ = await get_model_management_connection(url_idx)
-    payload = form_data.model_dump(exclude_none=True)
-    payload['model'] = strip_provider_model_prefix(payload['model'], api_config.get('prefix_id'))
-
-    result = await send_model_management_request(request, url_idx, 'load', 'POST', payload, user=user)
-    await clear_openai_model_cache(request)
-    return result
-
-
-@router.post('/models/{url_idx}/unload')
-async def unload_provider_model(
-    request: Request,
-    url_idx: int,
-    form_data: ProviderModelOperationForm,
-    user=Depends(get_admin_user),
-):
-    _, _, api_config, _ = await get_model_management_connection(url_idx)
-    payload = form_data.model_dump(exclude_none=True)
-    payload['model'] = strip_provider_model_prefix(payload['model'], api_config.get('prefix_id'))
-
-    result = await send_model_management_request(request, url_idx, 'unload', 'POST', payload, user=user)
-    await clear_openai_model_cache(request)
-    return result
-
-
-@router.get('/models/{url_idx}/sse')
-async def stream_provider_model_events(request: Request, url_idx: int, user=Depends(get_admin_user)):
-    return await send_model_management_request(request, url_idx, 'sse', stream=True, user=user)
-
-
-@router.delete('/models/{url_idx}')
-async def delete_provider_model(
-    request: Request,
-    url_idx: int,
-    model: str,
-    user=Depends(get_admin_user),
-):
-    root_url, _, api_config, provider = await get_model_management_connection(url_idx)
-    actual_model = strip_provider_model_prefix(model, api_config.get('prefix_id'))
-
-    result = await send_model_management_request(
-        request,
-        url_idx,
-        'delete',
-        'DELETE',
-        query={'model': actual_model},
-        user=user,
-    )
-    await clear_openai_model_cache(request)
-    await publish_event(
-        request,
-        EVENTS.MODEL_PROVIDER_MODEL_DELETED,
-        actor=user,
-        subject_id=actual_model,
-        data={'provider': provider, 'url_idx': url_idx, 'base_url': root_url},
-    )
-    return result
-
-
-class ConnectionVerificationForm(BaseModel):
-    url: str
-    key: str
-
-    config: dict | None = None
-
-
-@router.post('/verify')
-async def verify_connection(
-    request: Request,
-    form_data: ConnectionVerificationForm,
-    user=Depends(get_admin_user),
-):
-    url = form_data.url
-    key = form_data.key
-
-    api_config = form_data.config or {}
-
-    async with aiohttp.ClientSession(
-        trust_env=True,
-        timeout=_MODEL_LIST_TIMEOUT,
-    ) as session:
-        try:
-            headers, cookies = await get_headers_and_cookies(request, url, key, api_config, user=user)
-
-            if api_config.get('azure') or api_config.get('provider') == 'azure':
-                # Only set api-key header if not using Azure Entra ID authentication
-                auth_type = api_config.get('auth_type', 'bearer')
-                if auth_type not in ('azure_ad', 'microsoft_entra_id'):
-                    headers['api-key'] = key
-
-                # Azure v1 format: base URL already ends with /openai/v1,
-                # use standard /models endpoint without api-version.
-                is_azure_v1 = bool(re.search(r'/openai/v1(?:/|$)', url))
-
-                if is_azure_v1:
-                    verify_url = f'{url.rstrip("/")}/models'
-                else:
-                    api_version = api_config.get('api_version', '') or '2023-03-15-preview'
-                    verify_url = f'{url}/openai/models?api-version={api_version}'
-
-                async with session.get(
-                    url=verify_url,
-                    headers=headers,
-                    cookies=cookies,
-                    ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                ) as r:
-                    try:
-                        response_data = await r.json(loads=JSONCodec.loads)
-                    except Exception:
-                        response_data = await r.text()
-
-                    if r.status != 200:
-                        if isinstance(response_data, (dict, list)):
-                            return JSONResponse(status_code=r.status, content=response_data)
-                        else:
-                            return PlainTextResponse(status_code=r.status, content=response_data)
-
-                    return response_data
-            elif is_anthropic_url(url):
-                result = await get_anthropic_models(url, key)
-                if result is None:
-                    raise HTTPException(status_code=500, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
-                if 'error' in result:
-                    raise HTTPException(status_code=500, detail=result['error'])
-                return result
-            else:
-                async with session.get(
-                    f'{url}/models',
-                    headers=headers,
-                    cookies=cookies,
-                    ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                ) as r:
-                    try:
-                        response_data = await r.json(loads=JSONCodec.loads)
-                    except Exception:
-                        response_data = await r.text()
-
-                    if r.status != 200:
-                        if isinstance(response_data, (dict, list)):
-                            return JSONResponse(status_code=r.status, content=response_data)
-                        else:
-                            return PlainTextResponse(status_code=r.status, content=response_data)
-
-                    return response_data
-
-        except aiohttp.ClientError as e:
-            # ClientError covers all aiohttp requests issues
-            log.exception(f'Client error: {str(e)}')
-            raise HTTPException(status_code=500, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
-        except Exception as e:
-            log.exception(f'Unexpected error: {e}')
-            raise HTTPException(status_code=500, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
 
 
 def get_azure_allowed_params(api_version: str) -> set[str]:

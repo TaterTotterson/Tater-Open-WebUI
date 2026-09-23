@@ -3,10 +3,7 @@ import logging
 import sys
 
 from fastapi import Request
-from open_webui.config import (
-    BYPASS_ADMIN_ACCESS_CONTROL,
-    DEFAULT_ARENA_MODEL,
-)
+from open_webui.config import BYPASS_ADMIN_ACCESS_CONTROL
 from open_webui.env import BYPASS_MODEL_ACCESS_CONTROL, ENABLE_PLUGINS, GLOBAL_LOG_LEVEL, REDIS_KEY_PREFIX
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.config import Config
@@ -17,7 +14,7 @@ from open_webui.utils.chat_variables import get_chat_variables_schema
 from open_webui.models.users import UserModel
 from open_webui.routers import openai
 from open_webui.socket.utils import RedisDict
-from open_webui.utils.access_control import has_access, has_base_model_access
+from open_webui.utils.access_control import has_base_model_access
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.plugin import (
     get_functions_cache,
@@ -51,8 +48,6 @@ async def get_all_base_models(request: Request, user: UserModel = None):
 async def get_all_models(request, refresh: bool = False, user: UserModel = None):
     config = await Config.get_many(
         'models.base_models_cache',
-        'evaluation.arena.enable',
-        'evaluation.arena.models',
         'models.default_metadata',
     )
     if refresh:
@@ -91,42 +86,6 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
     # If there are no models, return an empty list
     if len(models) == 0:
         return []
-
-    # Add arena models
-    if config.get('evaluation.arena.enable'):
-        arena_models = []
-        arena_config = config.get('evaluation.arena.models') or []
-        if len(arena_config) > 0:
-            arena_models = [
-                {
-                    'id': model['id'],
-                    'name': model['name'],
-                    'info': {
-                        'meta': model['meta'],
-                    },
-                    'object': 'model',
-                    'created': 0,
-                    'owned_by': 'arena',
-                    'arena': True,
-                }
-                for model in arena_config
-            ]
-        else:
-            # Add default arena model
-            arena_models = [
-                {
-                    'id': DEFAULT_ARENA_MODEL['id'],
-                    'name': DEFAULT_ARENA_MODEL['name'],
-                    'info': {
-                        'meta': DEFAULT_ARENA_MODEL['meta'],
-                    },
-                    'object': 'model',
-                    'created': 0,
-                    'owned_by': 'arena',
-                    'arena': True,
-                }
-            ]
-        models = models + arena_models
 
     # One query per type: the global sets are subsets of the active sets, so
     # deriving them from the same rows halves the function-table queries.
@@ -431,62 +390,46 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
 
 async def check_model_access(user, model, model_info=None, db=None):
-    if model.get('arena'):
-        meta = model.get('info', {}).get('meta', {})
-        access_grants = meta.get('access_grants', [])
-        if not await has_access(
+    # Callers that already fetched the row (chat completion entry) pass it in
+    if model_info is None or model_info.id != model.get('id'):
+        model_info = await Models.get_model_by_id(model.get('id'), db=db)
+    if not model_info:
+        log.warning(
+            'Model access denied: user_id=%r model_id=%r reason=model_unregistered',
             user.id,
+            model.get('id'),
+        )
+        raise Exception('Model not found')
+
+    # One group-membership fetch shared by the direct check and every
+    # base-model hop; skipped when no check below needs it.
+    user_group_ids = None
+    if user.id != model_info.user_id or model_info.base_model_id:
+        user_group_ids = {group.id for group in await Groups.get_groups_by_member_id(user.id, db=db)}
+
+    if not (
+        user.id == model_info.user_id
+        or await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='model',
+            resource_id=model_info.id,
             permission='read',
-            access_grants=access_grants,
+            user_group_ids=user_group_ids,
             db=db,
-        ):
-            log.warning(
-                'Model access denied: user_id=%r model_id=%r reason=arena_read_denied',
-                user.id,
-                model.get('id'),
-            )
-            raise Exception('Model not found')
-    else:
-        # Callers that already fetched the row (chat completion entry) pass it in
-        if model_info is None or model_info.id != model.get('id'):
-            model_info = await Models.get_model_by_id(model.get('id'), db=db)
-        if not model_info:
-            log.warning(
-                'Model access denied: user_id=%r model_id=%r reason=model_unregistered',
-                user.id,
-                model.get('id'),
-            )
-            raise Exception('Model not found')
+        )
+    ):
+        log.warning(
+            'Model access denied: user_id=%r model_id=%r reason=model_read_denied',
+            user.id,
+            model_info.id,
+        )
+        raise Exception('Model not found')
 
-        # One group-membership fetch shared by the direct check and every
-        # base-model hop; skipped when no check below needs it.
-        user_group_ids = None
-        if user.id != model_info.user_id or model_info.base_model_id:
-            user_group_ids = {group.id for group in await Groups.get_groups_by_member_id(user.id, db=db)}
-
-        if not (
-            user.id == model_info.user_id
-            or await AccessGrants.has_access(
-                user_id=user.id,
-                resource_type='model',
-                resource_id=model_info.id,
-                permission='read',
-                user_group_ids=user_group_ids,
-                db=db,
-            )
-        ):
-            log.warning(
-                'Model access denied: user_id=%r model_id=%r reason=model_read_denied',
-                user.id,
-                model_info.id,
-            )
-            raise Exception('Model not found')
-
-        # Enforce access on chained base models
-        if not await has_base_model_access(
-            user.id, model_info, user_role=user.role, user_group_ids=user_group_ids, db=db
-        ):
-            raise Exception('Model not found')
+    # Enforce access on chained base models
+    if not await has_base_model_access(
+        user.id, model_info, user_role=user.role, user_group_ids=user_group_ids, db=db
+    ):
+        raise Exception('Model not found')
 
 
 async def get_filtered_models(models, user, db=None):
@@ -496,8 +439,6 @@ async def get_filtered_models(models, user, db=None):
     ) and not BYPASS_MODEL_ACCESS_CONTROL:
         model_infos = {}
         for model in models:
-            if model.get('arena'):
-                continue
             info = model.get('info')
             if info:
                 model_infos[model['id']] = info
@@ -516,18 +457,6 @@ async def get_filtered_models(models, user, db=None):
 
         filtered_models = []
         for model in models:
-            if model.get('arena'):
-                meta = model.get('info', {}).get('meta', {})
-                access_grants = meta.get('access_grants', [])
-                if await has_access(
-                    user.id,
-                    permission='read',
-                    access_grants=access_grants,
-                    user_group_ids=user_group_ids,
-                ):
-                    filtered_models.append(model)
-                continue
-
             model_info = model_infos.get(model['id'])
             if model_info:
                 if (

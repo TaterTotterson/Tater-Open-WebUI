@@ -117,7 +117,9 @@ TaterChat is being reduced from its Open WebUI baseline in measured,
 build-tested slices. The Tater provider profile, bundled local runtime,
 conditional Hydra tool, focused prompt/agent loop, and initial route/provider
 cleanup are implemented. Retrieval and other inherited subsystems remain where
-they are still coupled to retained chat and media paths.
+they are still coupled to retained chat and media paths. Browser-direct
+connections, generic provider model management, and model arenas have been
+removed; the focused Tater profile is the only chat-provider setup surface.
 
 ## Upstream and license
 
