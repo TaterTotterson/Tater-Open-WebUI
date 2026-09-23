@@ -1,7 +1,6 @@
 <script>
 	import { io } from 'socket.io-client';
 	import { spring } from 'svelte/motion';
-	import { createPyodideWorker } from '$lib/pyodide/createPyodideWorker';
 	import { Toaster, toast } from 'svelte-sonner';
 
 	let loadingProgress = spring(0, {
@@ -28,18 +27,14 @@
 		appInfo,
 		toolServers,
 		playingNotificationSound,
-		channels,
-		channelId,
 		terminalServers,
 		connectedUserTerminals,
 		showControls,
 		showFileNavPath,
 		showFileNavDir,
-		pyodideWorker,
 		desktopEvent
 	} from '$lib/stores';
 	import { refreshChatList } from '$lib/stores/chatList';
-	import { getFileContentById } from '$lib/apis/files';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { beforeNavigate } from '$app/navigation';
@@ -80,7 +75,6 @@
 	import { getOutputText } from '$lib/components/chat/Messages/structuredOutput';
 	import { getUserSettings } from '$lib/apis/users';
 	import dayjs from 'dayjs';
-	import { getChannels } from '$lib/apis/channels';
 
 	const unregisterServiceWorkers = async () => {
 		if ('serviceWorker' in navigator) {
@@ -279,161 +273,6 @@
 		});
 	};
 
-	/**
-	 * Get or create the persistent Pyodide worker.
-	 * The worker persists across executions so the virtual FS (IDBFS) is preserved.
-	 */
-	const getOrCreateWorker = () => {
-		let worker = $pyodideWorker;
-		if (!worker) {
-			worker = createPyodideWorker();
-			pyodideWorker.set(worker);
-		}
-		return worker;
-	};
-
-	const executePythonAsWorker = async (id, code, cb, files = []) => {
-		let result = null;
-		let stdout = null;
-		let stderr = null;
-
-		let executing = true;
-		let packages = [
-			/\bimport\s+requests\b|\bfrom\s+requests\b/.test(code) ? 'requests' : null,
-			/\bimport\s+bs4\b|\bfrom\s+bs4\b/.test(code) ? 'beautifulsoup4' : null,
-			/\bimport\s+numpy\b|\bfrom\s+numpy\b/.test(code) ? 'numpy' : null,
-			/\bimport\s+pandas\b|\bfrom\s+pandas\b/.test(code) ? 'pandas' : null,
-			/\bimport\s+matplotlib\b|\bfrom\s+matplotlib\b/.test(code) ? 'matplotlib' : null,
-			/\bimport\s+seaborn\b|\bfrom\s+seaborn\b/.test(code) ? 'seaborn' : null,
-			/\bimport\s+sklearn\b|\bfrom\s+sklearn\b/.test(code) ? 'scikit-learn' : null,
-			/\bimport\s+scipy\b|\bfrom\s+scipy\b/.test(code) ? 'scipy' : null,
-			/\bimport\s+re\b|\bfrom\s+re\b/.test(code) ? 'regex' : null,
-			/\bimport\s+seaborn\b|\bfrom\s+seaborn\b/.test(code) ? 'seaborn' : null,
-			/\bimport\s+sympy\b|\bfrom\s+sympy\b/.test(code) ? 'sympy' : null,
-			/\bimport\s+tiktoken\b|\bfrom\s+tiktoken\b/.test(code) ? 'tiktoken' : null,
-			/\bimport\s+pytz\b|\bfrom\s+pytz\b/.test(code) ? 'pytz' : null,
-			/\bimport\s+openpyxl\b|\bfrom\s+openpyxl\b/.test(code) ? 'openpyxl' : null,
-			/\.(read|to)_excel\(|\.Excel(Writer|File)\(/.test(code) ? 'openpyxl' : null
-		].filter(Boolean);
-
-		const worker = getOrCreateWorker();
-
-		// Fetch file content from the server and prepare for the worker
-		let filePayloads = [];
-		if (files && files.length > 0) {
-			for (const file of files) {
-				try {
-					const fileId = file?.id;
-					const fileName = file?.filename || file?.name || 'file';
-					if (fileId) {
-						const content = await getFileContentById(fileId);
-						if (content) {
-							filePayloads.push({ name: fileName, data: content });
-						}
-					}
-				} catch (e) {
-					console.error('Failed to fetch file for Pyodide:', e);
-				}
-			}
-		}
-
-		worker.postMessage({
-			type: 'execute',
-			id: id,
-			code: code,
-			packages: packages,
-			files: filePayloads.length > 0 ? filePayloads : undefined
-		});
-
-		// Timeout for this specific execution (not the worker itself)
-		let timeoutId = setTimeout(() => {
-			if (executing) {
-				executing = false;
-				stderr = 'Execution Time Limit Exceeded';
-
-				// Terminate and recreate the worker on timeout
-				worker.terminate();
-				pyodideWorker.set(null);
-
-				if (cb) {
-					cb(
-						JSON.parse(
-							JSON.stringify(
-								{
-									stdout: stdout,
-									stderr: stderr,
-									result: result
-								},
-								(_key, value) => (typeof value === 'bigint' ? value.toString() : value)
-							)
-						)
-					);
-				}
-			}
-		}, 60000);
-
-		// Use addEventListener so multiple concurrent executions don't clobber each other
-		const onMessage = (event) => {
-			const { id: eventId, ...data } = event.data;
-			// Only handle responses for this execution ID
-			if (eventId !== id) return;
-			// Ignore FS responses (they use a type field)
-			if (data.type && data.type.startsWith('fs:')) return;
-
-			console.log('pyodideWorker.onmessage', event);
-			clearTimeout(timeoutId);
-			worker.removeEventListener('message', onMessage);
-			worker.removeEventListener('error', onError);
-
-			data['stdout'] && (stdout = data['stdout']);
-			data['stderr'] && (stderr = data['stderr']);
-			data['result'] && (result = data['result']);
-
-			if (cb) {
-				cb(
-					JSON.parse(
-						JSON.stringify(
-							{
-								stdout: stdout,
-								stderr: stderr,
-								result: result
-							},
-							(_key, value) => (typeof value === 'bigint' ? value.toString() : value)
-						)
-					)
-				);
-			}
-
-			executing = false;
-		};
-
-		const onError = (event) => {
-			console.log('pyodideWorker.onerror', event);
-			clearTimeout(timeoutId);
-			worker.removeEventListener('message', onMessage);
-			worker.removeEventListener('error', onError);
-
-			if (cb) {
-				cb(
-					JSON.parse(
-						JSON.stringify(
-							{
-								stdout: stdout,
-								stderr: stderr,
-								result: result
-							},
-							(_key, value) => (typeof value === 'bigint' ? value.toString() : value)
-						)
-					)
-				);
-			}
-			executing = false;
-		};
-
-		worker.addEventListener('message', onMessage);
-		worker.addEventListener('error', onError);
-	};
-
 	const resolveToolServer = (serverUrl) => {
 		let toolServer = $settings?.toolServers?.find((server) => server.url === serverUrl);
 		if (!toolServer) {
@@ -596,50 +435,11 @@
 		const type = event?.data?.type ?? null;
 		const data = event?.data?.data ?? null;
 
-		// Calendar alerts are not chat-scoped, handle before chat_id checks
-		if (type === 'calendar:alert' && data) {
-			const timeStr =
-				data.minutes_until <= 0
-					? $i18n.t('Starting now')
-					: data.minutes_until === 1
-						? $i18n.t('Starting in 1 minute')
-						: $i18n.t('Starting in {{count}} minutes', { count: data.minutes_until });
-
-			toast.custom(NotificationToast, {
-				componentProps: {
-					onClick: () => {
-						goto('/calendar');
-					},
-					title: data.title,
-					content: timeStr
-				},
-				duration: 30000,
-				unstyled: true
-			});
-
-			if ($isLastActiveTab) {
-				if ($settings?.notificationEnabled ?? false) {
-					new Notification(`${data.title} / Open WebUI`, {
-						body: timeStr,
-						// LICENSE covers this Open WebUI notification identifier.
-						// Do not alter, remove, obscure, or replace it except as LICENSE permits:
-						// https://docs.openwebui.com/license.
-						icon: `${WEBUI_BASE_URL}/static/favicon.png`
-					});
-				}
-			}
-			return;
-		}
-
-		// Session-targeted RPC calls (code execution, tool calls, direct completion)
+		// Session-targeted RPC calls (tool calls and direct completion)
 		// must ALWAYS be processed regardless of active chat or tab visibility,
 		// because the backend's sio.call blocks waiting for our callback response.
 		if (data?.session_id === $socket.id) {
-			if (type === 'execute:python') {
-				console.log('execute:python', data);
-				executePythonAsWorker(data.id, data.code, cb, data.files || []);
-				return;
-			} else if (type === 'execute:tool') {
+			if (type === 'execute:tool') {
 				console.log('execute:tool', data);
 				executeTool(data, cb, event.chat_id);
 				return;
@@ -783,113 +583,6 @@
 				await refreshChatList(localStorage.token);
 			} else if (type === 'chat:tags') {
 				tags.set(await getAllTags(localStorage.token));
-			}
-		}
-	};
-
-	const channelEventHandler = async (event) => {
-		console.log('channelEventHandler', event);
-		if (event.data?.type === 'typing') {
-			return;
-		}
-
-		// handle channel created event
-		if (event.data?.type === 'channel:created') {
-			const res = await getChannels(localStorage.token).catch(async (error) => {
-				return null;
-			});
-
-			if (res) {
-				await channels.set(
-					res.sort(
-						(a, b) =>
-							['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
-					)
-				);
-			}
-
-			return;
-		}
-
-		// check url path
-		const channel = $page.url.pathname.includes(`/channels/${event.channel_id}`);
-
-		let isInBackground = document.visibilityState !== 'visible';
-		if (window.electronAPI) {
-			const res = await window.electronAPI.send({
-				type: 'window:isFocused'
-			});
-			if (res) {
-				isInBackground = !res.isFocused;
-			}
-		}
-
-		if ((!channel || isInBackground) && event?.user?.id !== $user?.id) {
-			await tick();
-			const type = event?.data?.type ?? null;
-			const data = event?.data?.data ?? null;
-
-			if ($channels) {
-				if ($channels.find((ch) => ch.id === event.channel_id) && $channelId !== event.channel_id) {
-					channels.set(
-						$channels.map((ch) => {
-							if (ch.id === event.channel_id) {
-								if (type === 'message') {
-									return {
-										...ch,
-										unread_count: (ch.unread_count ?? 0) + 1,
-										last_message_at: event.created_at
-									};
-								}
-							}
-							return ch;
-						})
-					);
-				} else {
-					const res = await getChannels(localStorage.token).catch(async (error) => {
-						return null;
-					});
-
-					if (res) {
-						await channels.set(
-							res.sort(
-								(a, b) =>
-									['', null, 'group', 'dm'].indexOf(a.type) -
-									['', null, 'group', 'dm'].indexOf(b.type)
-							)
-						);
-					}
-				}
-			}
-
-			if (type === 'message') {
-				const title = `${data?.user?.name}${event?.channel?.type !== 'dm' ? ` (#${event?.channel?.name})` : ''}`;
-
-				if ($isLastActiveTab) {
-					if ($settings?.notificationEnabled ?? false) {
-						// LICENSE covers this Open WebUI notification identifier.
-						// Do not alter, remove, obscure, or replace it except as LICENSE permits:
-						// https://docs.openwebui.com/license.
-						new Notification(`${title} / Open WebUI`, {
-							body: data?.content,
-							icon: `${WEBUI_API_BASE_URL}/users/${data?.user?.id}/profile/image`
-						});
-					}
-				}
-
-				toast.custom(NotificationToast, {
-					componentProps: {
-						onClick: () => {
-							goto(
-								`/channels/${event.channel_id}${data?.parent_id ? `?thread=${data.parent_id}` : ''}`
-							);
-						},
-						content: data?.content,
-						title: `${title}`
-					},
-					duration: 15000,
-					unstyled: true
-				});
 			}
 		}
 	};
@@ -1219,10 +912,8 @@
 		user.subscribe(async (value) => {
 			if (value) {
 				$socket?.off('events', chatEventHandler);
-				$socket?.off('events:channel', channelEventHandler);
 
 				$socket?.on('events', chatEventHandler);
-				$socket?.on('events:channel', channelEventHandler);
 
 				// Set up the token expiry check
 				if (tokenTimer) {
@@ -1231,7 +922,6 @@
 				tokenTimer = setInterval(checkTokenExpiry, 15000);
 			} else {
 				$socket?.off('events', chatEventHandler);
-				$socket?.off('events:channel', channelEventHandler);
 			}
 		});
 

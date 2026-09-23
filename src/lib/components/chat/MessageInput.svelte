@@ -67,14 +67,12 @@
 	import { deleteFileById } from '$lib/apis/files';
 	import { getChatById } from '$lib/apis/chats';
 	import { getFolderById } from '$lib/apis/folders';
-	import { getNoteById } from '$lib/apis/notes';
 	import { getSessionUser } from '$lib/apis/auths';
 
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 	import { matchKeybinding, Shortcut } from '$lib/shortcuts';
 	import { resolveLocalizedModelName } from '$lib/utils/localizedContent';
 
-	import { createNoteHandler } from '../notes/utils';
 	import { getSuggestionRenderer } from '../common/RichTextInput/suggestions';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
@@ -110,7 +108,6 @@
 	import CommandSuggestionList from './MessageInput/CommandSuggestionList.svelte';
 	import Knobs from '../icons/Knobs.svelte';
 	import ValvesModal from '../workspace/common/ValvesModal.svelte';
-	import Note from '../icons/Note.svelte';
 	import AskUserCard from './AskUserCard.svelte';
 	import { goto } from '$app/navigation';
 	import InputModal from '../common/InputModal.svelte';
@@ -1196,25 +1193,6 @@
 		});
 	};
 
-	const createNote = async () => {
-		if (inputContent?.md.trim() === '' && inputContent?.html.trim() === '') {
-			toast.error($i18n.t('Cannot create an empty note.'));
-			return;
-		}
-
-		const res = await createNoteHandler(
-			dayjs().format('YYYY-MM-DD'),
-			inputContent?.md,
-			inputContent?.html
-		);
-
-		if (res) {
-			// Clear the input content saved in session storage.
-			sessionStorage.removeItem('chat-input');
-			goto(`/notes/${res.id}`);
-		}
-	};
-
 	const onDragOver = (e: DragEvent) => {
 		e.preventDefault();
 
@@ -1277,23 +1255,6 @@
 						};
 						if (!files.find((f) => f.id === folderItem.id)) {
 							files = [...files, folderItem];
-						}
-					}
-					dragged = false;
-					e.stopPropagation();
-					return;
-				} else if (data.type === 'note' && data.id) {
-					// Fetch the note to get its title, then add as a reference note
-					const note = await getNoteById(localStorage.token, data.id);
-					if (note) {
-						const noteItem = {
-							type: 'note',
-							id: note.id,
-							name: note.title,
-							status: 'processed'
-						};
-						if (!files.find((f) => f.id === noteItem.id)) {
-							files = [...files, noteItem];
 						}
 					}
 					dragged = false;

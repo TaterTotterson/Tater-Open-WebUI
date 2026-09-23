@@ -392,7 +392,7 @@ except Exception:
 # Code Interpreter
 ####################################
 
-ENABLE_CODE_EXECUTION = os.getenv('ENABLE_CODE_EXECUTION', 'True').lower() == 'true'
+ENABLE_CODE_EXECUTION = os.getenv('ENABLE_CODE_EXECUTION', 'False').lower() == 'true'
 
 CODE_EXECUTION_ENGINE = os.getenv('CODE_EXECUTION_ENGINE', 'pyodide')
 
@@ -407,9 +407,9 @@ CODE_EXECUTION_JUPYTER_AUTH_PASSWORD = os.getenv('CODE_EXECUTION_JUPYTER_AUTH_PA
 
 CODE_EXECUTION_JUPYTER_TIMEOUT = int(os.getenv('CODE_EXECUTION_JUPYTER_TIMEOUT', '60'))
 
-ENABLE_CODE_INTERPRETER = os.getenv('ENABLE_CODE_INTERPRETER', 'True').lower() == 'true'
+ENABLE_CODE_INTERPRETER = os.getenv('ENABLE_CODE_INTERPRETER', 'False').lower() == 'true'
 
-ENABLE_MEMORIES = os.getenv('ENABLE_MEMORIES', 'True').lower() == 'true'
+ENABLE_MEMORIES = os.getenv('ENABLE_MEMORIES', 'False').lower() == 'true'
 ENABLE_MEMORY_SYSTEM_CONTEXT = os.getenv('ENABLE_MEMORY_SYSTEM_CONTEXT', 'True').lower() == 'true'
 ENABLE_MEMORY_BACKGROUND_REVIEW = os.getenv('ENABLE_MEMORY_BACKGROUND_REVIEW', 'False').lower() == 'true'
 MEMORIES_REVIEW_INTERVAL_TURNS = int(os.getenv('MEMORIES_REVIEW_INTERVAL_TURNS', '10'))
@@ -2018,9 +2018,9 @@ ENABLE_CHANNELS = os.getenv('ENABLE_CHANNELS', 'False').lower() == 'true'
 
 CHANNEL_MODEL_RESPONSE_MODE = os.getenv('CHANNEL_MODEL_RESPONSE_MODE', 'thread')
 
-ENABLE_CALENDAR = os.getenv('ENABLE_CALENDAR', 'True').lower() == 'true'
+ENABLE_CALENDAR = os.getenv('ENABLE_CALENDAR', 'False').lower() == 'true'
 
-ENABLE_AUTOMATIONS = os.getenv('ENABLE_AUTOMATIONS', 'True').lower() == 'true'
+ENABLE_AUTOMATIONS = os.getenv('ENABLE_AUTOMATIONS', 'False').lower() == 'true'
 
 ENABLE_SUBAGENTS = os.getenv('ENABLE_SUBAGENTS', 'False').lower() == 'true'
 SUBAGENTS_BACKGROUND_ENABLED = os.getenv('SUBAGENTS_BACKGROUND_ENABLED', 'False').lower() == 'true'
@@ -2036,7 +2036,7 @@ AUTOMATION_MIN_INTERVAL = os.getenv('AUTOMATION_MIN_INTERVAL', '')
 
 AUTOMATION_AUTH_TOKEN_EXPIRES_IN = os.getenv('AUTOMATION_AUTH_TOKEN_EXPIRES_IN', '1h')
 
-ENABLE_NOTES = os.getenv('ENABLE_NOTES', 'True').lower() == 'true'
+ENABLE_NOTES = os.getenv('ENABLE_NOTES', 'False').lower() == 'true'
 
 ENABLE_USER_STATUS = os.getenv('ENABLE_USER_STATUS', 'True').lower() == 'true'
 

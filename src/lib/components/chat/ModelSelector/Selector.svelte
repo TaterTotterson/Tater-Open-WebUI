@@ -8,13 +8,11 @@
 	dayjs.extend(relativeTime);
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { flyAndScale } from '$lib/utils/transitions';
 
 	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
 
 	import { deleteModel, getOllamaVersion, pullModel } from '$lib/apis/ollama';
-	import { deleteModelById } from '$lib/apis/models';
 	import { unloadModel } from '$lib/apis';
 	import {
 		downloadProviderModel,
@@ -804,57 +802,6 @@
 		}
 	};
 
-	let showDeleteConfirm = false;
-	let deleteModelTarget: any = null;
-
-	const deleteModelHandler = async (model: any) => {
-		deleteModelTarget = model;
-		showDeleteConfirm = true;
-	};
-
-	const confirmDeleteModel = async () => {
-		const model = deleteModelTarget;
-		if (!model) return;
-
-		let success = false;
-
-		if (model?.info?.base_model_id) {
-			// Workspace model: only delete the workspace model record, not the underlying base model
-			const res = await deleteModelById(localStorage.token, model.id).catch((error) => {
-				toast.error($i18n.t('Error deleting model: {{error}}', { error }));
-				return null;
-			});
-			success = !!res;
-		} else {
-			// Base Ollama model: delete from Ollama directly
-			const res = await deleteModel(localStorage.token, model.id).catch((error) => {
-				toast.error($i18n.t('Error deleting model: {{error}}', { error }));
-				return null;
-			});
-			success = !!res;
-		}
-
-		if (success) {
-			toast.success(
-				$i18n.t('Model {{modelName}} deleted successfully', { modelName: model.name ?? model.id })
-			);
-
-			// If the deleted model was selected, clear the selection
-			if (value === model.id) {
-				value = '';
-			}
-
-			models.set(
-				await getModels(
-					localStorage.token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
-		}
-
-		deleteModelTarget = null;
-	};
-
 	const ITEM_HEIGHT = 32;
 	const OVERSCAN = 10;
 
@@ -889,17 +836,6 @@
 		Math.ceil((listScrollTop + listViewportHeight) / ITEM_HEIGHT) + OVERSCAN
 	);
 </script>
-
-<ConfirmDialog
-	bind:show={showDeleteConfirm}
-	title={$i18n.t('Delete Model')}
-	message={$i18n.t('Are you sure you want to delete **{{modelName}}**?', {
-		modelName: deleteModelTarget?.name ?? deleteModelTarget?.id ?? ''
-	})}
-	on:confirm={() => {
-		confirmDeleteModel();
-	}}
-/>
 
 <svelte:window on:pointerdown={handlePointerDown} on:keydown={handleKeydown} />
 
@@ -1099,7 +1035,6 @@
 										value={primaryValue}
 										{pinModelHandler}
 										{unloadModelHandler}
-										{deleteModelHandler}
 										{selectionOnly}
 										{compareEnabled}
 										{selectedValues}

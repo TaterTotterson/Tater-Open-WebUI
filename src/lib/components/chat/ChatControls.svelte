@@ -5,7 +5,6 @@
 <script lang="ts">
 	import { onMount, tick, getContext } from 'svelte';
 	import {
-		config,
 		terminalServers,
 		showControls,
 		showCallOverlay,
@@ -24,7 +23,6 @@
 	import Artifacts from './Artifacts.svelte';
 	import Embeds from './ChatControls/Embeds.svelte';
 	import FileNav from './FileNav.svelte';
-	import PyodideFileNav from './PyodideFileNav.svelte';
 	import Overview from './Overview.svelte';
 	import { isSavedChatId } from '$lib/utils/chatId';
 
@@ -80,9 +78,7 @@
 			(!selectedSystemTerminal &&
 				($user?.role === 'admin' || ($user?.permissions?.features?.direct_tool_servers ?? true))))
 	);
-	$: showFilesTab =
-		terminalFilesAvailable ||
-		(codeInterpreterEnabled && $config?.code?.interpreter_engine !== 'jupyter');
+	$: showFilesTab = terminalFilesAvailable;
 	$: showOverviewTab = hasMessages;
 
 	// Tab fallback: if active tab becomes hidden, switch to next available
@@ -294,8 +290,6 @@
 								/>
 							{:else if activeTab === 'files' && terminalFilesAvailable && $selectedTerminalId}
 								<FileNav {chatId} />
-							{:else if activeTab === 'files' && codeInterpreterEnabled}
-								<PyodideFileNav />
 							{:else}
 								<Controls embed={true} {models} bind:chatFiles bind:params />
 							{/if}
@@ -422,8 +416,6 @@
 								/>
 							{:else if activeTab === 'files' && terminalFilesAvailable && $selectedTerminalId}
 								<FileNav overlay={dragged} {chatId} />
-							{:else if activeTab === 'files' && codeInterpreterEnabled}
-								<PyodideFileNav overlay={dragged} />
 							{:else}
 								<Controls embed={true} {models} bind:chatFiles bind:params />
 							{/if}

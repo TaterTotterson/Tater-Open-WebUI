@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
-
 from open_webui.models.config import Config
 from open_webui.routers.openai import clear_openai_model_cache
 from open_webui.utils.auth import get_admin_user
@@ -15,7 +13,7 @@ from open_webui.utils.tater_profile import (
     normalize_tater_api_base_url,
     normalize_tater_model_id,
 )
-
+from pydantic import BaseModel
 
 router = APIRouter()
 

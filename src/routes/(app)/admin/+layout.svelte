@@ -2,7 +2,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
-	import { WEBUI_NAME, config, mobile, showSettings, showSidebar, user } from '$lib/stores';
+	import { WEBUI_NAME, mobile, showSettings, showSidebar, user } from '$lib/stores';
 	import { page } from '$app/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
@@ -15,11 +15,6 @@
 	onMount(async () => {
 		if ($user?.role !== 'admin') {
 			await goto('/', { replaceState: true });
-		} else if (
-			!$config?.features?.enable_plugins &&
-			$page.url.pathname.includes('/admin/functions')
-		) {
-			await goto('/admin', { replaceState: true });
 		}
 		loaded = true;
 	});
@@ -75,24 +70,6 @@
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
 							href="/admin">{$i18n.t('Users')}</a
 						>
-
-						<a
-							draggable="false"
-							class="min-w-fit px-1 text-sm {$page.url.pathname.includes('/admin/evaluations')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-							href="/admin/evaluations">{$i18n.t('Evaluations')}</a
-						>
-
-						{#if $config?.features?.enable_plugins}
-							<a
-								draggable="false"
-								class="min-w-fit px-1 text-sm {$page.url.pathname.includes('/admin/functions')
-									? ''
-									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-								href="/admin/functions">{$i18n.t('Functions')}</a
-							>
-						{/if}
 
 						<a
 							draggable="false"

@@ -24,9 +24,13 @@ modules. This is inherited build-cost debt. Keep the larger heap for baseline
 verification until feature removal brings the bundle down enough to build with
 the default limit.
 
-The production build also downloads a large ignored `static/pyodide/` runtime.
-That browser-side Python stack is a removal target once TaterChat's bundled
-host terminal runtime replaces its use cases.
+The upstream production build also downloads a large ignored `static/pyodide/`
+runtime. TaterChat no longer installs or prepares Pyodide: host-side execution
+is provided by the bundled local terminal runtime instead.
+
+After the first frontend cleanup slice, the production build succeeds on the
+default Node 22 heap and transforms 6,078 modules. The upstream comparison was
+6,366 modules and required the 8 GB heap override.
 
 The untouched upstream `npm run check` baseline is not clean. On this checkout it reports:
 

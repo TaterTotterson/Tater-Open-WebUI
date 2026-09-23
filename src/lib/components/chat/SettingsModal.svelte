@@ -21,22 +21,14 @@
 	import Interface from './Settings/Interface.svelte';
 	import Notifications from './Settings/Notifications.svelte';
 	import Shortcuts from './Settings/Shortcuts.svelte';
-	import Audio from './Settings/Audio.svelte';
 	import DataControls from './Settings/DataControls.svelte';
 	import Usage from './Settings/Usage.svelte';
 	import ArchivedChats from './Settings/ArchivedChats.svelte';
-	import Personalization from './Settings/Personalization.svelte';
 	import Search from '../icons/Search.svelte';
-	import Connections from './Settings/Connections.svelte';
-	import Integrations from './Settings/Integrations.svelte';
 	import DatabaseSettings from '../icons/DatabaseSettings.svelte';
 	import SettingsAlt from '../icons/SettingsAlt.svelte';
-	import Link from '../icons/Link.svelte';
 	import UserCircle from '../icons/UserCircle.svelte';
-	import SoundHigh from '../icons/SoundHigh.svelte';
 	import InfoCircle from '../icons/InfoCircle.svelte';
-	import WrenchAlt from '../icons/WrenchAlt.svelte';
-	import Face from '../icons/Face.svelte';
 	import AppNotification from '../icons/AppNotification.svelte';
 	import AdjustmentsHorizontal from '../icons/AdjustmentsHorizontal.svelte';
 	import ArchiveBox from '../icons/ArchiveBox.svelte';
@@ -47,18 +39,7 @@
 	import AdminGeneral from '$lib/components/admin/Settings/General.svelte';
 	import AdminAuthentication from '$lib/components/admin/Settings/Authentication.svelte';
 	import AdminTater from '$lib/components/admin/Settings/Tater.svelte';
-	import AdminModels from '$lib/components/admin/Settings/Models.svelte';
-	import AdminSubagents from '$lib/components/admin/Settings/Subagents.svelte';
-	import AdminEvaluations from '$lib/components/admin/Settings/Evaluations.svelte';
-	import AdminAnalytics from '$lib/components/admin/Analytics.svelte';
-	import AdminIntegrations from '$lib/components/admin/Settings/Integrations.svelte';
-	import AdminDocuments from '$lib/components/admin/Settings/Documents.svelte';
-	import AdminWebSearch from '$lib/components/admin/Settings/WebSearch.svelte';
-	import AdminCodeExecution from '$lib/components/admin/Settings/CodeExecution.svelte';
 	import AdminInterface from '$lib/components/admin/Settings/Interface.svelte';
-	import AdminAudio from '$lib/components/admin/Settings/Audio.svelte';
-	import AdminImages from '$lib/components/admin/Settings/Images.svelte';
-	import AdminPipelines from '$lib/components/admin/Settings/Pipelines.svelte';
 	import AdminDatabase from '$lib/components/admin/Settings/Database.svelte';
 
 	const i18n: Writable<any> = getContext('i18n');
@@ -144,10 +125,6 @@
 		interface: $i18n.t('Basics'),
 		notifications: $i18n.t('Basics'),
 		shortcuts: $i18n.t('Basics'),
-		connections: $i18n.t('Services'),
-		tools: $i18n.t('Services'),
-		personalization: $i18n.t('Preferences'),
-		audio: $i18n.t('Preferences'),
 		data_controls: $i18n.t('Data'),
 		usage: $i18n.t('Data'),
 		archived_chats: $i18n.t('Data'),
@@ -158,18 +135,7 @@
 		'admin:general': $i18n.t('System'),
 		'admin:authentication': $i18n.t('System'),
 		'admin:connections': $i18n.t('AI'),
-		'admin:models': $i18n.t('AI'),
-		'admin:subagents': $i18n.t('AI'),
-		'admin:evaluations': $i18n.t('Quality'),
-		'admin:analytics': $i18n.t('Quality'),
-		'admin:integrations': $i18n.t('Tools'),
-		'admin:documents': $i18n.t('Tools'),
-		'admin:web': $i18n.t('Tools'),
-		'admin:code-execution': $i18n.t('Tools'),
-		'admin:pipelines': $i18n.t('Tools'),
 		'admin:interface': $i18n.t('Experience'),
-		'admin:audio': $i18n.t('Experience'),
-		'admin:images': $i18n.t('Experience'),
 		'admin:db': $i18n.t('Data')
 	};
 	const settingGroupTitle = (tabId: string) =>
@@ -207,30 +173,6 @@
 			titleKey: 'settings.personal.shortcuts.title',
 			title: $i18n.t('settings.personal.shortcuts.title'),
 			searchPrefixes: ['settings.personal.shortcuts.']
-		},
-		{
-			id: 'connections',
-			titleKey: 'settings.personal.connections.title',
-			title: $i18n.t('settings.personal.connections.title'),
-			searchPrefixes: ['settings.personal.connections.']
-		},
-		{
-			id: 'tools',
-			titleKey: 'settings.personal.tools.title',
-			title: $i18n.t('settings.personal.tools.title'),
-			searchPrefixes: ['settings.personal.tools.']
-		},
-		{
-			id: 'personalization',
-			titleKey: 'settings.personal.personalization.title',
-			title: $i18n.t('settings.personal.personalization.title'),
-			searchPrefixes: ['settings.personal.personalization.']
-		},
-		{
-			id: 'audio',
-			titleKey: 'settings.personal.audio.title',
-			title: $i18n.t('settings.personal.audio.title'),
-			searchPrefixes: ['settings.personal.audio.']
 		},
 		{
 			id: 'data_controls',
@@ -284,76 +226,10 @@
 			searchPrefixes: ['settings.admin.connections.']
 		},
 		{
-			id: 'admin:models',
-			titleKey: 'settings.admin.models.title',
-			title: $i18n.t('settings.admin.models.title'),
-			searchPrefixes: ['settings.admin.models.', 'settings.personal.general.parameters.']
-		},
-		{
-			id: 'admin:subagents',
-			titleKey: 'settings.admin.subagents.title',
-			title: $i18n.t('settings.admin.subagents.title'),
-			searchPrefixes: ['settings.admin.subagents.']
-		},
-		{
 			id: 'admin:interface',
 			titleKey: 'settings.admin.interface.title',
 			title: $i18n.t('settings.admin.interface.title'),
 			searchPrefixes: ['settings.admin.interface.', 'settings.personal.general.parameters.']
-		},
-		{
-			id: 'admin:audio',
-			titleKey: 'settings.admin.audio.title',
-			title: $i18n.t('settings.admin.audio.title'),
-			searchPrefixes: ['settings.admin.audio.']
-		},
-		{
-			id: 'admin:images',
-			titleKey: 'settings.admin.images.title',
-			title: $i18n.t('settings.admin.images.title'),
-			searchPrefixes: ['settings.admin.images.']
-		},
-		{
-			id: 'admin:evaluations',
-			titleKey: 'settings.admin.evaluations.title',
-			title: $i18n.t('settings.admin.evaluations.title'),
-			searchPrefixes: ['settings.admin.evaluations.']
-		},
-		{
-			id: 'admin:analytics',
-			titleKey: 'settings.admin.analytics.title',
-			title: $i18n.t('settings.admin.analytics.title'),
-			searchPrefixes: ['settings.admin.analytics.']
-		},
-		{
-			id: 'admin:integrations',
-			titleKey: 'settings.admin.integrations.title',
-			title: $i18n.t('settings.admin.integrations.title'),
-			searchPrefixes: ['settings.admin.integrations.']
-		},
-		{
-			id: 'admin:documents',
-			titleKey: 'settings.admin.documents.title',
-			title: $i18n.t('settings.admin.documents.title'),
-			searchPrefixes: ['settings.admin.documents.']
-		},
-		{
-			id: 'admin:web',
-			titleKey: 'settings.admin.web.title',
-			title: $i18n.t('settings.admin.web.title'),
-			searchPrefixes: ['settings.admin.web.']
-		},
-		{
-			id: 'admin:code-execution',
-			titleKey: 'settings.admin.codeExecution.title',
-			title: $i18n.t('settings.admin.codeExecution.title'),
-			searchPrefixes: ['settings.admin.codeExecution.']
-		},
-		{
-			id: 'admin:pipelines',
-			titleKey: 'settings.admin.pipelines.title',
-			title: $i18n.t('settings.admin.pipelines.title'),
-			searchPrefixes: ['settings.admin.pipelines.']
 		},
 		{
 			id: 'admin:db',
@@ -378,37 +254,14 @@
 
 	const getAvailableSettings = (personalTabs: SettingsTab[], administratorTabs: SettingsTab[]) => {
 		const personalSettings = personalTabs.filter((tab) => {
-			if (tab.id === 'connections') {
-				return $config?.features?.enable_direct_connections;
-			}
-
-			if (tab.id === 'tools') {
-				return (
-					$config?.features?.enable_direct_integrations === true &&
-					($user?.role === 'admin' ||
-						($user?.role === 'user' && $user?.permissions?.features?.direct_tool_servers))
-				);
-			}
-
 			if (tab.id === 'interface') {
 				return $user?.role === 'admin' || ($user?.permissions?.settings?.interface ?? true);
-			}
-
-			if (tab.id === 'personalization') {
-				return (
-					$config?.features?.enable_memories &&
-					($user?.role === 'admin' || ($user?.permissions?.features?.memories ?? true))
-				);
 			}
 
 			return true;
 		});
 
-		return (
-			$user?.role === 'admin' ? [...personalSettings, ...administratorTabs] : personalSettings
-		).filter(
-			(tab) => tab.id !== 'admin:analytics' || ($config?.features?.enable_admin_analytics ?? true)
-		);
+		return $user?.role === 'admin' ? [...personalSettings, ...administratorTabs] : personalSettings;
 	};
 
 	$: searchIndex = buildSettingsSearchIndex(availableSettings, english, $i18n, {
@@ -451,10 +304,7 @@
 	};
 
 	const getModels = async () => {
-		return await _getModels(
-			localStorage.token,
-			$config?.features?.enable_direct_connections ? ($settings?.directConnections ?? null) : null
-		);
+		return await _getModels(localStorage.token);
 	};
 
 	const adminConfigSaveHandler = async () => {
@@ -620,62 +470,6 @@
 							<Keyboard className="size-3.5" strokeWidth="2" />
 							<span>{$i18n.t('settings.personal.shortcuts.title')}</span>
 						</button>
-					{:else if tabId === 'connections'}
-						{#if $user?.role === 'admin' || ($user?.role === 'user' && $config?.features?.enable_direct_connections)}
-							<button
-								role="tab"
-								aria-controls="tab-connections"
-								aria-selected={selectedTab === 'connections'}
-								class={tabButtonClass(selectedTab === 'connections')}
-								on:click={() => {
-									selectTab('connections');
-								}}
-							>
-								<Link className="size-3.5" strokeWidth="2" />
-								<span>{$i18n.t('settings.personal.connections.title')}</span>
-							</button>
-						{/if}
-					{:else if tabId === 'tools'}
-						{#if $user?.role === 'admin' || ($user?.role === 'user' && $user?.permissions?.features?.direct_tool_servers)}
-							<button
-								role="tab"
-								aria-controls="tab-tools"
-								aria-selected={selectedTab === 'tools'}
-								class={tabButtonClass(selectedTab === 'tools')}
-								on:click={() => {
-									selectTab('tools');
-								}}
-							>
-								<WrenchAlt className="size-3.5" strokeWidth="2" />
-								<span>{$i18n.t('settings.personal.tools.title')}</span>
-							</button>
-						{/if}
-					{:else if tabId === 'personalization'}
-						<button
-							role="tab"
-							aria-controls="tab-personalization"
-							aria-selected={selectedTab === 'personalization'}
-							class={tabButtonClass(selectedTab === 'personalization')}
-							on:click={() => {
-								selectTab('personalization');
-							}}
-						>
-							<Face className="size-3.5" strokeWidth="2" />
-							<span>{$i18n.t('settings.personal.personalization.title')}</span>
-						</button>
-					{:else if tabId === 'audio'}
-						<button
-							role="tab"
-							aria-controls="tab-audio"
-							aria-selected={selectedTab === 'audio'}
-							class={tabButtonClass(selectedTab === 'audio')}
-							on:click={() => {
-								selectTab('audio');
-							}}
-						>
-							<SoundHigh className="size-3.5" strokeWidth="2" />
-							<span>{$i18n.t('settings.personal.audio.title')}</span>
-						</button>
 					{:else if tabId === 'data_controls'}
 						<button
 							role="tab"
@@ -808,34 +602,6 @@
 				<Notifications {saveSettings} />
 			{:else if selectedTab === 'shortcuts'}
 				<Shortcuts {saveSettings} />
-			{:else if selectedTab === 'connections'}
-				<Connections
-					saveSettings={async (updated: Record<string, any>) => {
-						await saveSettings(updated);
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
-			{:else if selectedTab === 'tools'}
-				<Integrations
-					saveSettings={async (updated: Record<string, any>) => {
-						await saveSettings(updated);
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
-			{:else if selectedTab === 'personalization'}
-				<Personalization
-					{saveSettings}
-					on:save={() => {
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
-			{:else if selectedTab === 'audio'}
-				<Audio
-					{saveSettings}
-					on:save={() => {
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
 			{:else if selectedTab === 'data_controls'}
 				<DataControls {saveSettings} />
 			{:else if selectedTab === 'usage'}
@@ -856,48 +622,14 @@
 				<AdminAuthentication />
 			{:else if selectedTab === 'admin:connections'}
 				<AdminTater />
-			{:else if selectedTab === 'admin:models'}
-				<AdminModels bind:tabState />
-			{:else if selectedTab === 'admin:subagents'}
-				<AdminSubagents />
-			{:else if selectedTab === 'admin:evaluations'}
-				<AdminEvaluations />
-			{:else if selectedTab === 'admin:analytics'}
-				<AdminAnalytics />
-			{:else if selectedTab === 'admin:integrations'}
-				<AdminIntegrations {saveSettings} />
-			{:else if selectedTab === 'admin:documents'}
-				<AdminDocuments on:save={adminConfigSaveHandler} />
-			{:else if selectedTab === 'admin:web'}
-				<AdminWebSearch saveHandler={adminConfigSaveHandler} />
-			{:else if selectedTab === 'admin:code-execution'}
-				<AdminCodeExecution saveHandler={adminConfigSaveHandler} />
 			{:else if selectedTab === 'admin:interface'}
 				<AdminInterface
 					on:save={() => {
 						toast.success($i18n.t('Settings saved successfully!'));
 					}}
 				/>
-			{:else if selectedTab === 'admin:audio'}
-				<AdminAudio
-					saveHandler={() => {
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
-			{:else if selectedTab === 'admin:images'}
-				<AdminImages
-					on:save={() => {
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
 			{:else if selectedTab === 'admin:db'}
 				<AdminDatabase
-					saveHandler={() => {
-						toast.success($i18n.t('Settings saved successfully!'));
-					}}
-				/>
-			{:else if selectedTab === 'admin:pipelines'}
-				<AdminPipelines
 					saveHandler={() => {
 						toast.success($i18n.t('Settings saved successfully!'));
 					}}

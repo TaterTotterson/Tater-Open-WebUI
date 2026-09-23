@@ -98,9 +98,6 @@ export const adminFeedbackCount: Writable<number | null> = writable(null);
 export const toolServers = writable([]);
 export const terminalServers: Writable<any[] | null> = writable(null);
 
-// Persistent Pyodide worker for code interpreter FS
-export const pyodideWorker: Writable<Worker | null> = writable(null);
-
 export const banners: Writable<Banner[]> = writable([]);
 
 export const settings: Writable<Settings> = writable({});
@@ -364,7 +361,6 @@ type Config = {
 		enable_direct_connections: boolean;
 		enable_direct_integrations?: boolean;
 		enable_version_update_check: boolean;
-		enable_pyodide_file_persistence?: boolean;
 		folder_max_file_count?: number;
 		websocket_heartbeat_interval?: number | null;
 	};

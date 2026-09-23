@@ -1185,7 +1185,7 @@ VIEW_FILE_DEFAULT_MAX_CHARS = _int_env('VIEW_FILE_DEFAULT_MAX_CHARS', 10_000)
 # TOOLS/FUNCTIONS PIP OPTIONS
 ####################################
 
-ENABLE_PLUGINS = os.getenv('ENABLE_PLUGINS', 'True').lower() == 'true'
+ENABLE_PLUGINS = os.getenv('ENABLE_PLUGINS', 'False').lower() == 'true'
 
 ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS = (
     os.getenv('ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS', 'True').lower() == 'true'

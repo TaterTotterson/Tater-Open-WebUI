@@ -19,7 +19,6 @@
 	import TextToken from './MarkdownInlineTokens/TextToken.svelte';
 	import CodespanToken from './MarkdownInlineTokens/CodespanToken.svelte';
 	import MentionToken from './MarkdownInlineTokens/MentionToken.svelte';
-	import NoteLinkToken from './MarkdownInlineTokens/NoteLinkToken.svelte';
 	import SourceToken from './SourceToken.svelte';
 
 	export let id: string;
@@ -29,36 +28,12 @@
 	export let onSourceClick: Function = () => {};
 
 	/**
-	 * Check if a URL is a same-origin note link and return the note ID if so.
-	 */
-	const getNoteIdFromHref = (href: string): string | null => {
-		try {
-			const url = new URL(href, window.location.origin);
-			if (url.origin === window.location.origin) {
-				const match = url.pathname.match(/^\/notes\/([^/]+)$/);
-				if (match) {
-					return match[1];
-				}
-			}
-		} catch {
-			// Invalid URL
-		}
-		return null;
-	};
-
-	/**
-	 * Handle link clicks - intercept same-origin app URLs for in-app navigation
+	 * Handle link clicks - intercept same-origin chat URLs for in-app navigation.
 	 */
 	const handleLinkClick = (e: MouseEvent, href: string) => {
 		try {
 			const url = new URL(href, window.location.origin);
-			// Check if same origin and an in-app route
-			if (
-				url.origin === window.location.origin &&
-				(url.pathname.startsWith('/notes/') ||
-					url.pathname.startsWith('/c/') ||
-					url.pathname.startsWith('/channels/'))
-			) {
+			if (url.origin === window.location.origin && url.pathname.startsWith('/c/')) {
 				e.preventDefault();
 				goto(url.pathname + url.search + url.hash);
 			}
@@ -74,11 +49,8 @@
 	{:else if token.type === 'html'}
 		<HtmlToken {id} {token} {onSourceClick} />
 	{:else if token.type === 'link'}
-		{@const noteId = getNoteIdFromHref(token.href)}
 		{@const safeHref = safeLinkUrl(token.href)}
-		{#if noteId}
-			<NoteLinkToken {noteId} href={token.href} />
-		{:else if token.tokens}
+		{#if token.tokens}
 			<a
 				href={safeHref}
 				target="_blank"
