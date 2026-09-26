@@ -27,6 +27,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf \
+            /opt/hostedtoolcache \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc
+          df -h /
+
       - name: Set image name
         run: echo "IMAGE_NAME=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
