@@ -2021,7 +2021,6 @@
 		taskIds = null;
 		chatTasks = [];
 
-
 		if ($page.url.searchParams.get('image-generation') === 'true') {
 			imageGenerationEnabled = true;
 		}
@@ -3372,23 +3371,6 @@
 				);
 		}
 
-		const toolIds = [];
-		const toolServerIds = [];
-
-		for (const toolId of selectedToolIds) {
-			if (toolId.startsWith('direct_server:')) {
-				let serverId = toolId.replace('direct_server:', '');
-				// Check if serverId is a number
-				if (!isNaN(parseInt(serverId))) {
-					toolServerIds.push(parseInt(serverId));
-				} else {
-					toolServerIds.push(serverId);
-				}
-			} else {
-				toolIds.push(toolId);
-			}
-		}
-
 		// Menu-selected skills are sent as IDs; inline <$skillId|label> mentions stay
 		// in the message so the backend can inject their full content.
 		const skillIds = [...selectedSkillIds];
@@ -3413,20 +3395,8 @@
 				files: (files?.length ?? 0) > 0 ? files : undefined,
 
 				filter_ids: selectedFilterIds.length > 0 ? selectedFilterIds : undefined,
-				tool_ids: toolIds.length > 0 ? toolIds : undefined,
 				skill_ids: skillIds.length > 0 ? skillIds : undefined,
 				terminal_id: terminalEnabled && $selectedTerminalId ? $selectedTerminalId : undefined,
-				tool_servers: [
-					...($toolServers ?? []).filter(
-						(server, idx) => toolServerIds.includes(idx) || toolServerIds.includes(server?.id)
-					),
-					// Direct terminal servers — always included when enabled (not routed through selectedToolIds)
-					...(terminalEnabled
-						? ($terminalServers ?? [])
-								.filter((server) => !server.id)
-								.map((server) => ({ ...server, is_terminal: true }))
-						: [])
-				],
 				features: getFeatures(),
 				variables: {
 					...getPromptVariables(

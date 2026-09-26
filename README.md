@@ -8,8 +8,10 @@ terminal, filesystem, process, and Git access on the machine running Tater WebUI
 ## How routing works
 
 - `tater/base` handles normal conversation and local computer work.
-- Local tools run inside Tater WebUI; they do not go through Tater or Spudex.
-- `tater/hydra` is called only when the model needs a Tater capability, such
+- Local work uses one model tool, `terminal`, with a single `command` argument.
+  It waits for the command and returns output and exit status in the same call.
+- Terminal commands run inside Tater WebUI; they do not go through Tater or Spudex.
+- `tater_hydra` is the only other model tool. It is called only when the model needs a Tater capability, such
   as controlling a device, using a Verba, Core, Portal, media service, or
   automation.
 - Hydra delegation uses the same standard `POST /v1/chat/completions`

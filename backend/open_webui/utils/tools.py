@@ -7,7 +7,7 @@ import inspect
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from functools import cache, partial, update_wrapper
+from functools import partial, update_wrapper
 from typing import (
     Any,
     get_args,
@@ -41,9 +41,7 @@ from open_webui.models.tools import Tools
 from open_webui.models.users import UserModel
 from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID
 from open_webui.local_terminal.tools import get_local_terminal_tools
-from open_webui.tools.builtin import ask_user, create_tasks, update_task
 from open_webui.utils.access_control import has_connection_access
-from open_webui.utils.chat_id import is_saved_chat_id
 from open_webui.utils.headers import (
     bearer_auth_header,
     get_custom_headers,
@@ -418,52 +416,6 @@ async def get_tools(request: Request, tool_ids: list[str], user: UserModel, extr
     return tools_dict
 
 
-async def get_builtin_tools(
-    request: Request, extra_params: dict, features: dict = None, model: dict = None, is_note_chat: bool = False
-) -> dict[str, dict]:
-    """Return the small set of UI-native tools used by the Tater WebUI loop."""
-    tools_dict = {}
-    model = model or {}
-
-    def is_builtin_tool_enabled(category: str, default: bool = True) -> bool:
-        builtin_tools = model.get('info', {}).get('meta', {}).get('builtinTools', {})
-        return builtin_tools.get(category, default)
-
-    builtin_functions = []
-
-    if is_builtin_tool_enabled('user_input', True):
-        builtin_functions.append(ask_user)
-
-    metadata = extra_params.get('__metadata__') or {}
-    if is_builtin_tool_enabled('tasks') and is_saved_chat_id(metadata.get('chat_id')):
-        builtin_functions.extend([create_tasks, update_task])
-
-    for func in builtin_functions:
-        callable = await get_async_tool_function_and_apply_extra_params(
-            func,
-            {
-                '__request__': request,
-                '__user__': extra_params.get('__user__', {}),
-                '__event_emitter__': extra_params.get('__event_emitter__'),
-                '__event_call__': extra_params.get('__event_call__'),
-                '__metadata__': extra_params.get('__metadata__'),
-                '__chat_id__': extra_params.get('__chat_id__'),
-                '__message_id__': extra_params.get('__message_id__'),
-            },
-            get_builtin_function_introspection(func),
-        )
-
-        spec = get_builtin_tool_spec(func)
-        tools_dict[func.__name__] = {
-            'tool_id': f'builtin:{func.__name__}',
-            'callable': callable,
-            'spec': spec,
-            'type': 'builtin',
-        }
-
-    return tools_dict
-
-
 def parse_description(docstring: str | None) -> str:
     """
     Parse a function's docstring to extract the description.
@@ -634,27 +586,6 @@ def add_terminal_display_file_inline_param(spec: dict) -> dict:
         'description': 'For PDF, DOCX, and PPTX files, open the preview at this 1-based page or slide number.',
     }
     return spec
-
-
-@cache
-def get_builtin_function_introspection(func: Callable):
-    try:
-        type_hints = get_type_hints(func)
-    except Exception:
-        type_hints = {}
-    return inspect.signature(func), type_hints
-
-
-@cache
-def build_builtin_tool_spec_json(func: Callable) -> str:
-    pydantic_model = convert_function_to_pydantic_model(func, get_builtin_function_introspection(func))
-    spec = convert_pydantic_model_to_openai_function_spec(pydantic_model)
-    return JSONCodec.dumps(clean_openai_tool_schema(spec))
-
-
-def get_builtin_tool_spec(func: Callable) -> dict:
-    # callers mutate the spec, so parse a fresh copy out of the cached JSON
-    return JSONCodec.loads(build_builtin_tool_spec_json(func))
 
 
 def get_functions_from_tool(tool: object) -> list[Callable]:

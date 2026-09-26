@@ -35,10 +35,10 @@ used by its terminal-first work loop.
   dependencies and container setup.
 - Retrieval-specific frontend configuration and event definitions.
 
-Tater WebUI retains `ask_user`, `create_tasks`, and `update_task` as UI-native
-coordination tools. Its unrestricted local terminal and conditional
-`tater_hydra` tool remain separate runtime tools and are not affected by the
-built-in-tool reduction.
+The inherited `ask_user`, task, MCP, direct-server, custom Tool/Function, and
+external-terminal paths are not exposed to the chat model. Its complete tool
+surface is the unrestricted local `terminal` command tool plus conditional
+`tater_hydra` delegation.
 
 Image generation/editing and audio transcription/speech are intentionally
 retained as Tater WebUI UI capabilities. Surface tests require both routers to
@@ -65,8 +65,8 @@ existing databases stay upgradeable. They have no registered product routes.
 ## Verification
 
 - Backend surface tests parse the application, assert removed route prefixes
-  are absent, assert isolated files are deleted, and lock the built-in tool
-  module to the three intended public tools.
+  are absent, assert inherited built-in tools are deleted, and lock the local
+  model surface to one synchronous `terminal` tool.
 - The Tater provider, Hydra routing, local terminal, and agent-profile tests run
   alongside the surface tests.
 - Python compilation, frontend production build, Docker Compose validation, and

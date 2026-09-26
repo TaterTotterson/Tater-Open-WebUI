@@ -23,7 +23,7 @@ Tater WebUI must not execute local terminal work through Tater or Spudex. Tater 
 
 ## Model and tool routing
 
-The normal conversation uses `tater/base` (or another non-Hydra model selected by the user). Tater WebUI provides its local shell and process tools in the ordinary OpenAI tool-calling request. Filesystem work is performed with real terminal commands rather than model-facing convenience functions.
+The normal conversation uses `tater/base` (or another non-Hydra model selected by the user). Tater WebUI gives it exactly one local tool, `terminal`, whose only required argument is the shell command. The call waits and returns command output and exit status directly. Filesystem and process work uses real terminal commands rather than convenience tools.
 
 Tater WebUI also provides a client-side `tater_hydra` delegation tool. When the primary model selects that tool, Tater WebUI makes another ordinary request to the same `POST /v1/chat/completions` endpoint with `model: "tater/hydra"`. No private Tater endpoint or server-injected tool is required.
 
@@ -31,16 +31,16 @@ Tater WebUI also provides a client-side `tater_hydra` delegation tool. When the 
 User
   -> Tater WebUI agent loop
        -> ordinary response: tater/base
-       -> local computer task: Tater WebUI shell/process tools
+       -> local computer task: terminal({"command":"..."})
        -> Tater capability: POST /v1/chat/completions with model=tater/hydra
 ```
 
 Examples:
 
 - Explain code: answer with the normal model.
-- Inspect a repository, edit files, run tests, or commit: use Tater WebUI's local tools.
+- Inspect a repository, edit files, run tests, or commit: use `terminal`.
 - Turn on lights or control a Tater-connected device: delegate to `tater/hydra`.
-- Fix a project and announce completion through Tater: use local tools first, then delegate only the announcement to `tater/hydra`.
+- Fix a project and announce completion through Tater: use `terminal` first, then delegate only the announcement to `tater/hydra`.
 
 ## Keep from Open WebUI
 
@@ -104,14 +104,14 @@ The loop continues until the task is complete, blocked on required user input, c
 
 1. Send conversation state, the concise system prompt, and available tool schemas to the normal model.
 2. If the model returns text without tool calls, finish the turn.
-3. Execute local shell/process tools on the Tater WebUI host.
+3. Execute `terminal` commands on the Tater WebUI host and return each result directly to the model.
 4. Execute `tater_hydra` by calling the standard Tater Chat Completions endpoint with `model: "tater/hydra"`.
 5. Append every tool result using standard OpenAI tool messages and continue the model call.
 6. Stream command status, output, and assistant text to the browser throughout the loop.
 7. Require verification appropriate to the change before the agent claims completion.
 8. Detect repeated identical failures and stop with a concrete explanation instead of looping.
 
-Tool plans are limited to 16 calls per step and 32 steps by default, with a hard maximum of 128. Both native OpenAI tool calling and Tater's structured compatibility planner use a bounded loop. Compatibility-mode edits carry a dirty state until a successful verification command runs; attempts to finish early trigger verification reminders and then an explicit incomplete result.
+Tool plans are limited to 16 calls per step and 32 steps by default, with a hard maximum of 128. Both native OpenAI tool calling and Tater's structured compatibility planner use a bounded loop.
 
 The prompt should teach routing, not enumerate the whole Tater tool catalog. Hydra owns its own tool knowledge.
 
@@ -120,13 +120,13 @@ The prompt should teach routing, not enumerate the whole Tater tool catalog. Hyd
 The normal agent prompt will emphasize:
 
 - Answer ordinary questions directly.
-- Use `run_command` and ordinary shell commands for filesystem inspection, edits, processes, Git, builds, tests, and package management on the Tater WebUI host.
+- Use `terminal` and ordinary shell commands for filesystem inspection, edits, processes, Git, builds, tests, and package management on the Tater WebUI host.
 - Use `tater_hydra` only for capabilities provided by the connected Tater system.
 - Inspect before editing and preserve unrelated user changes.
 - Continue after tool results; a successful command is not automatically a completed task.
 - Diagnose failures, adjust, and retry when safe.
 - Verify edits and report the actual result.
-- Track background work, inspect incremental output, and stop processes that are no longer needed.
+- Keep commands foregrounded when practical; manage necessary background work with ordinary shell redirects, logs, `ps`, and `kill`.
 - Ask before destructive or materially ambiguous actions.
 
 ## Delivery sequence
@@ -138,7 +138,7 @@ The normal agent prompt will emphasize:
    [`LOCAL_RUNTIME.md`](LOCAL_RUNTIME.md).
 4. Add the `tater_hydra` delegation tool using the normal Chat Completions endpoint. See
    [`TATER_HYDRA.md`](TATER_HYDRA.md).
-5. Install the focused system prompt and robust multi-tool loop. The loop now includes bounded planning, stable repeated-outcome detection, post-change verification reminders, and model-visible background-process controls.
+5. Install the focused system prompt and bounded tool loop with stable repeated-outcome detection and automatic terminal results.
 6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. Remote Python Pipelines, the general Ollama provider, browser-direct providers, generic provider-management APIs, model arenas, RAG, knowledge bases, memories, web search, embeddings, rerankers, and vector databases have been removed. Normal file attachments now inject stored extracted text directly. Image and audio stay as UI features.
 7. Rebrand permitted surfaces, package the standalone app, and add security/audit documentation.
 

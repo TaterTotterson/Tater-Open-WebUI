@@ -36,8 +36,8 @@ TATER_HYDRA_SYSTEM_PROMPT = """Tater capability routing:
 
 - Use `tater_hydra` only when the request needs a capability owned by the connected Tater system: Verbas, Cores,
   Portals, connected devices, Tater media, or Tater automations.
-- Do not delegate ordinary answers or local computer work. Use the local terminal and filesystem tools for commands,
-  files, Git, builds, tests, package management, and processes.
+- Do not delegate ordinary answers or local computer work. Use `terminal` for commands, files, Git, builds, tests,
+  package management, and processes.
 - Hydra does not receive this conversation automatically. Make every delegated request self-contained and include the
   exact target, action, and constraints it needs.
 - Treat Hydra's result as a tool result. Continue the task after it returns and clearly report the actual outcome.

@@ -15,28 +15,28 @@ SPEC.loader.exec_module(tater_agent)
 class TaterAgentTests(unittest.TestCase):
     def test_parses_fenced_tool_plan(self):
         calls = tater_agent.parse_tool_plan(
-            '```json\n{"tool_calls":[{"name":"run_command","parameters":{"command":"pwd"}}]}\n```'
+            '```json\n{"tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}]}\n```'
         )
 
-        self.assertEqual(calls, [{'name': 'run_command', 'parameters': {'command': 'pwd'}}])
+        self.assertEqual(calls, [{'name': 'terminal', 'parameters': {'command': 'pwd'}}])
 
     def test_parses_empty_plan(self):
         self.assertEqual(tater_agent.parse_tool_plan('{"tool_calls":[]}'), [])
 
     def test_parses_first_tool_plan_without_consuming_trailing_prose(self):
         calls = tater_agent.parse_tool_plan(
-            'Plan: {"tool_calls":[{"name":"read_file","parameters":{"path":"a.py"}}]} '
+            'Plan: {"tool_calls":[{"name":"terminal","parameters":{"command":"cat a.py"}}]} '
             'then explain {not json}.'
         )
 
-        self.assertEqual(calls[0]['name'], 'read_file')
+        self.assertEqual(calls[0]['name'], 'terminal')
 
     def test_rejects_invalid_parameters(self):
         with self.assertRaisesRegex(ValueError, 'must be an object'):
-            tater_agent.parse_tool_plan('{"name":"run_command","parameters":"pwd"}')
+            tater_agent.parse_tool_plan('{"name":"terminal","parameters":"pwd"}')
 
     def test_rejects_oversized_tool_batch(self):
-        payload = {'tool_calls': [{'name': 'read_file', 'parameters': {'path': str(i)}} for i in range(17)]}
+        payload = {'tool_calls': [{'name': 'terminal', 'parameters': {'command': str(i)}} for i in range(17)]}
 
         with self.assertRaisesRegex(ValueError, 'too many calls'):
             tater_agent.parse_tool_plan(json.dumps(payload))
@@ -67,12 +67,12 @@ class TaterAgentTests(unittest.TestCase):
 
     def test_outcome_signature_ignores_process_identity_and_timestamps(self):
         first = tater_agent.tool_outcome_signature(
-            'run_command',
+            'terminal',
             {'command': 'false'},
             {'id': 'first', 'created_at': 1, 'status': 'done', 'exit_code': 1, 'output': ''},
         )
         second = tater_agent.tool_outcome_signature(
-            'run_command',
+            'terminal',
             {'command': 'false'},
             '{"id":"second","created_at":2,"status":"done","exit_code":1,"output":""}',
         )

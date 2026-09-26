@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -16,7 +15,6 @@ from open_webui.internal.db import get_async_session
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.config import Config
 from open_webui.models.groups import Groups
-from open_webui.models.oauth_sessions import OAuthSessions
 from open_webui.models.tools import (
     ToolAccessResponse,
     ToolForm,
@@ -27,7 +25,6 @@ from open_webui.models.tools import (
 )
 from open_webui.utils.access_control import (
     filter_allowed_access_grants,
-    has_connection_access,
     has_permission,
 )
 from open_webui.utils.auth import get_admin_user, get_verified_user
@@ -39,7 +36,7 @@ from open_webui.utils.plugin import (
     replace_imports,
     resolve_valves_schema_options,
 )
-from open_webui.utils.tools import get_tool_servers, get_tool_specs
+from open_webui.utils.tools import get_tool_specs
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,124 +68,7 @@ async def get_tools(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    tools = []
-    bypass_access_control = user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL
-    user_group_ids = (
-        set() if bypass_access_control else {group.id for group in await Groups.get_groups_by_member_id(user.id, db=db)}
-    )
-
-    # Local Tools
-    if ENABLE_PLUGINS:
-        tools_cache = get_tools_cache(request)
-        for tool in await Tools.get_tools(
-            defer_content=True,
-            db=db,
-            user_id=None if bypass_access_control else user.id,
-            user_group_ids=user_group_ids,
-        ):
-            tool_module = tools_cache.get(tool.id)
-            has_user_valves = (
-                hasattr(tool_module, 'UserValves')
-                if tool_module
-                else (tool.meta.has_user_valves if tool.meta else False)
-            )
-            tools.append(
-                ToolUserResponse(
-                    **{
-                        **tool.model_dump(),
-                        'has_user_valves': has_user_valves,
-                    }
-                )
-            )
-
-    # OpenAPI Tool Servers
-    server_connections = {}
-    for server in await get_tool_servers(request):
-        server_idx = server.get('idx', 0)
-        connections = await Config.get('tool_server.connections', [])
-        if server_idx >= len(connections):
-            log.warning(
-                f'Tool server index {server_idx} out of range '
-                f'(have {len(connections)} connections), skipping server {server.get("id")}'
-            )
-            continue
-        connection = connections[server_idx]
-        server_id = f'server:{server.get("id")}'
-        server_connections[server_id] = connection
-
-        tools.append(
-            ToolUserResponse(
-                **{
-                    'id': server_id,
-                    'user_id': server_id,
-                    'name': server.get('openapi', {}).get('info', {}).get('title', 'Tool Server'),
-                    'meta': {
-                        'description': server.get('openapi', {}).get('info', {}).get('description', ''),
-                    },
-                    'updated_at': int(time.time()),
-                    'created_at': int(time.time()),
-                }
-            )
-        )
-
-    # MCP Tool Servers
-    for server in await Config.get('tool_server.connections', []):
-        if server.get('type', 'openapi') == 'mcp' and (server.get('config') or {}).get('enable'):
-            info = server.get('info') or {}
-            server_id = info.get('id')
-            auth_type = server.get('auth_type', 'none')
-
-            session_token = None
-            if auth_type in ('oauth_2.1', 'oauth_2.1_static') and server_id:
-                splits = server_id.split(':')
-                server_id = splits[-1] if len(splits) > 1 else server_id
-
-                session_token = await request.app.state.oauth_client_manager.get_oauth_token(
-                    user.id, f'mcp:{server_id}'
-                )
-
-            tool_id = f'server:mcp:{info.get("id")}'
-            server_connections[tool_id] = server
-
-            tools.append(
-                ToolUserResponse(
-                    **{
-                        'id': tool_id,
-                        'user_id': tool_id,
-                        'name': info.get('name', 'MCP Tool Server'),
-                        'meta': {
-                            'description': info.get('description', ''),
-                        },
-                        'updated_at': int(time.time()),
-                        'created_at': int(time.time()),
-                        **(
-                            {
-                                'authenticated': session_token is not None,
-                            }
-                            if auth_type in ('oauth_2.1', 'oauth_2.1_static')
-                            else {}
-                        ),
-                    }
-                )
-            )
-
-    if not bypass_access_control:
-        tools = [
-            tool
-            for tool in tools
-            if not str(tool.id).startswith('server:')
-            or await has_connection_access(
-                user,
-                server_connections[str(tool.id)],
-                user_group_ids,
-            )
-        ]
-
-    if query:
-        q = query.casefold()
-        tools = [tool for tool in tools if q in (tool.name or '').casefold()]
-
-    return tools
+    return []
 
 
 ############################

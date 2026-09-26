@@ -60,7 +60,7 @@ from open_webui.socket.main import (
     get_event_emitter,
 )
 from open_webui.tasks import clear_response_stream, save_response_stream
-from open_webui.utils.access_control import has_connection_access, has_permission
+from open_webui.utils.access_control import has_permission
 from open_webui.utils.access_control.files import get_owner_accessible_folder_files, has_access_to_file
 from open_webui.utils.access_control.folders import has_folder_access
 from open_webui.utils.ask_user import stage_ask_user_tool_calls
@@ -81,7 +81,6 @@ from open_webui.utils.filter import (
     process_filter_functions,
 )
 from open_webui.utils.json_codec import JSONCodec
-from open_webui.utils.mcp.client import MCPClient
 from open_webui.utils.misc import (
     add_or_update_system_message,
     add_or_update_user_message,
@@ -96,7 +95,6 @@ from open_webui.utils.misc import (
     get_reasoning_details,
     get_system_message,
     is_raster_image_content_type,
-    is_string_allowed,
     merge_system_messages,
     replace_system_message_content,
     set_last_user_message_content,
@@ -114,7 +112,6 @@ from open_webui.utils.skills import (
 from open_webui.utils.task import get_task_model_id, tools_function_calling_generation_template
 from open_webui.utils.tater_agent import (
     TATER_AGENT_REPEAT_LIMIT,
-    TATER_AGENT_VERIFICATION_REMINDER_LIMIT,
     agent_iteration_limit,
     parse_tool_plan,
     render_tool_history,
@@ -122,10 +119,7 @@ from open_webui.utils.tater_agent import (
 )
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
 from open_webui.utils.tools import (
-    build_tool_server_headers,
-    get_builtin_tools,
     get_terminal_tools,
-    get_tools,
     get_updated_tool_function,
 )
 from starlette.responses import JSONResponse, StreamingResponse
@@ -155,7 +149,7 @@ def _is_tool_result_error(value: Any, tool_name: str | None = None) -> bool:
     if not isinstance(parsed, dict):
         return False
 
-    if tool_name in {'run_command', 'verify_command'}:
+    if tool_name == 'terminal':
         exit_code = parsed.get('exit_code')
         if parsed.get('timed_out') is True or (isinstance(exit_code, int) and exit_code != 0):
             return True
@@ -1261,7 +1255,7 @@ async def terminal_event_handler(
 
     - display_file  → emits 'terminal:display_file' to open the file preview.
     - write_file / replace_file_content → emits 'terminal:write_file' to refresh.
-    - run_command / verify_command → emits 'terminal:run_command' to refresh if relevant.
+    - terminal → emits 'terminal:run_command' so the dock can refresh command output.
     """
     if not event_emitter:
         return
@@ -1299,7 +1293,7 @@ async def terminal_event_handler(
                 'data': {'path': path},
             }
         )
-    elif tool_function_name in {'run_command', 'verify_command'}:
+    elif tool_function_name == 'terminal':
         await event_emitter(
             {
                 'type': 'terminal:run_command',
@@ -1391,9 +1385,8 @@ async def chat_completion_tools_handler(
         'This is an iterative agent loop. Select only the next necessary action. Calls returned together must be '
         'independent because they execute as one step. Use the execution history on later steps to inspect results, '
         'fix failures, and verify the work. Never repeat an action that already succeeded unless rerunning it is '
-        'needed to verify a later change. Mark mutating run_command calls with intent=change and checks with '
-        'intent=verify; prefer verify_command for the final check. Return {"tool_calls":[]} only when no more '
-        'tool work is needed.'
+        'needed to verify a later change. Use terminal for every local action; each call already returns its command '
+        'output and exit status. Return {"tool_calls":[]} only when no more tool work is needed.'
     )
     operating_message = get_system_message(body.get('messages', []))
     operating_instructions = get_content_from_message(operating_message) if operating_message else ''
@@ -1491,11 +1484,6 @@ async def chat_completion_tools_handler(
             tool_result_files = []
             tool_result_embeds = []
         failed = _is_tool_result_error(tool_result, tool_function_name)
-        agent_effect = tool.get('agent_effect')
-        if tool_function_name == 'run_command':
-            intent = tool_function_params.get('intent', 'inspect')
-            agent_effect = intent if intent in {'change', 'verify'} else None
-
         if event_emitter:
             try:
                 await terminal_event_handler(
@@ -1542,15 +1530,12 @@ async def chat_completion_tools_handler(
             'parameters': tool_function_params,
             'status': 'failed' if failed else 'completed',
             'result': tool_result,
-            **({'agent_effect': agent_effect} if agent_effect else {}),
         }
 
     history_records = []
     outcome_counts: dict[str, int] = {}
     max_iterations = agent_iteration_limit()
     loop_stopped = False
-    changes_need_verification = False
-    verification_reminders = 0
 
     for iteration in range(1, max_iterations + 1):
         payload = get_tools_function_calling_payload(
@@ -1575,31 +1560,11 @@ async def chat_completion_tools_handler(
             break
 
         if not tool_calls:
-            if changes_need_verification and verification_reminders < TATER_AGENT_VERIFICATION_REMINDER_LIMIT:
-                verification_reminders += 1
-                history_records.append(
-                    {
-                        'iteration': iteration,
-                        'status': 'verification_required',
-                        'result': (
-                            'Local changes were made after the last successful verification. Select verify_command '
-                            'with the appropriate test, build, lint, diff, or status check before finishing.'
-                        ),
-                    }
-                )
-                continue
-            if changes_need_verification:
-                append_agent_notice('The agent stopped with local changes that it did not successfully verify.')
             break
 
         for tool_call in tool_calls:
             record = await tool_call_handler(tool_call, iteration)
             history_records.append(record)
-            if record.get('agent_effect') == 'change':
-                # A failed mutating command may still have produced partial side effects.
-                changes_need_verification = True
-            elif record.get('status') == 'completed' and record.get('agent_effect') == 'verify':
-                changes_need_verification = False
             signature = tool_outcome_signature(record['tool'], record['parameters'], record['result'])
             outcome_counts[signature] = outcome_counts.get(signature, 0) + 1
             if outcome_counts[signature] >= TATER_AGENT_REPEAT_LIMIT:
@@ -2153,57 +2118,6 @@ def sanitize_tool_pairs(messages: list[dict]) -> list[dict]:
     return sanitized
 
 
-async def connect_mcp_server(
-    request,
-    server_id: str,
-    user,
-    metadata: dict,
-    extra_params: dict,
-) -> tuple[MCPClient, list[dict]] | None:
-    """Resolve an MCP server connection, authenticate, and return (client, tool_specs).
-
-    Returns None if the server is not found or access is denied.
-    """
-    mcp_server_connection = None
-    for server_connection in await Config.get('tool_server.connections', []):
-        if server_connection.get('type', '') == 'mcp' and (server_connection.get('info') or {}).get('id') == server_id:
-            mcp_server_connection = server_connection
-            break
-
-    if not mcp_server_connection:
-        log.error(f'MCP server with id {server_id} not found')
-        return None
-
-    if not await has_connection_access(user, mcp_server_connection):
-        log.warning(f'Access denied to MCP server {server_id} for user {user.id}')
-        return None
-
-    headers, _ = await build_tool_server_headers(
-        mcp_server_connection,
-        request,
-        user,
-        server_id=server_id,
-        metadata=metadata,
-        extra_params=extra_params,
-    )
-
-    client = MCPClient()
-    await client.connect(
-        url=mcp_server_connection.get('url', ''),
-        headers=headers if headers else None,
-    )
-
-    function_name_filter_list = mcp_server_connection.get('config', {}).get('function_name_filter_list', '')
-    if isinstance(function_name_filter_list, str):
-        function_name_filter_list = function_name_filter_list.split(',')
-
-    tool_specs = await client.list_tool_specs()
-    if function_name_filter_list:
-        tool_specs = [spec for spec in tool_specs if is_string_allowed(spec['name'], function_name_filter_list)]
-
-    return client, tool_specs
-
-
 async def process_chat_payload(request, form_data, user, metadata, model):
     # Ensure chat_id is always a string — external API clients may omit it.
     if not isinstance(metadata.get('chat_id'), str):
@@ -2373,7 +2287,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 form_data['files'] = [*folder_files, *form_data.get('files', [])]
 
     form_data.pop('variables', None)
-    payload_tools = form_data.get('tools', None)  # snapshot before filters
+    # Tater WebUI owns its tool surface. Ignore caller-, filter-, and server-supplied tools.
+    form_data.pop('tools', None)
+    payload_tools = None
 
     filter_functions = []
     filter_context = get_filter_context(request) if ENABLE_PLUGINS else None
@@ -2417,38 +2333,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 if metadata.get('params', {}).get('function_calling') == 'legacy':
                     form_data = await chat_image_generation_handler(request, form_data, extra_params, user)
 
-        if 'code_interpreter' in features and features['code_interpreter']:
-            engine = await Config.get('code_interpreter.engine', 'pyodide')
-
-            # Skip XML-tag prompt injection when native FC is enabled —
-            # execute_code will be injected as a builtin tool instead
-            if metadata.get('params', {}).get('function_calling') == 'legacy':
-                ci_prompt_template = await Config.get('code_interpreter.prompt_template')
-                prompt = ci_prompt_template if ci_prompt_template != '' else DEFAULT_CODE_INTERPRETER_PROMPT
-
-                # Append filesystem awareness only for pyodide engine
-                if engine != 'jupyter':
-                    prompt += CODE_INTERPRETER_PYODIDE_PROMPT
-
-                form_data['messages'] = add_or_update_user_message(
-                    prompt,
-                    form_data['messages'],
-                )
-            else:
-                # Native FC: tool docstring can't be dynamic, so inject
-                # filesystem context into the system message for pyodide
-                # engine.  Appending to the system prompt (instead of the
-                # user message) keeps it in the stable cached prefix so
-                # providers with prefix caching don't re-bill the full
-                # conversation on every turn.
-                if engine != 'jupyter':
-                    form_data['messages'] = add_or_update_system_message(
-                        CODE_INTERPRETER_PYODIDE_PROMPT,
-                        form_data['messages'],
-                        append=True,
-                    )
-
-    tool_ids = form_data.pop('tool_ids', None)
+    form_data.pop('tools', None)
+    form_data.pop('tool_ids', None)
+    tool_ids = []
     terminal_id = form_data.pop('terminal_id', None)
     files = form_data.pop('files', None)
     form_data.pop('folder_id', None)
@@ -2461,9 +2348,8 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         denial_reason=skill_create_denial_reason,
     )
 
-    # If the original caller provided tools, use them as-is (skip resolution).
-    # Otherwise, save any tools that filter inlets added for merging later.
-    inlet_filter_tools = None if payload_tools is not None else form_data.get('tools', None)
+    # Filter inlets cannot add tools to the terminal/Hydra-only model surface.
+    form_data.pop('tools', None)
 
     # Mentioned skills get full content; selected/default skills can be loaded through view_skill.
     mentioned_skill_ids = extract_skill_ids_from_messages(form_data.get('messages', []))
@@ -2650,103 +2536,15 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             # native OpenAI tool calls, so use the structured text planner.
             metadata.setdefault('params', {})['function_calling'] = 'legacy'
 
-        # Server side tools
-        tool_ids = metadata.get('tool_ids', None)
-        # Client side tools
-        direct_tool_servers = metadata.get('tool_servers', None)
-
-        log.debug('tool_ids=%r', tool_ids)
-        log.debug('direct_tool_servers=%r', direct_tool_servers)
-
         tools_dict = {}
 
-        mcp_clients = {}
-        mcp_tools_dict = {}
-
-        if tool_ids:
-            db_tool_ids = []
-            for tool_id in tool_ids:
-                if tool_id.startswith('server:mcp:'):
-                    try:
-                        server_id = tool_id[len('server:mcp:') :]
-
-                        result = await connect_mcp_server(
-                            request,
-                            server_id,
-                            user,
-                            metadata,
-                            extra_params,
-                        )
-                        if result is None:
-                            continue
-
-                        client, tool_specs = result
-                        mcp_clients[server_id] = client
-
-                        for tool_spec in tool_specs:
-
-                            async def make_tool_function(client, function_name):
-                                async def tool_function(**kwargs):
-                                    return await client.call_tool(
-                                        function_name,
-                                        function_args=kwargs,
-                                    )
-
-                                return tool_function
-
-                            tool_function = await make_tool_function(client, tool_spec['name'])
-
-                            mcp_tools_dict[f'{server_id}_{tool_spec["name"]}'] = {
-                                'spec': {
-                                    **tool_spec,
-                                    'name': f'{server_id}_{tool_spec["name"]}',
-                                },
-                                'callable': tool_function,
-                                'type': 'mcp',
-                                'client': client,
-                                'direct': False,
-                            }
-                    except Exception as e:
-                        log.debug(e)
-                        if event_emitter:
-                            await event_emitter(
-                                {
-                                    'type': 'chat:message:error',
-                                    'data': {'error': {'content': f"Failed to connect to MCP server '{server_id}'"}},
-                                }
-                            )
-                        continue
-                elif ENABLE_PLUGINS:
-                    db_tool_ids.append(tool_id)
-
-            if db_tool_ids:
-                tools_dict = await get_tools(
-                    request,
-                    db_tool_ids,
-                    user,
-                    {
-                        **extra_params,
-                        '__model__': models[task_model_id],
-                        '__messages__': form_data['messages'],
-                        '__files__': metadata.get('files', []),
-                    },
-                )
-
-            if mcp_tools_dict:
-                tools_dict = {**tools_dict, **mcp_tools_dict}
-
-        # Resolve terminal tools if terminal_id is set (outside tool_ids check
-        # so system terminals work even when no other tools are selected)
-        terminal_capability = (model.get('info', {}).get('meta', {}).get('capabilities') or {}).get('terminal', True)
-        terminal_connection_ids = {
-            connection.get('id') for connection in await Config.get('terminal_server.connections', []) or []
-        }
-        terminal_connection_ids.add(LOCAL_TERMINAL_ID)
-        if terminal_id and terminal_capability and terminal_id in terminal_connection_ids:
+        configured_hydra_model = await Config.get('tater.hydra_model')
+        expose_agent_tools = not metadata.get('internal') and form_data.get('model') != configured_hydra_model
+        if expose_agent_tools:
             try:
                 terminal_result = await get_terminal_tools(
                     request,
-                    terminal_id,
+                    LOCAL_TERMINAL_ID,
                     user,
                     extra_params,
                 )
@@ -2767,106 +2565,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 log.exception(e)
                 raise HTTPException(status_code=503, detail=f'Terminal unavailable: {e}') from e
 
-        if direct_tool_servers:
-            for tool_server in direct_tool_servers:
-                if tool_server.get('is_terminal') is True and not terminal_capability:
-                    continue
-                system_prompt = tool_server.pop('system_prompt', None)
-                if system_prompt:
-                    form_data['messages'] = add_or_update_system_message(
-                        system_prompt,
-                        form_data['messages'],
-                        append=True,
-                    )
-
-                tool_specs = tool_server.pop('specs', [])
-
-                for tool in tool_specs:
-                    tools_dict[tool['name']] = {
-                        'spec': tool,
-                        'direct': True,
-                        'server': tool_server,
-                    }
-
-        if terminal_id and terminal_capability:
-            from open_webui.utils.terminals import add_terminal_agents_md, get_terminal_agents_md
-
-            agents_md = await get_terminal_agents_md(request, user, metadata, extra_params)
-            if agents_md:
-                form_data['messages'] = add_terminal_agents_md(form_data['messages'], agents_md)
-
-        if mcp_clients:
-            metadata['mcp_clients'] = mcp_clients
-
-        # Inject builtin tools for native function calling based on enabled features and model capability.
-        # Only inject when the request originates from the UI (identified by session_id).
-        # API callers don't expect hidden tools; they can explicitly request tools via tool_ids.
-        if use_builtin_tools:
-            # Add file context to user messages
-            chat_id = metadata.get('chat_id')
-            form_data['messages'] = await add_file_context(form_data.get('messages', []), chat_id, user)
-
-            builtin_tools = await get_builtin_tools(
-                request,
-                {
-                    **extra_params,
-                    '__event_emitter__': event_emitter,
-                    '__skill_ids__': view_skill_ids,
-                },
-                features,
-                model,
-                is_note_chat=is_note_chat,
-            )
-            for name, tool_dict in builtin_tools.items():
-                if name not in tools_dict:
-                    tools_dict[name] = tool_dict
-
-        # Only advertise user-shell tools when the originating browser has a connected shell.
-        shell_tools = {
-            name: tool
-            for name, tool in tools_dict.items()
-            if name in {'read_user_terminal', 'send_user_terminal_input'}
-            and (tool.get('type') == 'terminal' or tool.get('server', {}).get('is_terminal') is True)
-        }
-        selected = {
-            name
-            for name, tool in shell_tools.items()
-            if terminal_id
-            and (
-                tool.get('tool_id') == f'terminal:{terminal_id}'
-                or (tool.get('direct') and tool.get('server', {}).get('url') == terminal_id)
-            )
-        }
-        connected = False
-        if (
-            selected
-            and event_caller
-            and metadata.get('session_id')
-            and metadata.get('chat_id')
-            and not metadata.get('automation_id')
-            and not metadata.get('internal')
-        ):
-            try:
-                state = await asyncio.wait_for(
-                    event_caller(
-                        {
-                            'type': 'request:terminal:state',
-                            'data': {'terminal_id': terminal_id, 'session_id': metadata['session_id']},
-                        }
-                    ),
-                    timeout=2,
-                )
-                connected = isinstance(state, dict) and state.get('connected') is True
-            except Exception:
-                # Old/disconnected browsers cannot confirm availability; other tools still work.
-                pass
-
-        for name in shell_tools:
-            if not connected or name not in selected:
-                tools_dict.pop(name)
-
-        configured_hydra_model = await Config.get('tater.hydra_model')
-        if not metadata.get('internal') and form_data.get('model') != configured_hydra_model:
+        if expose_agent_tools:
             hydra_tools, hydra_system_prompt = get_tater_hydra_tools(
                 user_identity=user.name or user.email or user.id,
                 session_id=metadata.get('chat_id'),
@@ -2879,8 +2578,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             )
 
         if tools_dict:
-            # Always store resolved tools in metadata so downstream consumers
-            # (e.g. pipe functions) can access all tools including MCP and builtins.
+            # Tater WebUI intentionally exposes only terminal and tater_hydra.
             metadata['tools'] = tools_dict
 
             if metadata.get('params', {}).get('function_calling') != 'legacy':
@@ -2888,8 +2586,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 form_data['tools'] = [
                     {'type': 'function', 'function': tool.get('spec', {})} for tool in tools_dict.values()
                 ]
-                if inlet_filter_tools:
-                    form_data['tools'].extend(inlet_filter_tools)
             else:
                 # If the function calling is not native, then call the tools function calling handler
                 try:
@@ -4521,26 +4217,8 @@ async def streaming_chat_response_handler(response, ctx):
             reasoning_tags_param = metadata.get('params', {}).get('reasoning_tags')
             DETECT_REASONING_TAGS = reasoning_tags_param is not False
 
-            # Legacy tool-calling only: native FC gets execute_code as a builtin tool.
-            # Same five authz gates as utils/tools.py get_builtin_tools.
-            features = metadata.get('features', {}) or {}
-            model_capabilities = model.get('info', {}).get('meta', {}).get('capabilities') or {}
-            builtin_tools_meta = model.get('info', {}).get('meta', {}).get('builtinTools', {})
-            DETECT_CODE_INTERPRETER = (
-                metadata.get('params', {}).get('function_calling') == 'legacy'
-                and bool(features.get('code_interpreter'))
-                and builtin_tools_meta.get('code_interpreter', True)
-                and await Config.get('code_interpreter.enable')
-                and model_capabilities.get('code_interpreter', True)
-                and (
-                    getattr(user, 'role', None) == 'admin'
-                    or await has_permission(
-                        getattr(user, 'id', ''),
-                        'features.code_interpreter',
-                        await Config.get('user.permissions'),
-                    )
-                )
-            )
+            # Local code execution belongs exclusively to the terminal tool.
+            DETECT_CODE_INTERPRETER = False
 
             reasoning_tags = []
             if DETECT_REASONING_TAGS:

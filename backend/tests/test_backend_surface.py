@@ -60,14 +60,13 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertFalse((BACKEND_ROOT / 'utils' / 'memory.py').exists())
         self.assertFalse((BACKEND_ROOT / 'tools' / 'knowledge_fs.py').exists())
 
-    def test_builtin_tool_surface_is_agent_core_only(self):
-        tree = ast.parse(BUILTINS_PATH.read_text(encoding='utf-8'))
-        async_functions = {node.name for node in tree.body if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))}
+    def test_inherited_builtin_tools_are_deleted(self):
+        self.assertFalse(BUILTINS_PATH.exists())
 
-        self.assertEqual(
-            async_functions,
-            {'ask_user', '_task_summary', '_emit_tasks', 'create_tasks', 'update_task'},
-        )
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+        self.assertNotIn('get_builtin_tools', middleware_source)
+        self.assertNotIn('connect_mcp_server', middleware_source)
+        self.assertIn('Tater WebUI intentionally exposes only terminal and tater_hydra', middleware_source)
 
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))

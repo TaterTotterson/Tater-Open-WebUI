@@ -30,9 +30,9 @@ The normal model plans tool work one step at a time. After each local-runtime or
 
 The loop stops when the model reports that no more tools are needed, the same call produces the same outcome three times, planning fails, or the iteration limit is reached. Tool output fed back to the planner is bounded, and it is explicitly treated as untrusted data rather than instructions.
 
-Tool plans are limited to 16 calls per step. Runtime process IDs and timestamps are removed from repeat signatures, so rerunning the same command with the same output is recognized as a repeat. Local changes require a later successful `verify_command`; if the compatibility planner tries to finish first, it receives up to two verification reminders and then stops with an explicit incomplete-verification notice.
+Tool plans are limited to 16 calls per step. Runtime process IDs and timestamps are removed from repeat signatures, so rerunning the same terminal command with the same output is recognized as a repeat. The operating prompt requires the model to run an appropriate test, build, lint, diff, or status command after local changes.
 
-Background commands remain local to Tater WebUI. The normal model can list them, read incremental output, and terminate them without involving Hydra.
+The model receives terminal output and exit status in the same call. Necessary background work is managed with ordinary shell redirects, logs, `ps`, and `kill`, without involving Hydra.
 
 The default limit is 32 planning rounds. Set `TATER_AGENT_MAX_ITERATIONS` from 1 through 128 to change it.
 
