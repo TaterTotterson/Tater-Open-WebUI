@@ -62,6 +62,28 @@ class LocalTerminalRuntimeTests(unittest.IsolatedAsyncioTestCase):
         killed = await self.runtime.kill_process('user', 'chat', process_id)
         self.assertEqual(killed['status'], 'killed')
 
+    async def test_background_output_can_be_read_incrementally(self):
+        result = await self.runtime.run_command(
+            'user',
+            'chat',
+            "printf first; sleep 0.1; printf second",
+            background=True,
+            timeout_seconds=10,
+        )
+        record = self.runtime.get_process('user', 'chat', result['id'])
+        await record.done.wait()
+
+        initial = record.output_since(0)
+        follow_up = record.output_since(len('first'))
+
+        self.assertEqual(''.join(chunk['data'] for chunk in initial['output']), 'firstsecond')
+        self.assertEqual(''.join(chunk['data'] for chunk in follow_up['output']), 'second')
+        self.assertEqual(follow_up['next_offset'], len('firstsecond'))
+
+        bounded = record.output_since(0, max_chars=len('second'))
+        self.assertEqual(''.join(chunk['data'] for chunk in bounded['output']), 'second')
+        self.assertTrue(bounded['truncated'])
+
     async def test_times_out_foreground_process(self):
         result = await self.runtime.run_command(
             'user',

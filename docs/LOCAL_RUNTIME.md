@@ -28,6 +28,7 @@ In Docker, "this computer" means the container filesystem plus paths explicitly 
 
 - Commands use the backend's configured login shell and inherit its environment.
 - Foreground commands wait for completion; background commands return a process ID immediately.
+- The model can list chat-owned processes, read retained output incrementally, wait briefly for completion, and terminate a process by ID.
 - The terminal dock polls retained stdout/stderr by character offset, so command output appears incrementally without duplicating earlier chunks.
 - The default timeout is 120 seconds and the maximum accepted timeout is one hour.
 - Cancellation and timeout terminate the entire POSIX process group, then escalate to a forced kill if needed.
@@ -41,6 +42,8 @@ The model can list and search directories, read bounded text ranges, write files
 Text reads are capped at 500,000 characters. Binary files are rejected by the text reader and remain available through the file viewer/download route. Exact replacement fails if its target is missing or ambiguous unless the caller explicitly requests replacement of all matches.
 
 If an `AGENTS.md` file exists in the current directory or one of its parents, its instructions are added to the local-computer system prompt, from the broadest directory to the most specific.
+
+Shell calls declare whether they inspect, change, or verify state. Direct file-writing tools automatically mark the workspace as changed. After the latest change, `verify_command` runs the appropriate test, build, lint, diff, or status check; a timeout or nonzero exit code is a failed verification.
 
 ## Tool routing
 

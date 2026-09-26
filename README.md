@@ -115,11 +115,12 @@ See [the security notes](docs/SECURITY.md).
 
 TaterChat is being reduced from its Open WebUI baseline in measured,
 build-tested slices. The Tater provider profile, bundled local runtime,
-conditional Hydra tool, focused prompt/agent loop, and initial route/provider
-cleanup are implemented. Retrieval and other inherited subsystems remain where
-they are still coupled to retained chat and media paths. Browser-direct
-connections, generic provider model management, and model arenas have been
-removed; the focused Tater profile is the only chat-provider setup surface.
+conditional Hydra tool, bounded inspect/edit/verify agent loop, and local
+background-process controls are implemented. Browser-direct connections,
+generic provider model management, model arenas, RAG, knowledge bases,
+memories, web search, embeddings, rerankers, and vector databases have been
+removed. The focused Tater profile is the only chat-provider setup surface;
+ordinary file attachments and the image/audio experience remain available.
 
 ## Upstream and license
 

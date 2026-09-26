@@ -1047,24 +1047,22 @@ else:
         CHAT_RESPONSE_STREAM_DELTA_CHUNK_SIZE = 1
 
 
-# Maximum tool-call iterations per chat response. Set to -1 for unlimited.
-# The old CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES name is accepted as a fallback.
+# Maximum tool-call iterations per chat response. TaterChat keeps native and
+# compatibility tool loops on the same bounded default. The old environment
+# names remain accepted for existing installations.
 CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = os.getenv(
     'CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS',
-    os.getenv('CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES', '256'),
+    os.getenv(
+        'CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES',
+        os.getenv('TATER_AGENT_MAX_ITERATIONS', '32'),
+    ),
 )
 
-if CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS == '':
-    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = 256
-else:
-    try:
-        CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = int(CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS)
-    except Exception:
-        CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = 256
-
-# -1 means unlimited (no cap).
-if CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS == -1:
-    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = None
+try:
+    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = int(CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS or 32)
+except (TypeError, ValueError):
+    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = 32
+CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = max(1, min(CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS, 128))
 
 
 # WARNING: Experimental. Only enable if your upstream Responses API endpoint

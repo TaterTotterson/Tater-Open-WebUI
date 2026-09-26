@@ -7,8 +7,20 @@ from typing import Any
 
 DEFAULT_TATER_AGENT_MAX_ITERATIONS = 32
 MAX_TATER_AGENT_MAX_ITERATIONS = 128
+TATER_AGENT_MAX_CALLS_PER_STEP = 16
 TATER_AGENT_HISTORY_MAX_CHARS = 120_000
 TATER_AGENT_REPEAT_LIMIT = 3
+TATER_AGENT_VERIFICATION_REMINDER_LIMIT = 2
+
+_VOLATILE_RESULT_KEYS = {
+    'created_at',
+    'duration',
+    'ended_at',
+    'first_offset',
+    'id',
+    'next_offset',
+    'started_at',
+}
 
 
 def agent_iteration_limit(value: str | int | None = None) -> int:
@@ -20,22 +32,30 @@ def agent_iteration_limit(value: str | int | None = None) -> int:
     return max(1, min(limit, MAX_TATER_AGENT_MAX_ITERATIONS))
 
 
-def parse_tool_plan(content: str) -> list[dict[str, Any]]:
+def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP) -> list[dict[str, Any]]:
     content = str(content or '')
-    start = content.find('{')
-    end = content.rfind('}')
-    if start < 0 or end < start:
-        raise ValueError('No JSON object found in the tool plan')
-
-    payload = json.loads(content[start : end + 1])
-    if not isinstance(payload, dict):
-        raise ValueError('Tool plan must be a JSON object')
+    payload = None
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(content):
+        if character != '{':
+            continue
+        try:
+            candidate, _ = decoder.raw_decode(content[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and ('tool_calls' in candidate or candidate.get('name')):
+            payload = candidate
+            break
+    if payload is None:
+        raise ValueError('No tool-plan JSON object found')
 
     raw_calls = payload.get('tool_calls')
     if raw_calls is None:
         raw_calls = [payload] if payload.get('name') else []
     if not isinstance(raw_calls, list):
         raise ValueError('tool_calls must be an array')
+    if len(raw_calls) > max(1, max_calls):
+        raise ValueError(f'Tool plan contains too many calls ({len(raw_calls)} > {max(1, max_calls)})')
 
     calls = []
     for raw_call in raw_calls:
@@ -76,9 +96,26 @@ def render_tool_history(records: list[dict[str, Any]], max_chars: int = TATER_AG
     return '\n'.join(selected)[-max_chars:]
 
 
+def _stable_result(value: Any) -> Any:
+    if isinstance(value, str) and value[:1] in {'{', '['}:
+        try:
+            return _stable_result(json.loads(value))
+        except json.JSONDecodeError:
+            pass
+    if isinstance(value, dict):
+        return {
+            key: _stable_result(item)
+            for key, item in value.items()
+            if key not in _VOLATILE_RESULT_KEYS
+        }
+    if isinstance(value, list):
+        return [_stable_result(item) for item in value]
+    return value
+
+
 def tool_outcome_signature(name: str, parameters: dict[str, Any], result: Any) -> str:
     payload = json.dumps(
-        {'name': name, 'parameters': parameters, 'result': result},
+        {'name': name, 'parameters': parameters, 'result': _stable_result(result)},
         ensure_ascii=False,
         default=str,
         sort_keys=True,

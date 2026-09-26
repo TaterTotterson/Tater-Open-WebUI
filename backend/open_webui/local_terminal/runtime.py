@@ -117,9 +117,11 @@ class ProcessRecord:
             'timed_out': self.timed_out,
         }
 
-    def output_since(self, offset: int = 0) -> dict[str, Any]:
+    def output_since(self, offset: int = 0, max_chars: int | None = None) -> dict[str, Any]:
         requested_offset = max(0, offset)
         effective_offset = max(requested_offset, self.first_offset)
+        if max_chars is not None:
+            effective_offset = max(effective_offset, self.next_offset - max(1, int(max_chars)))
         output = []
         for chunk in self.chunks:
             if chunk.end <= effective_offset:
@@ -132,7 +134,7 @@ class ProcessRecord:
             **self.summary(),
             'output': output,
             'next_offset': self.next_offset,
-            'truncated': requested_offset < self.first_offset,
+            'truncated': effective_offset > requested_offset,
         }
 
     def tool_result(self) -> dict[str, Any]:

@@ -114,6 +114,7 @@ from open_webui.utils.skills import (
 from open_webui.utils.task import get_task_model_id, tools_function_calling_generation_template
 from open_webui.utils.tater_agent import (
     TATER_AGENT_REPEAT_LIMIT,
+    TATER_AGENT_VERIFICATION_REMINDER_LIMIT,
     agent_iteration_limit,
     parse_tool_plan,
     render_tool_history,
@@ -133,7 +134,7 @@ logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 
-def _is_tool_result_error(value: Any) -> bool:
+def _is_tool_result_error(value: Any, tool_name: str | None = None) -> bool:
     if isinstance(value, str):
         text = value.strip().lower()
         if (
@@ -153,6 +154,11 @@ def _is_tool_result_error(value: Any) -> bool:
 
     if not isinstance(parsed, dict):
         return False
+
+    if tool_name in {'run_command', 'verify_command'}:
+        exit_code = parsed.get('exit_code')
+        if parsed.get('timed_out') is True or (isinstance(exit_code, int) and exit_code != 0):
+            return True
 
     error = parsed.get('error')
     if isinstance(error, str):
@@ -1255,7 +1261,7 @@ async def terminal_event_handler(
 
     - display_file  → emits 'terminal:display_file' to open the file preview.
     - write_file / replace_file_content → emits 'terminal:write_file' to refresh.
-    - run_command → emits 'terminal:run_command' with cwd to refresh if relevant.
+    - run_command / verify_command → emits 'terminal:run_command' to refresh if relevant.
     """
     if not event_emitter:
         return
@@ -1293,7 +1299,7 @@ async def terminal_event_handler(
                 'data': {'path': path},
             }
         )
-    elif tool_function_name == 'run_command':
+    elif tool_function_name in {'run_command', 'verify_command'}:
         await event_emitter(
             {
                 'type': 'terminal:run_command',
@@ -1385,8 +1391,16 @@ async def chat_completion_tools_handler(
         'This is an iterative agent loop. Select only the next necessary action. Calls returned together must be '
         'independent because they execute as one step. Use the execution history on later steps to inspect results, '
         'fix failures, and verify the work. Never repeat an action that already succeeded unless rerunning it is '
-        'needed to verify a later change. Return {"tool_calls":[]} when no more tool work is needed.'
+        'needed to verify a later change. Mark mutating run_command calls with intent=change and checks with '
+        'intent=verify; prefer verify_command for the final check. Return {"tool_calls":[]} only when no more '
+        'tool work is needed.'
     )
+    operating_message = get_system_message(body.get('messages', []))
+    operating_instructions = get_content_from_message(operating_message) if operating_message else ''
+    if operating_instructions:
+        tools_function_calling_prompt = (
+            f'{tools_function_calling_prompt}\n\nAgent operating instructions:\n{operating_instructions}'
+        )
 
     def append_agent_notice(message: str):
         sources.append(
@@ -1476,7 +1490,11 @@ async def chat_completion_tools_handler(
             tool_result = {'error': f'Could not process tool result: {e}'}
             tool_result_files = []
             tool_result_embeds = []
-        failed = _is_tool_result_error(tool_result)
+        failed = _is_tool_result_error(tool_result, tool_function_name)
+        agent_effect = tool.get('agent_effect')
+        if tool_function_name == 'run_command':
+            intent = tool_function_params.get('intent', 'inspect')
+            agent_effect = intent if intent in {'change', 'verify'} else None
 
         if event_emitter:
             try:
@@ -1524,12 +1542,15 @@ async def chat_completion_tools_handler(
             'parameters': tool_function_params,
             'status': 'failed' if failed else 'completed',
             'result': tool_result,
+            **({'agent_effect': agent_effect} if agent_effect else {}),
         }
 
     history_records = []
     outcome_counts: dict[str, int] = {}
     max_iterations = agent_iteration_limit()
     loop_stopped = False
+    changes_need_verification = False
+    verification_reminders = 0
 
     for iteration in range(1, max_iterations + 1):
         payload = get_tools_function_calling_payload(
@@ -1554,11 +1575,31 @@ async def chat_completion_tools_handler(
             break
 
         if not tool_calls:
+            if changes_need_verification and verification_reminders < TATER_AGENT_VERIFICATION_REMINDER_LIMIT:
+                verification_reminders += 1
+                history_records.append(
+                    {
+                        'iteration': iteration,
+                        'status': 'verification_required',
+                        'result': (
+                            'Local changes were made after the last successful verification. Select verify_command '
+                            'with the appropriate test, build, lint, diff, or status check before finishing.'
+                        ),
+                    }
+                )
+                continue
+            if changes_need_verification:
+                append_agent_notice('The agent stopped with local changes that it did not successfully verify.')
             break
 
         for tool_call in tool_calls:
             record = await tool_call_handler(tool_call, iteration)
             history_records.append(record)
+            if record.get('agent_effect') == 'change':
+                # A failed mutating command may still have produced partial side effects.
+                changes_need_verification = True
+            elif record.get('status') == 'completed' and record.get('agent_effect') == 'verify':
+                changes_need_verification = False
             signature = tool_outcome_signature(record['tool'], record['parameters'], record['result'])
             outcome_counts[signature] = outcome_counts.get(signature, 0) + 1
             if outcome_counts[signature] >= TATER_AGENT_REPEAT_LIMIT:
@@ -3121,7 +3162,9 @@ async def drain_approved_tool_calls(request, form_data, user, model, metadata) -
         )
         item['arguments'] = tool_call.get('function', {}).get('arguments', '{}')
         output_parts = [{'type': 'input_text', 'text': result.get('content', '')}]
-        item['status'] = 'failed' if _is_tool_result_error(result.get('content', '')) else 'completed'
+        item['status'] = (
+            'failed' if _is_tool_result_error(result.get('content', ''), item.get('name')) else 'completed'
+        )
         display_files = []
         for file_item in result.get('files', []):
             if file_item.get('type') == 'image' and file_item.get('url', '').startswith('data:'):
@@ -5420,13 +5463,16 @@ async def streaming_chat_response_handler(response, ctx):
                         await response.background()
 
                 tool_call_iterations = 0
-                max_tool_call_iterations = getattr(
-                    request.state,
-                    'max_tool_call_iterations',
-                    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS,
+                max_tool_call_iterations = agent_iteration_limit(
+                    getattr(
+                        request.state,
+                        'max_tool_call_iterations',
+                        CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS,
+                    )
                 )
                 tool_call_sources = []  # Track citation sources from tool results
                 all_tool_call_sources = []  # Accumulated sources across all iterations
+                native_outcome_counts: dict[str, int] = {}
                 user_message = get_last_user_message(form_data['messages'])
 
                 # Check if citations are enabled for this model
@@ -5484,6 +5530,7 @@ async def streaming_chat_response_handler(response, ctx):
                     max_tool_call_iterations is None or tool_call_iterations < max_tool_call_iterations
                 ):
                     tool_call_iterations += 1
+                    repeated_tool_message = None
 
                     response_tool_calls = tool_calls.pop(0)
                     ask_user_staged, ask_user_error = stage_ask_user_tool_calls(response_tool_calls, output, output_id)
@@ -5671,6 +5718,18 @@ async def streaming_chat_response_handler(response, ctx):
                             user,
                         )
 
+                        signature = tool_outcome_signature(
+                            tool_function_name,
+                            tool_function_params,
+                            tool_result,
+                        )
+                        native_outcome_counts[signature] = native_outcome_counts.get(signature, 0) + 1
+                        if native_outcome_counts[signature] >= TATER_AGENT_REPEAT_LIMIT:
+                            repeated_tool_message = (
+                                f'Agent loop stopped after `{tool_function_name}` produced the same result '
+                                f'{TATER_AGENT_REPEAT_LIMIT} times.'
+                            )
+
                         await terminal_event_handler(
                             tool_function_name,
                             tool_function_params,
@@ -5703,6 +5762,7 @@ async def streaming_chat_response_handler(response, ctx):
                         results.append(
                             {
                                 'tool_call_id': tool_call_id,
+                                'tool_name': tool_function_name,
                                 'content': tool_result_content(tool_result),
                                 **({'files': tool_result_files} if tool_result_files else {}),
                                 **({'embeds': tool_result_embeds} if tool_result_embeds else {}),
@@ -5713,7 +5773,9 @@ async def streaming_chat_response_handler(response, ctx):
                     for result in results:
                         output_parts = [{'type': 'input_text', 'text': result.get('content', '')}]
                         local_output_status = (
-                            'failed' if _is_tool_result_error(result.get('content', '')) else 'completed'
+                            'failed'
+                            if _is_tool_result_error(result.get('content', ''), result.get('tool_name'))
+                            else 'completed'
                         )
                         result_status_by_call_id[result.get('tool_call_id', '')] = local_output_status
 
@@ -5799,6 +5861,12 @@ async def streaming_chat_response_handler(response, ctx):
                         tool_call_sources.clear()
 
                     await emit_output()
+
+                    if repeated_tool_message:
+                        log.warning(repeated_tool_message)
+                        tool_calls.clear()
+                        await emit_message_error(repeated_tool_message)
+                        break
 
                     try:
                         new_form_data = {

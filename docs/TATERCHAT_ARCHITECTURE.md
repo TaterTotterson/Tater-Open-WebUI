@@ -111,6 +111,8 @@ The loop continues until the task is complete, blocked on required user input, c
 7. Require verification appropriate to the change before the agent claims completion.
 8. Detect repeated identical failures and stop with a concrete explanation instead of looping.
 
+Tool plans are limited to 16 calls per step and 32 steps by default, with a hard maximum of 128. Both native OpenAI tool calling and Tater's structured compatibility planner use a bounded loop. Compatibility-mode edits carry a dirty state until a successful verification command runs; attempts to finish early trigger verification reminders and then an explicit incomplete result.
+
 The prompt should teach routing, not enumerate the whole Tater tool catalog. Hydra owns its own tool knowledge.
 
 ## Prompt contract
@@ -124,6 +126,7 @@ The normal agent prompt will emphasize:
 - Continue after tool results; a successful command is not automatically a completed task.
 - Diagnose failures, adjust, and retry when safe.
 - Verify edits and report the actual result.
+- Track background work, inspect incremental output, and stop processes that are no longer needed.
 - Ask before destructive or materially ambiguous actions.
 
 ## Delivery sequence
@@ -135,7 +138,7 @@ The normal agent prompt will emphasize:
    [`LOCAL_RUNTIME.md`](LOCAL_RUNTIME.md).
 4. Add the `tater_hydra` delegation tool using the normal Chat Completions endpoint. See
    [`TATER_HYDRA.md`](TATER_HYDRA.md).
-5. Install the focused system prompt and robust multi-tool loop.
+5. Install the focused system prompt and robust multi-tool loop. The loop now includes bounded planning, stable repeated-outcome detection, post-change verification reminders, and model-visible background-process controls.
 6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. Remote Python Pipelines, the general Ollama provider, browser-direct providers, generic provider-management APIs, model arenas, RAG, knowledge bases, memories, web search, embeddings, rerankers, and vector databases have been removed. Normal file attachments now inject stored extracted text directly. Image and audio stay as UI features.
 7. Rebrand permitted surfaces, package the standalone app, and add security/audit documentation.
 
