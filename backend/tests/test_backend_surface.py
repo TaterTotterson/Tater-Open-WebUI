@@ -68,6 +68,14 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertNotIn('connect_mcp_server', middleware_source)
         self.assertIn('Tater WebUI intentionally exposes only terminal and tater_hydra', middleware_source)
 
+    def test_legacy_tool_results_are_handed_to_the_final_answer(self):
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+
+        self.assertIn("legacy_tool_prompts.append(system_prompt)", middleware_source)
+        self.assertIn("tool_system_prompt='\\n\\n'.join(legacy_tool_prompts)", middleware_source)
+        self.assertIn('The following tool calls have already finished for the current request', middleware_source)
+        self.assertIn('Do not emit tool-call markup', middleware_source)
+
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))
 

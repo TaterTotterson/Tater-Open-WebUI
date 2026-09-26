@@ -25,6 +25,8 @@ Tater WebUI must not execute local terminal work through Tater or Spudex. Tater 
 
 The normal conversation uses `tater/base` (or another non-Hydra model selected by the user). Tater WebUI gives it exactly one local tool, `terminal`, whose only required argument is the shell command. The call waits and returns command output and exit status directly. Filesystem and process work uses real terminal commands rather than convenience tools.
 
+For text-only models such as `tater/base`, terminal and Hydra instructions are scoped to the planning pass. After the calls finish, the final response pass receives the completed results with an explicit instruction to relay them to the user instead of emitting another tool-call token.
+
 Tater WebUI also provides a client-side `tater_hydra` delegation tool. When the primary model selects that tool, Tater WebUI makes another ordinary request to the same `POST /v1/chat/completions` endpoint with `model: "tater/hydra"`. No private Tater endpoint or server-injected tool is required.
 
 ```text

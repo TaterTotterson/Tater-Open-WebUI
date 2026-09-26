@@ -963,19 +963,32 @@ async def apply_source_context_to_messages(
     if not sources or not user_message:
         return messages
 
-    context = get_source_context(sources, include_content=include_content)
+    tool_sources = [source for source in sources if source.get('tool_result') is True]
+    attachment_sources = [source for source in sources if source.get('tool_result') is not True]
+    sections = []
 
-    context = context.strip()
-    if not context:
+    attachment_context = get_source_context(attachment_sources, include_content=include_content).strip()
+    if attachment_context:
+        sections.append(
+            'The user attached the following file content. Use it when it is relevant, '
+            'and cite sources as [source_id] when referring to it.\n\n'
+            f'<attached_file_context>\n{attachment_context}\n</attached_file_context>'
+        )
+
+    tool_context = get_source_context(tool_sources, include_content=include_content).strip()
+    if tool_context:
+        sections.append(
+            'The following tool calls have already finished for the current request. Their complete returned '
+            'results are provided below. Answer the user from these results. Do not emit tool-call markup, a tool '
+            'plan, or another request to fetch the results. Do not merely say that a tool was used; relay the '
+            'requested information or outcome.\n\n'
+            f'<tool_execution_results>\n{tool_context}\n</tool_execution_results>'
+        )
+
+    if not sections:
         return messages
 
-    return add_or_update_system_message(
-        'The user attached the following file content. Use it when it is relevant, '
-        'and cite sources as [source_id] when referring to them.\n\n'
-        f'<attached_file_context>\n{context}\n</attached_file_context>',
-        messages,
-        append=True,
-    )
+    return add_or_update_system_message('\n\n'.join(sections), messages, append=True)
 
 
 BASE64_IMAGE_DATA_URI_RE = re.compile(r'data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}', re.IGNORECASE)
@@ -1303,7 +1316,13 @@ async def terminal_event_handler(
 
 
 async def chat_completion_tools_handler(
-    request: Request, body: dict, extra_params: dict, user: UserModel, models, tools
+    request: Request,
+    body: dict,
+    extra_params: dict,
+    user: UserModel,
+    models,
+    tools,
+    tool_system_prompt: str = '',
 ) -> tuple[dict, dict]:
     async def get_content_from_response(response) -> Optional[str]:
         content = None
@@ -1390,6 +1409,10 @@ async def chat_completion_tools_handler(
     )
     operating_message = get_system_message(body.get('messages', []))
     operating_instructions = get_content_from_message(operating_message) if operating_message else ''
+    if tool_system_prompt:
+        operating_instructions = (
+            f'{operating_instructions}\n\n{tool_system_prompt}' if operating_instructions else tool_system_prompt
+        )
     if operating_instructions:
         tools_function_calling_prompt = (
             f'{tools_function_calling_prompt}\n\nAgent operating instructions:\n{operating_instructions}'
@@ -2537,6 +2560,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             metadata.setdefault('params', {})['function_calling'] = 'legacy'
 
         tools_dict = {}
+        legacy_tool_prompts = []
 
         configured_hydra_model = await Config.get('tater.hydra_model')
         expose_agent_tools = not metadata.get('internal') and form_data.get('model') != configured_hydra_model
@@ -2555,7 +2579,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     system_prompt = None
                 if terminal_tools:
                     tools_dict = {**tools_dict, **terminal_tools}
-                if system_prompt:
+                if system_prompt and metadata.get('params', {}).get('function_calling') == 'legacy':
+                    legacy_tool_prompts.append(system_prompt)
+                elif system_prompt:
                     form_data['messages'] = add_or_update_system_message(
                         system_prompt,
                         form_data['messages'],
@@ -2571,11 +2597,14 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 session_id=metadata.get('chat_id'),
             )
             tools_dict = {**tools_dict, **hydra_tools}
-            form_data['messages'] = add_or_update_system_message(
-                hydra_system_prompt,
-                form_data['messages'],
-                append=True,
-            )
+            if metadata.get('params', {}).get('function_calling') == 'legacy':
+                legacy_tool_prompts.append(hydra_system_prompt)
+            else:
+                form_data['messages'] = add_or_update_system_message(
+                    hydra_system_prompt,
+                    form_data['messages'],
+                    append=True,
+                )
 
         if tools_dict:
             # Tater WebUI intentionally exposes only terminal and tater_hydra.
@@ -2590,7 +2619,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 # If the function calling is not native, then call the tools function calling handler
                 try:
                     form_data, flags = await chat_completion_tools_handler(
-                        request, form_data, extra_params, user, models, tools_dict
+                        request,
+                        form_data,
+                        extra_params,
+                        user,
+                        models,
+                        tools_dict,
+                        tool_system_prompt='\n\n'.join(legacy_tool_prompts),
                     )
                     sources.extend(flags.get('sources', []))
                 except Exception as e:
