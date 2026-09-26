@@ -53,6 +53,15 @@ The Compose setup mounts `TATERCHAT_HOST_WORKSPACE` at `/workspace`.
 TaterChat can still access the rest of its container filesystem, but host files
 outside mounted paths are not visible from inside Docker.
 
+## GitHub image and Unraid
+
+Every push to `main` builds, boots, health-checks, and publishes the amd64 image
+to `ghcr.io/tatertotterson/taterchat`. Use `latest` for the newest successful
+main build or a version tag such as `0.1.0` for a pinned release.
+
+See [the Unraid deployment guide](docs/UNRAID.md) for registry authentication,
+volume mappings, Tater connectivity, and a complete container command.
+
 ## Configuration
 
 | Variable                      | Default                    | Purpose                           |

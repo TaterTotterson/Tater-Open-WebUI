@@ -18,8 +18,8 @@ ARG USE_SLIM
 ARG UID
 ARG GID
 
-# Set Node.js options (heap limit Allocation failed - JavaScript heap out of memory)
-# ENV NODE_OPTIONS="--max-old-space-size=4096"
+# The production bundle exceeds Node's default ~2 GiB heap inside BuildKit.
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 WORKDIR /app
 
@@ -65,10 +65,8 @@ ENV ENV=prod \
 ## Basis URL Config ##
 ENV OPENAI_API_BASE_URL=""
 
-## API Key and Security Config ##
-ENV OPENAI_API_KEY="" \
-    WEBUI_SECRET_KEY="" \
-    SCARF_NO_ANALYTICS=true \
+## Privacy Config ##
+ENV SCARF_NO_ANALYTICS=true \
     DO_NOT_TRACK=true \
     ANONYMIZED_TELEMETRY=false
 
@@ -95,9 +93,6 @@ RUN if [ $UID -ne 0 ]; then \
     fi; \
     adduser --uid $UID --gid $GID --home $HOME --disabled-password --no-create-home app; \
     fi
-
-RUN mkdir -p $HOME/.cache/chroma
-RUN echo -n 00000000-0000-0000-0000-000000000000 > $HOME/.cache/chroma/telemetry_user_id
 
 # Make sure the user has access to the app and root directory
 RUN chown -R $UID:$GID /app $HOME
