@@ -118,71 +118,12 @@ LOCAL_TERMINAL_TOOL_SPECS = {
         {'process_id': {'type': 'string', 'description': 'Process ID returned by run_command.'}},
         ['process_id'],
     ),
-    'read_file': _tool_spec(
-        'read_file',
-        'Read a UTF-8 text file, optionally limiting the result to an inclusive line range.',
-        {
-            'path': {'type': 'string', 'description': 'Absolute path or path relative to the chat working directory.'},
-            'start_line': {'type': 'integer', 'minimum': 1},
-            'end_line': {'type': 'integer', 'minimum': 1},
-        },
-        ['path'],
-    ),
-    'write_file': _tool_spec(
-        'write_file',
-        'Create or fully overwrite a UTF-8 text file. Prefer replace_file_content for focused edits.',
-        {
-            'path': {'type': 'string', 'description': 'Absolute path or path relative to the chat working directory.'},
-            'content': {'type': 'string', 'description': 'Complete file content to write.'},
-            'create_parents': {'type': 'boolean', 'default': True},
-        },
-        ['path', 'content'],
-    ),
-    'replace_file_content': _tool_spec(
-        'replace_file_content',
-        (
-            'Replace exact text in a UTF-8 file. The edit fails when the text is absent or occurs more than once '
-            'unless replace_all is true, which prevents accidental broad edits.'
-        ),
-        {
-            'path': {'type': 'string', 'description': 'Absolute path or path relative to the chat working directory.'},
-            'old': {'type': 'string', 'description': 'Exact existing text.'},
-            'new': {'type': 'string', 'description': 'Replacement text.'},
-            'replace_all': {'type': 'boolean', 'default': False},
-        },
-        ['path', 'old', 'new'],
-    ),
-    'list_files': _tool_spec(
-        'list_files',
-        'List files and directories with absolute and relative paths.',
-        {
-            'path': {'type': 'string', 'default': '.'},
-            'recursive': {'type': 'boolean', 'default': False},
-            'max_entries': {'type': 'integer', 'minimum': 1, 'maximum': 5000, 'default': 500},
-        },
-        [],
-    ),
-    'search_files': _tool_spec(
-        'search_files',
-        'Search text files recursively and return matching paths, lines, columns, and excerpts.',
-        {
-            'query': {'type': 'string', 'description': 'Literal case-insensitive text to find.'},
-            'path': {'type': 'string', 'default': '.'},
-            'glob': {'type': 'string', 'default': '*', 'description': 'Filename glob such as *.py.'},
-            'max_results': {'type': 'integer', 'minimum': 1, 'maximum': 1000, 'default': 100},
-            'include_hidden': {'type': 'boolean', 'default': False},
-        },
-        ['query'],
-    ),
-    'set_working_directory': _tool_spec(
-        'set_working_directory',
-        'Set the persistent working directory for this chat and subsequent local tools.',
-        {'path': {'type': 'string', 'description': 'An existing directory.'}},
-        ['path'],
-    ),
     'display_file': _tool_spec(
         'display_file',
-        'Open an existing host file in the Tater WebUI file viewer.',
+        (
+            'Present an existing file in the Tater WebUI viewer after locating or creating it with run_command. '
+            'Use this only when the user should see an image, audio file, PDF, or other rendered artifact.'
+        ),
         {
             'path': {'type': 'string', 'description': 'Absolute path or path relative to the chat working directory.'},
             'page': {'type': 'integer', 'minimum': 1, 'description': 'Optional PDF page to show.'},
@@ -219,7 +160,8 @@ def local_terminal_system_prompt(cwd: str) -> str:
 
 Current working directory: {cwd}
 
-- Use the local tools for terminal commands, filesystem work, processes, Git, builds, tests, and inspection.
+- Use run_command for all local inspection and changes. Work through the shell with commands such as pwd, ls, find, rg, sed, cat, Git, editors, builds, and tests.
+- Use display_file only to present an image, audio file, PDF, or other rendered artifact after handling it through the terminal.
 - Never use tater_hydra for work on this computer. Reserve it for Tater-owned devices, Verbas, Cores, Portals, media, and automations.
 - Inspect relevant files before editing and preserve unrelated user changes.
 - Before editing a repository, inspect its status and local instructions. Prefer focused file edits and never discard unrelated changes.
@@ -290,69 +232,6 @@ def get_local_terminal_tools(user_id: str, session_id: str | None) -> tuple[dict
     async def kill_process(process_id: str):
         return await runtime.kill_process(user_id, session_id, process_id)
 
-    async def read_file(path: str, start_line: int | None = None, end_line: int | None = None):
-        return runtime.read_file(
-            user_id,
-            session_id,
-            path,
-            start_line=start_line,
-            end_line=end_line,
-        )
-
-    async def write_file(path: str, content: str, create_parents: bool = True):
-        return runtime.write_file(
-            user_id,
-            session_id,
-            path,
-            content,
-            create_parents=create_parents,
-        )
-
-    async def replace_file_content(
-        path: str,
-        old: str,
-        new: str,
-        replace_all: bool = False,
-    ):
-        return runtime.replace_file_content(
-            user_id,
-            session_id,
-            path,
-            old,
-            new,
-            replace_all=replace_all,
-        )
-
-    async def list_files(path: str = '.', recursive: bool = False, max_entries: int = 500):
-        return runtime.list_files(
-            user_id,
-            session_id,
-            path,
-            recursive=recursive,
-            max_entries=max_entries,
-        )
-
-    async def search_files(
-        query: str,
-        path: str = '.',
-        glob: str = '*',
-        max_results: int = 100,
-        include_hidden: bool = False,
-    ):
-        return runtime.search_files(
-            user_id,
-            session_id,
-            query,
-            path=path,
-            glob=glob,
-            max_results=max_results,
-            include_hidden=include_hidden,
-        )
-
-    async def set_working_directory(path: str):
-        cwd = runtime.set_cwd(user_id, session_id, path)
-        return {'cwd': str(cwd)}
-
     async def display_file(path: str, page: int | None = None, inline: bool = False):
         resolved = runtime.resolve(user_id, session_id, path)
         return {
@@ -369,12 +248,6 @@ def get_local_terminal_tools(user_id: str, session_id: str | None) -> tuple[dict
         'list_processes': list_processes,
         'read_process_output': read_process_output,
         'kill_process': kill_process,
-        'read_file': read_file,
-        'write_file': write_file,
-        'replace_file_content': replace_file_content,
-        'list_files': list_files,
-        'search_files': search_files,
-        'set_working_directory': set_working_directory,
         'display_file': display_file,
     }
     tools = {
@@ -383,11 +256,7 @@ def get_local_terminal_tools(user_id: str, session_id: str | None) -> tuple[dict
             'callable': callable,
             'spec': LOCAL_TERMINAL_TOOL_SPECS[name],
             'type': 'terminal',
-            'agent_effect': (
-                'change'
-                if name in {'write_file', 'replace_file_content'}
-                else 'verify' if name == 'verify_command' else None
-            ),
+            'agent_effect': 'verify' if name == 'verify_command' else None,
         }
         for name, callable in callables.items()
     }

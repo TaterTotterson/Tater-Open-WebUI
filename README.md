@@ -105,6 +105,7 @@ python -m unittest \
   backend.tests.test_tater_agent \
   backend.tests.test_tater_hydra \
   backend.tests.test_local_terminal_runtime \
+  backend.tests.test_local_terminal_tools \
   backend.tests.test_backend_surface -v
 npm run build
 ```

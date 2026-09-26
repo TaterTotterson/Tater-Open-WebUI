@@ -1,6 +1,6 @@
 # Bundled local runtime
 
-Tater WebUI includes its terminal and filesystem runtime in the FastAPI process. It does not require Open Terminal, Spudex, or a private Tater endpoint. A server-side agent planner presents these local tools to the normal model while all provider traffic continues through standard Chat Completions requests.
+Tater WebUI includes its terminal runtime in the FastAPI process. It does not require Open Terminal, Spudex, or a private Tater endpoint. A server-side agent planner presents shell and process tools to the normal model while all provider traffic continues through standard Chat Completions requests.
 
 ## Access model
 
@@ -35,15 +35,15 @@ In Docker, "this computer" means the container filesystem plus paths explicitly 
 - Each chat retains at most 100 process records and up to 2,000,000 output characters per process. Tool results are capped at the latest 80,000 characters and report truncation.
 - Interactive shells use a PTY and WebSocket and are currently supported on POSIX hosts.
 
-## File operations
+## Terminal-first file operations
 
-The model can list and search directories, read bounded text ranges, write files, apply exact replacements, and ask the UI to display a file. The file browser additionally supports uploads, downloads, folders, moves, deletion, text search, and ZIP archives.
+The model performs local inspection and changes through `run_command`, using ordinary shell tools such as `pwd`, `ls`, `find`, `rg`, `sed`, `cat`, Git, editors, and build tools. Filesystem convenience functions are not advertised to the model, so directory listings and file edits remain visible as real terminal commands. `display_file` remains available only to present an image, audio file, PDF, or other rendered artifact in the UI.
 
-Text reads are capped at 500,000 characters. Binary files are rejected by the text reader and remain available through the file viewer/download route. Exact replacement fails if its target is missing or ambiguous unless the caller explicitly requests replacement of all matches.
+The file browser independently supports uploads, downloads, folders, moves, deletion, text search, ZIP archives, and file viewing. Those HTTP endpoints support the UI and are not part of the model's tool catalog.
 
 If an `AGENTS.md` file exists in the current directory or one of its parents, its instructions are added to the local-computer system prompt, from the broadest directory to the most specific.
 
-Shell calls declare whether they inspect, change, or verify state. Direct file-writing tools automatically mark the workspace as changed. After the latest change, `verify_command` runs the appropriate test, build, lint, diff, or status check; a timeout or nonzero exit code is a failed verification.
+Shell calls declare whether they inspect, change, or verify state. After the latest change, `verify_command` runs the appropriate test, build, lint, diff, or status check; a timeout or nonzero exit code is a failed verification.
 
 ## Tool routing
 
