@@ -59,7 +59,6 @@
 
 	export let imageGenerationEnabled = false;
 	export let codeInterpreterEnabled = false;
-	export let webSearchEnabled = false;
 	export let toolApprovalMode = 'full';
 	export let onToolApprovalModeChange: Function = () => {};
 	export let oauthRedirectHandler: Function = () => {};
@@ -68,7 +67,6 @@
 	export let onUpdate: (data?: { file?: any }) => void = () => {};
 	export let onSelect = (e) => {};
 	export let onChange = (e) => {};
-	export let onWebSearchToggle: Function = () => {};
 	export let messageQueue: { id: string; prompt: string; files: any[] }[] = [];
 	export let onQueueSendNow: (id: string) => void = () => {};
 	export let onQueueEdit: (id: string) => void = () => {};
@@ -252,7 +250,6 @@
 						bind:selectedFilterIds
 						bind:imageGenerationEnabled
 						bind:codeInterpreterEnabled
-						bind:webSearchEnabled
 						bind:atSelectedModel
 						bind:showCommands
 						bind:dragged
@@ -271,7 +268,6 @@
 						{onQueueEdit}
 						{onQueueDelete}
 						{askUser}
-						{onWebSearchToggle}
 						on:chatVariables
 						on:submit={(e) => {
 							dispatch('submit', e.detail);

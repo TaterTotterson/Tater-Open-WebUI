@@ -89,7 +89,6 @@
 	import Spinner from '../common/Spinner.svelte';
 
 	import XMark from '../icons/XMark.svelte';
-	import GlobeAlt from '../icons/GlobeAlt.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 	import Cube from '../icons/Cube.svelte';
@@ -128,7 +127,6 @@
 
 	export let onUpload: Function = (e) => {};
 	export let onChange: Function = () => {};
-	export let onWebSearchToggle: Function = () => {};
 
 	export let createMessagePair: Function;
 	export let stopResponse: Function;
@@ -194,7 +192,6 @@
 	export let selectedFilterIds: string[] = [];
 
 	export let imageGenerationEnabled = false;
-	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
 	export let toolApprovalMode = 'full';
 	export let onToolApprovalModeChange: Function = () => {};
@@ -250,7 +247,6 @@
 		selectedSkillIds,
 		selectedFilterIds,
 		imageGenerationEnabled,
-		webSearchEnabled,
 		codeInterpreterEnabled,
 		toolApprovalMode
 	};
@@ -742,7 +738,6 @@
 	type ModelCapability =
 		| 'vision'
 		| 'file_upload'
-		| 'web_search'
 		| 'image_generation'
 		| 'code_interpreter'
 		| 'terminal';
@@ -766,13 +761,6 @@
 	$: fileUploadCapableModels = getCapableModelIds(
 		selectedModelIds,
 		'file_upload',
-		modelCapabilitiesById
-	);
-
-	let webSearchCapableModels = [];
-	$: webSearchCapableModels = getCapableModelIds(
-		selectedModelIds,
-		'web_search',
 		modelCapabilitiesById
 	);
 
@@ -817,12 +805,6 @@
 	$: showSkillsButton =
 		($skills ?? []).some((skill) => skill.is_active) ||
 		($terminalSkills ?? []).some((skill) => skill.is_active);
-
-	let showWebSearchButton = false;
-	$: showWebSearchButton =
-		selectedModelIds.length === webSearchCapableModels.length &&
-		$config?.features?.enable_web_search &&
-		($_user.role === 'admin' || $_user?.permissions?.features?.web_search);
 
 	let showImageGenerationButton = false;
 	$: showImageGenerationButton =
@@ -2133,8 +2115,7 @@
 															selectedToolIds = [];
 															selectedFilterIds = [];
 
-															webSearchEnabled = false;
-															imageGenerationEnabled = false;
+													imageGenerationEnabled = false;
 															codeInterpreterEnabled = false;
 														}
 													}}
@@ -2235,7 +2216,6 @@
 												console.error('OneDrive Error:', error);
 											}
 										}}
-										{onUpload}
 										onClose={async () => {
 											await tick();
 
@@ -2253,24 +2233,22 @@
 										</button>
 									</InputMenu>
 
-									{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
+									{#if showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
 										<div
 											class="flex self-center w-[0.0625rem] h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50 shrink-0"
 										/>
 									{/if}
 
 									<div class="flex flex-1 items-center min-w-0 overflow-x-auto scrollbar-none">
-										{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
+										{#if showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
 											<IntegrationsMenu
 												selectedModels={selectedModelIds}
 												{toggleFilters}
-												{showWebSearchButton}
 												{showImageGenerationButton}
 												{showCodeInterpreterButton}
 												bind:selectedToolIds
 												bind:selectedSkillIds
 												bind:selectedFilterIds
-												bind:webSearchEnabled
 												bind:imageGenerationEnabled
 												bind:codeInterpreterEnabled
 												oauthRedirectHandler={(tool: {
@@ -2278,7 +2256,6 @@
 													serverId: string;
 													authType?: string | null;
 												}) => oauthRedirectHandler(tool, chatInputDraft)}
-												{onWebSearchToggle}
 												closeOnOutsideClick={integrationsMenuCloseOnOutsideClick}
 												onShowValves={(e) => {
 													const { type, id } = e;
@@ -2441,24 +2418,6 @@
 													</Tooltip>
 												{/if}
 											{/each}
-
-											{#if webSearchEnabled && showWebSearchButton}
-												<Tooltip content={$i18n.t('Web Search')} placement="top">
-													<button
-														on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
-														type="button"
-														class="group p-[0.375rem] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {webSearchEnabled ||
-														($settings?.webSearch ?? false) === 'always'
-															? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-600/10 border border-sky-200/40 dark:border-sky-500/20'
-															: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '}"
-													>
-														<GlobeAlt className="size-4" strokeWidth="1.75" />
-														<div class="hidden group-hover:block">
-															<XMark className="size-4" strokeWidth="1.75" />
-														</div>
-													</button>
-												</Tooltip>
-											{/if}
 
 											{#if imageGenerationEnabled && showImageGenerationButton}
 												<Tooltip content={$i18n.t('Image')} placement="top">

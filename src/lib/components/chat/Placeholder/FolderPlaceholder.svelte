@@ -4,7 +4,6 @@
 	import { socket, user } from '$lib/stores';
 
 	import ChatList from './ChatList.svelte';
-	import FolderKnowledge from './FolderKnowledge.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { getSharedFolderChats } from '$lib/apis/folders';
 
@@ -22,8 +21,6 @@
 	};
 
 	export let folder: FolderPlaceholderFolder | null = null;
-
-	let selectedTab = 'chats';
 
 	const CHATS_PAGE_SIZE = 10;
 	let page = 1;
@@ -168,56 +165,22 @@
 </script>
 
 <div>
-	<!-- <div class="mb-1">
-		<div
-			class="flex gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-normal rounded-full bg-transparent py-1 touch-auto pointer-events-auto"
-		>
-			<button
-				class="min-w-fit p-1.5 {selectedTab === 'knowledge'
-					? ''
-					: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-				type="button"
-				on:click={() => {
-					selectedTab = 'knowledge';
-				}}>{$i18n.t('Knowledge')}</button
-			>
-
-			<button
-				class="min-w-fit p-1.5 {selectedTab === 'chats'
-					? ''
-					: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-				type="button"
-				on:click={() => {
-					selectedTab = 'chats';
-				}}
-			>
-				{$i18n.t('Chats')}
-			</button>
+	{#if chats !== null}
+		<ChatList
+			{chats}
+			{chatListLoading}
+			{showOwnerInfo}
+			{page}
+			total={totalChats}
+			perPage={CHATS_PAGE_SIZE}
+			{orderBy}
+			{direction}
+			onPageChange={setPage}
+			onSort={setSortKey}
+		/>
+	{:else}
+		<div class="py-10">
+			<Spinner />
 		</div>
-	</div> -->
-
-	<div class="">
-		{#if selectedTab === 'knowledge'}
-			<FolderKnowledge />
-		{:else if selectedTab === 'chats'}
-			{#if chats !== null}
-				<ChatList
-					{chats}
-					{chatListLoading}
-					{showOwnerInfo}
-					{page}
-					total={totalChats}
-					perPage={CHATS_PAGE_SIZE}
-					{orderBy}
-					{direction}
-					onPageChange={setPage}
-					onSort={setSortKey}
-				/>
-			{:else}
-				<div class="py-10">
-					<Spinner />
-				</div>
-			{/if}
-		{/if}
-	</div>
+	{/if}
 </div>

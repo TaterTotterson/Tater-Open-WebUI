@@ -177,23 +177,14 @@ class AppHTTPMiddleware:
 
         redirect_params: dict[str, str] = {}
         if path.endswith('/watch') and 'v' in query_params and query_params['v']:
-            redirect_params['youtube'] = query_params['v'][0]
+            redirect_params['q'] = f'https://www.youtube.com/watch?v={query_params["v"][0]}'
 
         if 'shared' in query_params and query_params['shared']:
             text = query_params['shared'][0]
             if text:
                 url_match = re.match(r'https://\S+', text)
                 if url_match:
-                    # Local import: youtube loader pulls heavy deps and is
-                    # only needed when a share-target actually contains a
-                    # YouTube URL.
-                    from open_webui.retrieval.loaders.youtube import _parse_video_id
-
-                    youtube_video_id = _parse_video_id(url_match[0])
-                    if youtube_video_id:
-                        redirect_params['youtube'] = youtube_video_id
-                    else:
-                        redirect_params['load-url'] = url_match[0]
+                    redirect_params['q'] = url_match[0]
                 else:
                     redirect_params['q'] = text
 

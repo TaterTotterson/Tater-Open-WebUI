@@ -84,25 +84,6 @@
 		<div class="flex flex-col w-full">
 			<div class="flex w-full justify-between my-1">
 				<div class=" self-center text-xs font-normal">
-					{$i18n.t('Knowledge Access')}
-				</div>
-				<Switch
-					bind:state={permissions.workspace.knowledge}
-					ariaLabel={$i18n.t('Knowledge Access')}
-				/>
-			</div>
-			{#if defaultPermissions?.workspace?.knowledge && !permissions.workspace.knowledge}
-				<div>
-					<div class="text-xs text-gray-500">
-						{$i18n.t('This is a default user permission and will remain enabled.')}
-					</div>
-				</div>
-			{/if}
-		</div>
-
-		<div class="flex flex-col w-full">
-			<div class="flex w-full justify-between my-1">
-				<div class=" self-center text-xs font-normal">
 					{$i18n.t('Prompts Access')}
 				</div>
 				<Switch bind:state={permissions.workspace.prompts} ariaLabel={$i18n.t('Prompts Access')} />
@@ -262,46 +243,6 @@
 					/>
 				</div>
 				{#if defaultPermissions?.sharing?.public_models && !permissions.sharing.public_models}
-					<div>
-						<div class="text-xs text-gray-500">
-							{$i18n.t('This is a default user permission and will remain enabled.')}
-						</div>
-					</div>
-				{/if}
-			</div>
-		{/if}
-
-		<div class="flex flex-col w-full">
-			<div class="flex w-full justify-between my-1">
-				<div class=" self-center text-xs font-normal">
-					{$i18n.t('Knowledge Sharing')}
-				</div>
-				<Switch
-					bind:state={permissions.sharing.knowledge}
-					ariaLabel={$i18n.t('Knowledge Sharing')}
-				/>
-			</div>
-			{#if defaultPermissions?.sharing?.knowledge && !permissions.sharing.knowledge}
-				<div>
-					<div class="text-xs text-gray-500">
-						{$i18n.t('This is a default user permission and will remain enabled.')}
-					</div>
-				</div>
-			{/if}
-		</div>
-
-		{#if permissions.sharing.knowledge}
-			<div class="flex flex-col w-full">
-				<div class="flex w-full justify-between my-1">
-					<div class=" self-center text-xs font-normal">
-						{$i18n.t('Knowledge Public Sharing')}
-					</div>
-					<Switch
-						bind:state={permissions.sharing.public_knowledge}
-						ariaLabel={$i18n.t('Knowledge Public Sharing')}
-					/>
-				</div>
-				{#if defaultPermissions?.sharing?.public_knowledge && !permissions.sharing.public_knowledge}
 					<div>
 						<div class="text-xs text-gray-500">
 							{$i18n.t('This is a default user permission and will remain enabled.')}
@@ -539,22 +480,6 @@
 				/>
 			</div>
 			{#if defaultPermissions?.chat?.file_upload && !permissions.chat.file_upload}
-				<div>
-					<div class="text-xs text-gray-500">
-						{$i18n.t('This is a default user permission and will remain enabled.')}
-					</div>
-				</div>
-			{/if}
-		</div>
-
-		<div class="flex flex-col w-full">
-			<div class="flex w-full justify-between my-1">
-				<div class=" self-center text-xs font-normal">
-					{$i18n.t('Allow Web Upload')}
-				</div>
-				<Switch bind:state={permissions.chat.web_upload} ariaLabel={$i18n.t('Allow Web Upload')} />
-			</div>
-			{#if defaultPermissions?.chat?.web_upload && !permissions.chat.web_upload}
 				<div>
 					<div class="text-xs text-gray-500">
 						{$i18n.t('This is a default user permission and will remain enabled.')}
@@ -955,22 +880,6 @@
 		<div class="flex flex-col w-full">
 			<div class="flex w-full justify-between my-1">
 				<div class=" self-center text-xs font-normal">
-					{$i18n.t('Web Search')}
-				</div>
-				<Switch bind:state={permissions.features.web_search} ariaLabel={$i18n.t('Web Search')} />
-			</div>
-			{#if defaultPermissions?.features?.web_search && !permissions.features.web_search}
-				<div>
-					<div class="text-xs text-gray-500">
-						{$i18n.t('This is a default user permission and will remain enabled.')}
-					</div>
-				</div>
-			{/if}
-		</div>
-
-		<div class="flex flex-col w-full">
-			<div class="flex w-full justify-between my-1">
-				<div class=" self-center text-xs font-normal">
 					{$i18n.t('Image Generation')}
 				</div>
 				<Switch
@@ -998,22 +907,6 @@
 				/>
 			</div>
 			{#if defaultPermissions?.features?.code_interpreter && !permissions.features.code_interpreter}
-				<div>
-					<div class="text-xs text-gray-500">
-						{$i18n.t('This is a default user permission and will remain enabled.')}
-					</div>
-				</div>
-			{/if}
-		</div>
-
-		<div class="flex flex-col w-full">
-			<div class="flex w-full justify-between my-1">
-				<div class=" self-center text-xs font-normal">
-					{$i18n.t('Memories')}
-				</div>
-				<Switch bind:state={permissions.features.memories} ariaLabel={$i18n.t('Memories')} />
-			</div>
-			{#if defaultPermissions?.features?.memories && !permissions.features.memories}
 				<div>
 					<div class="text-xs text-gray-500">
 						{$i18n.t('This is a default user permission and will remain enabled.')}

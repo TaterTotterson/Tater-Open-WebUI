@@ -48,7 +48,6 @@ dependencies = [
     "loguru==0.7.3",
     "asgiref==3.11.1",
 
-    "tiktoken==0.13.0",
     "regex==2026.5.9",
     "google-re2==1.1.20251105",
     "mcp==1.27.2",
@@ -57,17 +56,10 @@ dependencies = [
     "anthropic==0.86.0",
 
     "langchain-core==1.4.8",
-    "langchain-classic==1.0.7",
-    "langchain-text-splitters==1.1.2",
-
-    "fake-useragent==2.2.0",
-    "chromadb==1.5.9",
-    "opensearch-py==3.2.0",
     "PyMySQL==1.2.0",
     "boto3==1.42.62",
     
     "transformers==5.5.4",
-    "sentence-transformers==5.5.1",
     "accelerate==1.13.0",
     "pyarrow==20.0.0", # fix: pin pyarrow version to 20 for rpi compatibility #15897
     "einops==0.8.2",
@@ -96,17 +88,12 @@ dependencies = [
     "pillow==12.2.0",
     "opencv-python-headless==4.13.0.92",
     "rapidocr==3.9.2",
-    "rank-bm25==0.2.2",
 
     "onnxruntime==1.26.0",
     "faster-whisper==1.2.1",
 
     "black==26.5.1",
-    "youtube-transcript-api==1.2.4",
-
     "pydub==0.25.1",
-    "ddgs==9.14.4",
-
     "googleapis-common-protos==1.75.0",
     "google-cloud-storage==3.9.0",
 
@@ -131,7 +118,6 @@ classifiers = [
 [project.optional-dependencies]
 postgres = [
     "psycopg2-binary==2.9.12",
-    "pgvector==0.4.2",
 ]
 mariadb = [
     "mariadb==1.1.14",
@@ -142,19 +128,6 @@ unstructured = [
 
 all = [
     "psycopg2-binary==2.9.12",
-    "pgvector==0.4.2",
-    "playwright==1.60.0", # Caution: version must match docker-compose.playwright.yaml - Update the docker-compose.yaml if necessary
-    "elasticsearch==9.4.1",
-
-    "qdrant-client==1.18.0",
-    
-    "weaviate-client==4.20.3",
-    "pymilvus==2.6.14",
-    "pinecone==6.0.2",
-    "oracledb==3.4.2",
-    "colbert-ai==0.2.22",
-
-    "azure-search-documents==12.0.0",
     "unstructured==0.22.31",
 ]
 

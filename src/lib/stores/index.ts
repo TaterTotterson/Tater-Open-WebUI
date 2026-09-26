@@ -64,13 +64,12 @@ export const selectedFolder = writable(null);
 
 export const models: Writable<Model[]> = writable([]);
 
-export const knowledge: Writable<null | Document[]> = writable(null);
 export const tools = writable(null);
 export const skills: Writable<null | any[]> = writable(null);
 export const terminalSkills: Writable<any[]> = writable([]);
 export const functions = writable(null);
 
-export type WorkspaceSection = 'models' | 'knowledge' | 'prompts' | 'skills' | 'tools';
+export type WorkspaceSection = 'models' | 'prompts' | 'skills' | 'tools';
 export type WorkspaceAction = {
 	id: string;
 	label: string;
@@ -81,7 +80,6 @@ export type WorkspaceAction = {
 
 export const workspaceCounts: Writable<Record<WorkspaceSection, number | null>> = writable({
 	models: null,
-	knowledge: null,
 	prompts: null,
 	skills: null,
 	tools: null
@@ -204,8 +202,6 @@ type Settings = {
 	richTextInput?: boolean;
 	params?: any;
 	userLocation?: any;
-	webSearch?: any;
-	memory?: boolean;
 	autoTags?: boolean;
 	autoFollowUps?: boolean;
 	splitLargeChunks?(body: any, splitLargeChunks: any): unknown;
@@ -304,9 +300,6 @@ type Config = {
 		enable_api_keys: boolean;
 		enable_signup: boolean;
 		enable_login_form: boolean;
-		enable_web_search?: boolean;
-		enable_web_search_confirmation?: boolean;
-		web_search_confirmation_content?: string;
 		enable_google_drive_integration: boolean;
 		enable_onedrive_integration: boolean;
 		enable_image_generation: boolean;
@@ -315,7 +308,6 @@ type Config = {
 		enable_context_compaction?: boolean;
 		enable_tool_permissions?: boolean;
 		enable_community_sharing: boolean;
-		enable_memories: boolean;
 		enable_plugins?: boolean;
 		enable_autocomplete_generation: boolean;
 		enable_version_update_check: boolean;

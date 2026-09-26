@@ -7,7 +7,7 @@ from open_webui.env import (
     AIOHTTP_CLIENT_SESSION_SSL,
     VERSION,
 )
-from open_webui.retrieval.web.utils import get_ssrf_safe_session, validate_url
+from open_webui.utils.ssrf import get_ssrf_safe_session, validate_url
 from open_webui.utils.json_codec import JSONCodec
 
 log = logging.getLogger(__name__)

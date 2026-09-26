@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Interactive docker compose launcher for Open WebUI.
-# Supports GPU auto-detection, configurable ports, data mounts, and Playwright.
+# Supports GPU auto-detection, configurable ports, and data mounts.
 # ---------------------------------------------------------------------------
 
 readonly BOLD='\033[1m'
@@ -52,7 +52,6 @@ Options:
   --enable-api[port=PORT] Expose the Ollama API on PORT (default: 11435)
   --webui[port=PORT]      Set the WebUI port (default: 3000)
   --data[folder=PATH]     Bind-mount a host path for Ollama data
-  --playwright            Enable Playwright for web scraping
   --build                 Build images before starting
   --drop                  Tear down the compose project
   -q, --quiet             Skip the confirmation prompt
@@ -70,7 +69,6 @@ EOF
 
 enable_gpu=false
 enable_api=false
-enable_playwright=false
 build_image=false
 headless=false
 drop_project=false
@@ -87,7 +85,6 @@ while [[ $# -gt 0 ]]; do
     --enable-api*)  enable_api=true;       api_port=$(extract_bracket_value "$1" "11435") ;;
     --webui*)       webui_port=$(extract_bracket_value "$1" "3000") ;;
     --data*)        data_dir=$(extract_bracket_value "$1" "./ollama-data") ;;
-    --playwright)   enable_playwright=true ;;
     --build)        build_image=true ;;
     --drop)         drop_project=true ;;
     -q|--quiet)     headless=true ;;
@@ -130,10 +127,6 @@ if [[ -n "$data_dir" ]]; then
   compose_files+=("-f" "docker-compose.data.yaml")
 fi
 
-if [[ "$enable_playwright" == true ]]; then
-  compose_files+=("-f" "docker-compose.playwright.yaml")
-fi
-
 export OPEN_WEBUI_PORT="$webui_port"
 
 up_args=("up" "-d" "--remove-orphans" "--force-recreate")
@@ -150,7 +143,6 @@ echo -e "   ${GREEN}${BOLD}GPU Count:${RESET}   ${OLLAMA_GPU_COUNT:-Disabled}"
 echo -e "   ${GREEN}${BOLD}API Port:${RESET}    ${OLLAMA_WEBAPI_PORT:-Disabled}"
 echo -e "   ${GREEN}${BOLD}Data Dir:${RESET}    ${data_dir:-Docker volume}"
 echo -e "   ${GREEN}${BOLD}WebUI Port:${RESET}  ${webui_port}"
-echo -e "   ${GREEN}${BOLD}Playwright:${RESET}  ${enable_playwright}"
 echo
 
 if [[ "$headless" != true ]]; then

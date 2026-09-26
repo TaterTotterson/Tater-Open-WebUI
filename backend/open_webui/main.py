@@ -150,14 +150,11 @@ from open_webui.routers import (
     folders,
     groups,
     images,
-    knowledge,
     local_terminal,
-    memories,
     models,
     notifications,
     openai,
     prompts,
-    retrieval,
     scim,
     skills,
     tater,
@@ -166,12 +163,6 @@ from open_webui.routers import (
     tools,
     users,
     utils,
-)
-from open_webui.routers.retrieval import (
-    get_ef,
-    get_embedding_function,
-    get_reranking_function,
-    get_rf,
 )
 from open_webui.socket.main import (
     MODELS,
@@ -224,7 +215,6 @@ from open_webui.utils.chat_id import (
 from open_webui.utils.chat_variables import (
     normalize_chat_variables,
 )
-from open_webui.utils.embeddings import generate_embeddings
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.json_response import apply_orjson_http_json
 from open_webui.utils.logger import start_logger
@@ -325,7 +315,7 @@ https://github.com/open-webui/open-webui
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Store reference to main event loop for sync->async calls (e.g., embedding generation)
+    # Store a reference to the main event loop for sync-to-async calls.
     # This allows sync functions to schedule work on the main loop without blocking health checks
     app.state.main_loop = asyncio.get_running_loop()
 
@@ -611,95 +601,6 @@ async def initialize_runtime_config(app: FastAPI):
                         f'{type(e).__name__}: {e}' if str(e) else type(e).__name__,
                     )
 
-    app.state.EMBEDDING_FUNCTION = None
-    app.state.RERANKING_FUNCTION = None
-    app.state.ef = None
-    app.state.rf = None
-    app.state.YOUTUBE_LOADER_TRANSLATION = None
-
-    try:
-        rag_config = await Config.get_many(
-            'rag.embedding_engine',
-            'rag.embedding_model',
-            'rag.enable_hybrid_search',
-            'rag.bypass_embedding_and_retrieval',
-            'rag.reranking_engine',
-            'rag.reranking_model',
-            'rag.external_reranker_url',
-            'rag.external_reranker_api_key',
-            'rag.external_reranker_timeout',
-        )
-        app.state.ef = get_ef(rag_config.get('rag.embedding_engine'), rag_config.get('rag.embedding_model'))
-        if rag_config.get('rag.enable_hybrid_search') and not rag_config.get('rag.bypass_embedding_and_retrieval'):
-            app.state.rf = get_rf(
-                rag_config.get('rag.reranking_engine'),
-                rag_config.get('rag.reranking_model'),
-                rag_config.get('rag.external_reranker_url'),
-                rag_config.get('rag.external_reranker_api_key'),
-                rag_config.get('rag.external_reranker_timeout'),
-            )
-        else:
-            app.state.rf = None
-    except Exception as e:
-        log.error(f'Error updating models: {e}')
-        app.state.rf = None
-
-    rag_config = await Config.get_many(
-        'rag.embedding_engine',
-        'rag.embedding_model',
-        'rag.openai.api_base_url',
-        'rag.ollama.base_url',
-        'rag.azure_openai.base_url',
-        'rag.openai.api_key',
-        'rag.ollama.api_key',
-        'rag.azure_openai.api_key',
-        'rag.embedding_batch_size',
-        'rag.azure_openai.api_version',
-        'rag.enable_async_embedding',
-        'rag.embedding_concurrent_requests',
-        'rag.reranking_engine',
-        'rag.reranking_model',
-        'rag.reranking_batch_size',
-    )
-    embedding_engine = rag_config.get('rag.embedding_engine')
-    app.state.EMBEDDING_FUNCTION = get_embedding_function(
-        embedding_engine,
-        rag_config.get('rag.embedding_model'),
-        embedding_function=app.state.ef,
-        url=(
-            rag_config.get('rag.openai.api_base_url')
-            if embedding_engine == 'openai'
-            else (
-                rag_config.get('rag.ollama.base_url')
-                if embedding_engine == 'ollama'
-                else rag_config.get('rag.azure_openai.base_url')
-            )
-        ),
-        key=(
-            rag_config.get('rag.openai.api_key')
-            if embedding_engine == 'openai'
-            else (
-                rag_config.get('rag.ollama.api_key')
-                if embedding_engine == 'ollama'
-                else rag_config.get('rag.azure_openai.api_key')
-            )
-        ),
-        embedding_batch_size=rag_config.get('rag.embedding_batch_size'),
-        azure_api_version=(
-            rag_config.get('rag.azure_openai.api_version') if embedding_engine == 'azure_openai' else None
-        ),
-        enable_async=rag_config.get('rag.enable_async_embedding'),
-        concurrent_requests=rag_config.get('rag.embedding_concurrent_requests'),
-    )
-
-    app.state.RERANKING_FUNCTION = get_reranking_function(
-        rag_config.get('rag.reranking_engine'),
-        rag_config.get('rag.reranking_model'),
-        reranking_function=app.state.rf,
-        reranking_batch_size=rag_config.get('rag.reranking_batch_size'),
-    )
-
-
 ########################################
 #
 # CODE EXECUTION
@@ -796,7 +697,6 @@ app.include_router(tasks.router, prefix='/api/v1/tasks', tags=['tasks'])
 app.include_router(images.router, prefix='/api/v1/images', tags=['images'])
 
 app.include_router(audio.router, prefix='/api/v1/audio', tags=['audio'])
-app.include_router(retrieval.router, prefix='/api/v1/retrieval', tags=['retrieval'])
 
 app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
 
@@ -809,12 +709,10 @@ app.include_router(chats.router, prefix='/api/v1/chats', tags=['chats'])
 
 app.include_router(models.router, prefix='/api/v1/models', tags=['models'])
 app.include_router(notifications.router, prefix='/api/v1/notifications', tags=['notifications'])
-app.include_router(knowledge.router, prefix='/api/v1/knowledge', tags=['knowledge'])
 app.include_router(prompts.router, prefix='/api/v1/prompts', tags=['prompts'])
 app.include_router(tools.router, prefix='/api/v1/tools', tags=['tools'])
 app.include_router(skills.router, prefix='/api/v1/skills', tags=['skills'])
 
-app.include_router(memories.router, prefix='/api/v1/memories', tags=['memories'])
 app.include_router(folders.router, prefix='/api/v1/folders', tags=['folders'])
 app.include_router(groups.router, prefix='/api/v1/groups', tags=['groups'])
 app.include_router(files.router, prefix='/api/v1/files', tags=['files'])
@@ -884,36 +782,6 @@ async def get_models(request: Request, refresh: bool = False, user=Depends(get_v
 async def get_base_models(request: Request, user=Depends(get_admin_user)):
     models = await get_all_base_models(request, user=user)
     return {'data': models}
-
-
-##################################
-# Embeddings
-##################################
-
-
-@app.post('/api/embeddings')
-@app.post('/api/v1/embeddings')  # Experimental: Compatibility with OpenAI API
-async def embeddings(request: Request, form_data: dict, user=Depends(get_verified_user)):
-    """
-    OpenAI-compatible embeddings endpoint.
-
-    This handler:
-      - Performs user/model checks and dispatches to the correct backend.
-      - Supports the configured model providers through a compatible API.
-
-    Args:
-        request (Request): Request context.
-        form_data (dict): OpenAI-like payload (e.g., {"model": "...", "input": [...]})
-        user (UserModel): Authenticated user.
-
-    Returns:
-        dict: OpenAI-compatible embeddings response.
-    """
-    # Make sure models are loaded in app state
-    if not request.app.state.MODELS:
-        await get_all_models(request, user=user)
-    # Use generic dispatcher in utils.embeddings
-    return await generate_embeddings(request, form_data, user)
 
 
 @app.post('/api/chat/completions')
@@ -2060,9 +1928,6 @@ async def get_app_config(request: Request):
         'folders.max_file_count',
         'chat.context_compaction.enable',
         'chat.tool_permissions.enable',
-        'web.search.enable',
-        'web.search.confirmation.enable',
-        'web.search.confirmation.content',
         'code_execution.enable',
         'code_interpreter.enable',
         'image_generation.enable',
@@ -2073,7 +1938,6 @@ async def get_app_config(request: Request):
         'users.enable_status',
         'google_drive.enable',
         'onedrive.enable',
-        'memories.enable',
         'ui.default_models',
         'ui.default_pinned_models',
         'ui.default_interface_settings',
@@ -2141,9 +2005,6 @@ async def get_app_config(request: Request):
                     'folder_max_file_count': config.get('folders.max_file_count'),
                     'enable_context_compaction': config.get('chat.context_compaction.enable'),
                     'enable_tool_permissions': config.get('chat.tool_permissions.enable'),
-                    'enable_web_search': config.get('web.search.enable'),
-                    'enable_web_search_confirmation': config.get('web.search.confirmation.enable'),
-                    'web_search_confirmation_content': config.get('web.search.confirmation.content'),
                     'enable_code_execution': config.get('code_execution.enable'),
                     'enable_code_interpreter': config.get('code_interpreter.enable'),
                     'enable_image_generation': config.get('image_generation.enable'),
@@ -2156,7 +2017,6 @@ async def get_app_config(request: Request):
                     'enable_admin_chat_access': ENABLE_ADMIN_CHAT_ACCESS,
                     'enable_google_drive_integration': config.get('google_drive.enable'),
                     'enable_onedrive_integration': config.get('onedrive.enable'),
-                    'enable_memories': config.get('memories.enable'),
                     **(
                         {
                             'enable_onedrive_personal': ENABLE_ONEDRIVE_PERSONAL,

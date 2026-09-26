@@ -6,15 +6,6 @@ SETLOCAL ENABLEDELAYEDEXPANSION
 SET "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%" || exit /b
 
-:: Add conditional Playwright browser installation
-IF /I "%WEB_LOADER_ENGINE%" == "playwright" (
-    IF "%PLAYWRIGHT_WS_URL%" == "" (
-        echo Installing Playwright browsers...
-        playwright install chromium
-        playwright install-deps chromium
-    )
-)
-
 SET "KEY_FILE=.webui_secret_key"
 IF NOT "%WEBUI_SECRET_KEY_FILE%" == "" (
     SET "KEY_FILE=%WEBUI_SECRET_KEY_FILE%"

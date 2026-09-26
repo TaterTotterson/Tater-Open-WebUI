@@ -86,7 +86,6 @@ The local runtime must provide:
 
 These features are outside the initial TaterChat product and should be removed only after the retained paths have tests:
 
-- RAG, knowledge bases, embeddings, rerankers, and vector databases;
 - channels, notes, calendar, and Open WebUI automations;
 - telemetry;
 - SCIM, LDAP, enterprise groups, and cloud storage integrations;
@@ -137,7 +136,7 @@ The normal agent prompt will emphasize:
 4. Add the `tater_hydra` delegation tool using the normal Chat Completions endpoint. See
    [`TATER_HYDRA.md`](TATER_HYDRA.md).
 5. Install the focused system prompt and robust multi-tool loop.
-6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. The frontend and backend-surface slices are underway; remote Python Pipelines, the general Ollama provider, browser-direct providers, generic provider-management APIs, and model arenas have been removed. Image and audio stay as UI features. Retrieval retains its separate optional Ollama embedding client until that subsystem is handled independently.
+6. Hide unneeded routes and navigation, then remove their backend routers and dependencies in measured slices. Remote Python Pipelines, the general Ollama provider, browser-direct providers, generic provider-management APIs, model arenas, RAG, knowledge bases, memories, web search, embeddings, rerankers, and vector databases have been removed. Normal file attachments now inject stored extracted text directly. Image and audio stay as UI features.
 7. Rebrand permitted surfaces, package the standalone app, and add security/audit documentation.
 
 ## Security boundary

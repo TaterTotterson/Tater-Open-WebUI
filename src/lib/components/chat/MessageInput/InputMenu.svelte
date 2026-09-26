@@ -20,8 +20,6 @@
 	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
 	import Chats from './InputMenu/Chats.svelte';
 	import Files from './InputMenu/Files.svelte';
-	import AttachWebpageModal from './AttachWebpageModal.svelte';
-	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 
 	const i18n: any = getContext('i18n');
 
@@ -37,7 +35,6 @@
 	export let uploadGoogleDriveHandler: Function;
 	export let uploadOneDriveHandler: Function;
 
-	export let onUpload: Function;
 	export let onClose: Function;
 	export let toolApprovalMode = 'full';
 	export let onToolApprovalModeChange: Function = () => {};
@@ -45,7 +42,6 @@
 	let show = false;
 	let tab = '';
 
-	let showAttachWebpageModal = false;
 	const toolApprovalModes = [
 		{
 			value: 'full',
@@ -64,8 +60,6 @@
 		fileUploadCapableModels.length === selectedModels.length &&
 		($user?.role === 'admin' || $user?.permissions?.chat?.file_upload);
 
-	let webUploadEnabled = true;
-	$: webUploadEnabled = $user?.role === 'admin' || ($user?.permissions?.chat?.web_upload ?? true);
 	$: toolPermissionsEnabled = $config?.features?.enable_tool_permissions ?? false;
 
 	$: if (!fileUploadEnabled && files.length > 0) {
@@ -100,13 +94,6 @@
 		show = false;
 	};
 </script>
-
-<AttachWebpageModal
-	bind:show={showAttachWebpageModal}
-	onSubmit={(e) => {
-		onUpload(e);
-	}}
-/>
 
 <!-- Hidden file input used to open the camera on mobile -->
 <input
@@ -235,29 +222,6 @@
 						>
 							<Camera />
 							<div class=" line-clamp-1">{$i18n.t('Capture')}</div>
-						</button>
-					</Tooltip>
-
-					<Tooltip
-						content={!webUploadEnabled
-							? $i18n.t('You do not have permission to upload web content.')
-							: ''}
-						className="w-full"
-					>
-						<button
-							class="flex w-full gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal select-none cursor-pointer hover:bg-gray-50/40 dark:hover:bg-gray-800/40 rounded-xl {!webUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							type="button"
-							on:click={() => {
-								if (webUploadEnabled) {
-									showAttachWebpageModal = true;
-									show = false;
-								}
-							}}
-						>
-							<GlobeAlt />
-							<div class="line-clamp-1">{$i18n.t('Attach Webpage')}</div>
 						</button>
 					</Tooltip>
 

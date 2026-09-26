@@ -85,7 +85,6 @@
 		updateChatFolderIdById
 	} from '$lib/apis/chats';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
-	import { processUrl, processWebSearch } from '$lib/apis/retrieval';
 	import {
 		getAndUpdateUserLocation,
 		getUserInfoById,
@@ -93,7 +92,6 @@
 		updateUserSettings
 	} from '$lib/apis/users';
 	import {
-		generateQueries,
 		chatAction,
 		generateMoACompletion,
 		stopTask,
@@ -115,7 +113,6 @@
 	import ChatControls from './ChatControls.svelte';
 	import EventConfirmDialog from '../common/ConfirmDialog.svelte';
 	import DeleteConfirmDialog from '../common/ConfirmDialog.svelte';
-	import WebSearchConfirmDialog from '../common/ConfirmDialog.svelte';
 	import Placeholder from './Placeholder.svelte';
 	import FilesOverlay from './MessageInput/FilesOverlay.svelte';
 	import NotificationToast from '../NotificationToast.svelte';
@@ -332,51 +329,7 @@
 	let pendingOAuthTools = [];
 
 	let imageGenerationEnabled = false;
-	let webSearchEnabled = false;
 	let codeInterpreterEnabled = false;
-	let webSearchActive = false;
-	let showWebSearchConfirm = false;
-	let pendingWebSearchPrompt: string | null = null;
-	let webSearchConfirmed = false;
-
-	$: {
-		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
-		const allModelsSupportWebSearch =
-			currentModels.filter(
-				(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.web_search ?? true
-			).length === currentModels.length;
-
-		webSearchActive = Boolean(
-			$config?.features?.enable_web_search &&
-			($user?.role === 'admin' || $user?.permissions?.features?.web_search) &&
-			(webSearchEnabled ||
-				(allModelsSupportWebSearch && ($settings?.webSearch ?? false) === 'always'))
-		);
-	}
-
-	const openWebSearchConfirm = () => {
-		window.setTimeout(() => {
-			showWebSearchConfirm = true;
-		}, 0);
-	};
-
-	const handleWebSearchToggle = (enabled: boolean) => {
-		if (enabled && $config?.features?.enable_web_search_confirmation && !webSearchConfirmed) {
-			webSearchEnabled = false;
-			pendingWebSearchPrompt = null;
-			openWebSearchConfirm();
-		}
-	};
-
-	const resetWebSearchConfirmation = () => {
-		webSearchConfirmed = false;
-		pendingWebSearchPrompt = null;
-		showWebSearchConfirm = false;
-	};
-
-	$: if (!webSearchActive) {
-		resetWebSearchConfirmation();
-	}
 
 	let showCommands = false;
 
@@ -766,7 +719,6 @@
 			selectedToolIds = input.selectedToolIds ?? [];
 			selectedSkillIds = input.selectedSkillIds ?? [];
 			selectedFilterIds = input.selectedFilterIds ?? [];
-			webSearchEnabled = input.webSearchEnabled ?? false;
 			imageGenerationEnabled = input.imageGenerationEnabled ?? false;
 			codeInterpreterEnabled = input.codeInterpreterEnabled ?? false;
 			if (input.toolApprovalMode) {
@@ -832,7 +784,6 @@
 		selectedToolIds = [];
 		selectedSkillIds = [];
 		selectedFilterIds = [];
-		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 
 		const storageChatInput = sessionStorage.getItem(
@@ -903,7 +854,6 @@
 		selectedToolIds = [];
 		selectedSkillIds = [];
 		selectedFilterIds = [];
-		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeInterpreterEnabled = false;
 		prompt = '';
@@ -972,7 +922,6 @@
 		selectedSkillIds = [];
 		selectedFilterIds = [];
 		pendingOAuthTools = [];
-		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeInterpreterEnabled = false;
 
@@ -1087,14 +1036,6 @@
 						($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
 					) {
 						imageGenerationEnabled = model.info.meta.defaultFeatureIds.includes('image_generation');
-					}
-
-					if (
-						model.info?.meta?.capabilities?.['web_search'] &&
-						$config?.features?.enable_web_search &&
-						($user?.role === 'admin' || $user?.permissions?.features?.web_search)
-					) {
-						webSearchEnabled = model.info.meta.defaultFeatureIds.includes('web_search');
 					}
 
 					if (
@@ -1618,7 +1559,6 @@
 				selectedToolIds = [];
 				selectedSkillIds = [];
 				selectedFilterIds = [];
-				webSearchEnabled = false;
 				imageGenerationEnabled = false;
 				codeInterpreterEnabled = false;
 
@@ -1787,84 +1727,6 @@
 		}
 	};
 
-	const uploadWeb = async (urls) => {
-		if ($user?.role !== 'admin' && !($user?.permissions?.chat?.web_upload ?? true)) {
-			toast.error($i18n.t('You do not have permission to upload web content.'));
-			return;
-		}
-
-		if (!Array.isArray(urls)) {
-			urls = [urls];
-		}
-
-		// Create file items first
-		const fileItems = urls.map((url) => ({
-			type: 'text',
-			name: url,
-			collection_name: '',
-			status: 'uploading',
-			context: 'full',
-			url,
-			error: ''
-		}));
-
-		// Display all items at once
-		files = [...files, ...fileItems];
-
-		for (const fileItem of fileItems) {
-			try {
-				const res = await processUrl(localStorage.token, fileItem.url);
-
-				if (res) {
-					const uploadedFile = res.file;
-					fileItem.status = 'uploaded';
-					fileItem.name = res.name ?? fileItem.name;
-					fileItem.collection_name = res.collection_name;
-
-					if (res.type === 'image' && uploadedFile) {
-						fileItem.type = 'image';
-						fileItem.file = uploadedFile;
-						fileItem.id = uploadedFile.id;
-						fileItem.url = `${uploadedFile.id}`;
-						fileItem.content_type = uploadedFile.meta?.content_type;
-						fileItem.size = uploadedFile.meta?.size;
-					} else if (res.type === 'file' && uploadedFile) {
-						fileItem.type = 'file';
-						fileItem.file = uploadedFile;
-						fileItem.id = uploadedFile.id;
-						fileItem.url = `${uploadedFile.id}`;
-						fileItem.content_type = uploadedFile.meta?.content_type;
-						fileItem.size = uploadedFile.meta?.size;
-						fileItem.collection_name =
-							res.collection_name ??
-							uploadedFile.meta?.collection_name ??
-							uploadedFile.collection_name;
-					} else {
-						fileItem.type = 'text';
-						fileItem.file = {
-							data: {
-								content: res.content
-							},
-							meta: {
-								name: res.name ?? fileItem.name,
-								source: res.url ?? fileItem.url
-							}
-						};
-					}
-				}
-
-				files = [...files];
-			} catch (e) {
-				fileItem.status = 'error';
-				fileItem.error = `${e}`;
-				files = files.filter((f) => f.name !== fileItem.name);
-				toast.error(`${e}`);
-			}
-		}
-
-		await onUpdate();
-	};
-
 	const onUpdate = async ({ file }: { file?: any } = {}) => {
 		if (file?.itemId) {
 			chatRequestQueues.update((q) => ({
@@ -1888,8 +1750,6 @@
 
 		if (type === 'google-drive') {
 			await uploadGoogleDriveFile(data);
-		} else if (type === 'web') {
-			await uploadWeb(data);
 		}
 	};
 
@@ -2161,17 +2021,6 @@
 		taskIds = null;
 		chatTasks = [];
 
-		if ($page.url.searchParams.get('youtube')) {
-			await uploadWeb(`https://www.youtube.com/watch?v=${$page.url.searchParams.get('youtube')}`);
-		}
-
-		if ($page.url.searchParams.get('load-url')) {
-			await uploadWeb($page.url.searchParams.get('load-url'));
-		}
-
-		if ($page.url.searchParams.get('web-search') === 'true') {
-			webSearchEnabled = true;
-		}
 
 		if ($page.url.searchParams.get('image-generation') === 'true') {
 			imageGenerationEnabled = true;
@@ -3153,16 +3002,6 @@
 		}
 
 		if (
-			$config?.features?.enable_web_search_confirmation &&
-			webSearchActive &&
-			!webSearchConfirmed
-		) {
-			pendingWebSearchPrompt = userPrompt ?? '';
-			openWebSearchConfirm();
-			return;
-		}
-
-		if (
 			($chatRequestQueues[$chatId] ?? []).some((m) =>
 				(m.files ?? []).some((file) => ['uploading', 'error'].includes(file.status))
 			) ||
@@ -3395,13 +3234,8 @@
 					$config?.features?.enable_code_interpreter &&
 					($user?.role === 'admin' || $user?.permissions?.features?.code_interpreter)
 						? codeInterpreterEnabled
-						: false,
-				web_search: webSearchActive
+						: false
 			};
-
-		if ($settings?.memory ?? $config?.features?.enable_memories ?? false) {
-			features = { ...features, memory: true };
-		}
 
 		return features;
 	};
@@ -3736,12 +3570,6 @@
 		};
 		responseMessage.done = true;
 
-		if (responseMessage.statusHistory) {
-			responseMessage.statusHistory = responseMessage.statusHistory.filter(
-				(status) => status.action !== 'knowledge_search'
-			);
-		}
-
 		history.messages[responseMessage.id] = responseMessage;
 	};
 
@@ -4035,7 +3863,6 @@
 		selectedSkillIds,
 		selectedFilterIds,
 		imageGenerationEnabled,
-		webSearchEnabled,
 		codeInterpreterEnabled,
 		toolApprovalMode
 	});
@@ -4115,18 +3942,6 @@
 
 	let showDeleteConfirm = false;
 
-	const confirmWebSearch = async () => {
-		const userPrompt = pendingWebSearchPrompt;
-		pendingWebSearchPrompt = null;
-		webSearchConfirmed = true;
-
-		if (userPrompt !== null) {
-			await submitHandler(userPrompt);
-		} else {
-			webSearchEnabled = true;
-		}
-	};
-
 	const deleteChatHandler = async (id: string) => {
 		showDeleteConfirm = true;
 	};
@@ -4204,23 +4019,6 @@
 		onSave={saveChatVariables}
 	/>
 {/if}
-
-<WebSearchConfirmDialog
-	bind:show={showWebSearchConfirm}
-	title={$i18n.t('Use Web Search?')}
-	message={($config?.features?.web_search_confirmation_content ?? '').trim() !== ''
-		? ($config?.features?.web_search_confirmation_content ?? '')
-		: $i18n.t('Your query will be sent to the configured web search provider.')}
-	confirmLabel={$i18n.t('Continue')}
-	cancelLabel={$i18n.t('Cancel')}
-	on:confirm={confirmWebSearch}
-	on:cancel={() => {
-		if (pendingWebSearchPrompt === null) {
-			webSearchEnabled = false;
-		}
-		pendingWebSearchPrompt = null;
-	}}
-/>
 
 <DeleteConfirmDialog
 	bind:show={showDeleteConfirm}
@@ -4444,7 +4242,6 @@
 										bind:codeInterpreterEnabled
 										{pendingOAuthTools}
 										{oauthRedirectHandler}
-										bind:webSearchEnabled
 										bind:atSelectedModel
 										bind:showCommands
 										bind:dragged
@@ -4474,7 +4271,6 @@
 												saveDraft(data, getDraftChatId());
 											}
 										}}
-										onWebSearchToggle={handleWebSearchToggle}
 										on:chatVariables={() => {
 											showChatVariablesModal = true;
 										}}
@@ -4536,7 +4332,6 @@
 										bind:codeInterpreterEnabled
 										{pendingOAuthTools}
 										{oauthRedirectHandler}
-										bind:webSearchEnabled
 										bind:atSelectedModel
 										bind:showCommands
 										bind:dragged
@@ -4566,7 +4361,6 @@
 												saveDraft(data, getDraftChatId());
 											}
 										}}
-										onWebSearchToggle={handleWebSearchToggle}
 										on:chatVariables={() => {
 											showChatVariablesModal = true;
 										}}
@@ -4595,7 +4389,6 @@
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
 									bind:codeInterpreterEnabled
-									bind:webSearchEnabled
 									bind:atSelectedModel
 									bind:showCommands
 									bind:dragged
@@ -4613,7 +4406,6 @@
 									onQueueSendNow={sendQueuedMessageNow}
 									onQueueEdit={editQueuedMessage}
 									onQueueDelete={deleteQueuedMessage}
-									onWebSearchToggle={handleWebSearchToggle}
 									on:chatVariables={() => {
 										showChatVariablesModal = true;
 									}}

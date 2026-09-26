@@ -119,8 +119,6 @@ ADMIN_CONFIG_KEYS = {
     'ENABLE_MESSAGE_RATING': 'ui.enable_message_rating',
     'ENABLE_FOLDERS': 'folders.enable',
     'FOLDER_MAX_FILE_COUNT': 'folders.max_file_count',
-    'ENABLE_MEMORIES': 'memories.enable',
-    'ENABLE_MEMORY_SYSTEM_CONTEXT': 'memories.system_context.enable',
     'ENABLE_USER_WEBHOOKS': 'ui.enable_user_webhooks',
     'ENABLE_USER_STATUS': 'users.enable_status',
     'PENDING_USER_OVERLAY_TITLE': 'ui.pending_user_overlay_title',
@@ -1217,8 +1215,6 @@ class AdminConfig(BaseModel):
     ENABLE_MESSAGE_RATING: bool
     ENABLE_FOLDERS: bool
     FOLDER_MAX_FILE_COUNT: int | str | None = None
-    ENABLE_MEMORIES: bool
-    ENABLE_MEMORY_SYSTEM_CONTEXT: bool
     ENABLE_USER_WEBHOOKS: bool
     ENABLE_USER_STATUS: bool
     PENDING_USER_OVERLAY_TITLE: str | None = None

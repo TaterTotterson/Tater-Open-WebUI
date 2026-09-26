@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Container entry point for Open WebUI.
-# Handles secret key generation, optional CUDA/Playwright setup,
+# Handles secret key generation, optional CUDA setup,
 # HuggingFace Space deployment, and launches the uvicorn server.
 # ---------------------------------------------------------------------------
 
@@ -11,20 +11,10 @@ set -euo pipefail
 # expansion. The two can't be combined inline (`${VAR:-default,,}` makes
 # the default literal `,,`), so we normalise once up front and the simple
 # `${VAR,,}` form stays safe under `set -u` everywhere else.
-: "${USE_SLIM_DOCKER:=}" "${WEB_LOADER_ENGINE:=}" "${USE_CUDA_DOCKER:=}"
+: "${USE_SLIM_DOCKER:=}" "${USE_CUDA_DOCKER:=}"
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "$SCRIPT_DIR" || exit 1
-
-# ── Playwright browser installation (if configured) ──────────────────────────
-
-if [[ "${USE_SLIM_DOCKER,,}" != "true" && "${WEB_LOADER_ENGINE,,}" == "playwright" ]]; then
-  if [[ -z "${PLAYWRIGHT_WS_URL:-}" ]]; then
-    echo "Installing Playwright Chromium browser..."
-    playwright install chromium
-    playwright install-deps chromium
-  fi
-fi
 
 # ── Secret key setup ─────────────────────────────────────────────────────────
 

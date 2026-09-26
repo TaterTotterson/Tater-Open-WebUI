@@ -31,35 +31,28 @@ from open_webui.env import (
     ENABLE_CHAT_RESPONSE_BASE64_IMAGE_URL_CONVERSION,
     ENABLE_CHAT_RESPONSE_STREAM_INPLACE_APPEND,
     ENABLE_PLUGINS,
-    ENABLE_QUERIES_CACHE,
     ENABLE_RESPONSES_API_STATEFUL,
     GLOBAL_LOG_LEVEL,
-    RAG_SYSTEM_CONTEXT,
 )
 from open_webui.events import EVENTS, publish_event
 from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
+from open_webui.models.files import Files
 from open_webui.models.folders import Folders
 from open_webui.models.notes import Notes
 from open_webui.models.users import UserModel
-from open_webui.retrieval.utils import filter_source_metadata, get_sources_from_items
 from open_webui.routers.images import (
     CreateImageForm,
     EditImageForm,
     image_edits,
     image_generations,
 )
-from open_webui.routers.retrieval import (
-    SearchForm,
-    process_web_search,
-)
 from open_webui.routers.tasks import (
     generate_chat_tags,
     generate_follow_ups,
     generate_image_prompt,
-    generate_queries,
     generate_title,
 )
 from open_webui.socket.main import (
@@ -68,7 +61,7 @@ from open_webui.socket.main import (
 )
 from open_webui.tasks import clear_response_stream, save_response_stream
 from open_webui.utils.access_control import has_connection_access, has_permission
-from open_webui.utils.access_control.files import get_owner_accessible_folder_files
+from open_webui.utils.access_control.files import get_owner_accessible_folder_files, has_access_to_file
 from open_webui.utils.access_control.folders import has_folder_access
 from open_webui.utils.ask_user import stage_ask_user_tool_calls
 from open_webui.utils.chat import generate_chat_completion
@@ -89,7 +82,6 @@ from open_webui.utils.filter import (
 )
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.mcp.client import MCPClient
-from open_webui.utils.memory import add_memory_context, review_memory_after_turn
 from open_webui.utils.misc import (
     add_or_update_system_message,
     add_or_update_user_message,
@@ -119,11 +111,7 @@ from open_webui.utils.skills import (
     has_prior_real_chat_content,
     strip_skill_mentions,
 )
-from open_webui.utils.task import (
-    get_task_model_id,
-    rag_template,
-    tools_function_calling_generation_template,
-)
+from open_webui.utils.task import get_task_model_id, tools_function_calling_generation_template
 from open_webui.utils.tater_agent import (
     TATER_AGENT_REPEAT_LIMIT,
     agent_iteration_limit,
@@ -134,7 +122,6 @@ from open_webui.utils.tater_agent import (
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
 from open_webui.utils.tools import (
     build_tool_server_headers,
-    get_attached_knowledge,
     get_builtin_tools,
     get_terminal_tools,
     get_tools,
@@ -409,12 +396,12 @@ def get_citation_source_from_tool_result(
     """
     Parse a tool's result and convert it to source dicts for citation display.
 
-    Follows the source format conventions from get_sources_from_items:
+    Returns the citation source shape expected by the chat UI:
     - source: file/item info object with id, name, type
     - document: list of document contents
     - metadata: list of metadata objects with source, file_id, name fields
 
-    Returns a list of sources (usually one, but query_knowledge_files/query_chat_files may return multiple).
+    Returns a list of citation sources for supported file and URL tools.
     """
     try:
         try:
@@ -424,15 +411,13 @@ def get_citation_source_from_tool_result(
         if isinstance(tool_result, dict) and 'error' in tool_result:
             return []
 
-        if tool_name in ('view_knowledge_file', 'view_file'):
+        if tool_name == 'view_file':
             if not isinstance(tool_result, dict):
                 return []
 
             file_data = tool_result
             filename = file_data.get('filename', 'Unknown File')
             file_id = file_data.get('id', '')
-            knowledge_name = file_data.get('knowledge_name', '')
-
             return [
                 {
                     'source': {
@@ -446,7 +431,6 @@ def get_citation_source_from_tool_result(
                             'file_id': file_id,
                             'name': filename,
                             'source': filename,
-                            **({'knowledge_name': knowledge_name} if knowledge_name else {}),
                         }
                     ],
                 }
@@ -471,7 +455,7 @@ def get_citation_source_from_tool_result(
                 }
             ]
 
-        elif tool_name in ('query_knowledge_files', 'query_chat_files'):
+        elif tool_name == 'query_chat_files':
             if not isinstance(tool_result, list):
                 return []
 
@@ -945,8 +929,10 @@ def get_source_context(sources: list, source_ids: dict = None, include_content: 
             src_rid = source.get('source', {}).get('id')
             body = doc if include_content else ''
             extra_attrs = ''
-            for key, value in filter_source_metadata(meta).items():
+            for key, value in meta.items():
                 if key in ('id', 'name', 'resource-type', 'resource-id'):
+                    continue
+                if not isinstance(value, (str, int, float, bool)):
                     continue
                 extra_attrs += f' {key}="{html.escape(str(value))}"'
             context_string += (
@@ -968,8 +954,7 @@ async def apply_source_context_to_messages(
     include_content: bool = True,
 ) -> list:
     """
-    Build source context from citation sources and apply to messages.
-    Uses RAG template to format context for model consumption.
+    Build full attachment context from stored source text and apply it to messages.
 
     When include_content is False, emit <source> tags with id/name but no
     document body — useful when the content is already present elsewhere
@@ -984,18 +969,13 @@ async def apply_source_context_to_messages(
     if not context:
         return messages
 
-    if RAG_SYSTEM_CONTEXT:
-        return add_or_update_system_message(
-            await rag_template(await Config.get('rag.template'), context, user_message),
-            messages,
-            append=True,
-        )
-    else:
-        return add_or_update_user_message(
-            await rag_template(await Config.get('rag.template'), context, user_message),
-            messages,
-            append=False,
-        )
+    return add_or_update_system_message(
+        'The user attached the following file content. Use it when it is relevant, '
+        'and cite sources as [source_id] when referring to them.\n\n'
+        f'<attached_file_context>\n{context}\n</attached_file_context>',
+        messages,
+        append=True,
+    )
 
 
 BASE64_IMAGE_DATA_URI_RE = re.compile(r'data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}', re.IGNORECASE)
@@ -1604,179 +1584,6 @@ async def chat_completion_tools_handler(
     return body, {'sources': sources}
 
 
-async def chat_web_search_handler(request: Request, form_data: dict, extra_params: dict, user):
-    event_emitter = extra_params['__event_emitter__']
-    await event_emitter(
-        {
-            'type': 'status',
-            'data': {
-                'action': 'web_search',
-                'description': 'Searching the web',
-                'done': False,
-            },
-        }
-    )
-
-    messages = form_data['messages']
-    user_message = get_last_user_message(messages)
-
-    queries = []
-    try:
-        res = await generate_queries(
-            request,
-            {
-                'model': form_data['model'],
-                'messages': messages,
-                'prompt': user_message,
-                'type': 'web_search',
-                'chat_id': extra_params.get('__chat_id__'),
-            },
-            user,
-        )
-
-        # generate_queries returns a JSONResponse on error (e.g. model not
-        # found, chat completion failure).  Extract the error detail and
-        # re-raise so the outer except block falls back to using the raw
-        # user message as the search query.
-        if isinstance(res, JSONResponse):
-            try:
-                error_body = JSONCodec.loads(res.body)
-                detail = error_body.get('detail', 'Query generation failed')
-            except Exception:
-                detail = 'Query generation failed'
-            raise Exception(detail)
-
-        response = res['choices'][0]['message']['content']
-
-        try:
-            bracket_start = response.rfind('{')
-            bracket_end = response.rfind('}') + 1
-
-            if bracket_start == -1 or bracket_end == -1:
-                raise Exception('No JSON object found in the response')
-
-            response = response[bracket_start:bracket_end]
-            queries = JSONCodec.loads(response)
-            queries = queries.get('queries', [])
-        except Exception as e:
-            queries = [response]
-
-        if ENABLE_QUERIES_CACHE:
-            request.state.cached_queries = queries
-
-    except Exception as e:
-        log.exception(e)
-        queries = [user_message or '']
-
-    # Check if generated queries are empty
-    if len(queries) == 1 and queries[0].strip() == '':
-        queries = [user_message or '']
-
-    # Check if queries are not found
-    if len(queries) == 0:
-        await event_emitter(
-            {
-                'type': 'status',
-                'data': {
-                    'action': 'web_search',
-                    'description': 'No search query generated',
-                    'done': True,
-                },
-            }
-        )
-        return form_data
-
-    await event_emitter(
-        {
-            'type': 'status',
-            'data': {
-                'action': 'web_search_queries_generated',
-                'queries': queries,
-                'done': False,
-            },
-        }
-    )
-
-    try:
-        results = await process_web_search(
-            request,
-            SearchForm(queries=queries),
-            user=user,
-        )
-
-        if results:
-            files = form_data.get('files', [])
-
-            if results.get('collection_names'):
-                for col_idx, collection_name in enumerate(results.get('collection_names')):
-                    files.append(
-                        {
-                            'collection_name': collection_name,
-                            'name': ', '.join(queries),
-                            'type': 'web_search',
-                            'urls': results['filenames'],
-                            'queries': queries,
-                        }
-                    )
-            elif results.get('docs'):
-                # Invoked when bypass embedding and retrieval is set to True
-                docs = results['docs']
-                files.append(
-                    {
-                        'docs': docs,
-                        'name': ', '.join(queries),
-                        'type': 'web_search',
-                        'urls': results['filenames'],
-                        'queries': queries,
-                    }
-                )
-
-            form_data['files'] = files
-
-            await event_emitter(
-                {
-                    'type': 'status',
-                    'data': {
-                        'action': 'web_search',
-                        'description': 'Searched {{count}} sites',
-                        'urls': results['filenames'],
-                        'items': results.get('items', []),
-                        'done': True,
-                    },
-                }
-            )
-        else:
-            await event_emitter(
-                {
-                    'type': 'status',
-                    'data': {
-                        'action': 'web_search',
-                        'description': 'No search results found',
-                        'done': True,
-                        'error': True,
-                    },
-                }
-            )
-
-    except Exception as e:
-        log.exception(e)
-        detail = e.detail if isinstance(e, HTTPException) else None
-        await event_emitter(
-            {
-                'type': 'status',
-                'data': {
-                    'action': 'web_search',
-                    'description': (str(detail) if detail else 'An error occurred while searching the web'),
-                    'queries': queries,
-                    'done': True,
-                    'error': True,
-                },
-            }
-        )
-
-    return form_data
-
-
 def get_images_from_messages(message_list):
     images = []
 
@@ -2096,121 +1903,46 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
 async def chat_completion_files_handler(
     request: Request, body: dict, extra_params: dict, user: UserModel
 ) -> tuple[dict, dict[str, list]]:
-    __event_emitter__ = extra_params['__event_emitter__']
+    """Attach stored document text directly, without embeddings or retrieval."""
+    event_emitter = extra_params['__event_emitter__']
     sources = []
+    files = [
+        item
+        for item in (body.get('metadata', {}).get('files') or [])
+        if isinstance(item, dict) and item.get('type') not in ('filesystem', 'image')
+    ]
 
-    files = [item for item in (body.get('metadata', {}).get('files', None) or []) if item.get('type') != 'filesystem']
-    if files:
-        # Check if all files are in full context mode
-        all_full_context = all(item.get('context') == 'full' for item in files)
+    for item in files:
+        if item.get('type') not in (None, 'file'):
+            continue
+        file_id = item.get('id') or item.get('url')
+        if not file_id:
+            continue
+        file = await Files.get_file_by_id(str(file_id))
+        if not file:
+            continue
+        if file.user_id != user.id and user.role != 'admin' and not await has_access_to_file(file.id, 'read', user):
+            continue
 
-        queries = []
-        if not all_full_context:
-            try:
-                queries_response = await generate_queries(
-                    request,
-                    {
-                        'model': body['model'],
-                        'messages': body['messages'],
-                        'type': 'retrieval',
-                        'chat_id': body.get('metadata', {}).get('chat_id'),
-                    },
-                    user,
-                )
-                queries_response = queries_response['choices'][0]['message']['content']
-
-                try:
-                    bracket_start = queries_response.rfind('{')
-                    bracket_end = queries_response.rfind('}') + 1
-
-                    if bracket_start == -1 or bracket_end == -1:
-                        raise Exception('No JSON object found in the response')
-
-                    queries_response = queries_response[bracket_start:bracket_end]
-                    queries_response = JSONCodec.loads(queries_response)
-                except Exception as e:
-                    queries_response = {'queries': [queries_response]}
-
-                queries = queries_response.get('queries', [])
-            except Exception:
-                pass
-
-            await __event_emitter__(
-                {
-                    'type': 'status',
-                    'data': {
-                        'action': 'queries_generated',
-                        'queries': queries,
-                        'done': False,
-                    },
-                }
-            )
-
-        if len(queries) == 0:
-            queries = [get_last_user_message(body['messages']) or '']
-
-        try:
-            # One batched SELECT instead of six sequential round trips.
-            rag_config = await Config.get_many(
-                'rag.top_k',
-                'rag.top_k_reranker',
-                'rag.relevance_threshold',
-                'rag.hybrid_bm25_weight',
-                'rag.enable_hybrid_search',
-                'rag.full_context',
-            )
-            # Directly await async get_sources_from_items (no thread needed - fully async now)
-            sources = await get_sources_from_items(
-                request=request,
-                items=files,
-                queries=queries,
-                embedding_function=lambda query, prefix: request.app.state.EMBEDDING_FUNCTION(
-                    query, prefix=prefix, user=user
-                ),
-                k=rag_config.get('rag.top_k'),
-                reranking_function=(
-                    (lambda query, documents: request.app.state.RERANKING_FUNCTION(query, documents, user=user))
-                    if request.app.state.RERANKING_FUNCTION
-                    else None
-                ),
-                k_reranker=rag_config.get('rag.top_k_reranker'),
-                r=rag_config.get('rag.relevance_threshold'),
-                hybrid_bm25_weight=rag_config.get('rag.hybrid_bm25_weight'),
-                hybrid_search=rag_config.get('rag.enable_hybrid_search'),
-                full_context=all_full_context or rag_config.get('rag.full_context'),
-                user=user,
-            )
-        except Exception as e:
-            log.exception(e)
-
-        log.debug('rag_contexts:sources: %s', sources)
-
-        unique_ids = set()
-        for source in sources or []:
-            if not source or len(source.keys()) == 0:
-                continue
-
-            documents = source.get('document') or []
-            metadatas = source.get('metadata') or []
-            src_info = source.get('source') or {}
-
-            for index, _ in enumerate(documents):
-                metadata = metadatas[index] if index < len(metadatas) else None
-                _id = (metadata or {}).get('source') or (src_info or {}).get('id') or 'N/A'
-                unique_ids.add(_id)
-
-        sources_count = len(unique_ids)
-        await __event_emitter__(
+        content = (file.data or {}).get('content', '')
+        if not content:
+            continue
+        filename = (file.meta or {}).get('name') or file.filename
+        sources.append(
             {
-                'type': 'status',
-                'data': {
-                    'action': 'sources_retrieved',
-                    'count': sources_count,
-                    'done': True,
-                },
+                'source': {'id': file.id, 'name': filename, 'type': 'file'},
+                'document': [content],
+                'metadata': [{'file_id': file.id, 'name': filename, 'source': filename}],
             }
         )
 
+    if files:
+        await event_emitter(
+            {
+                'type': 'status',
+                'data': {'action': 'sources_attached', 'count': len(sources), 'done': True},
+            }
+        )
     return body, {'sources': sources}
 
 
@@ -2436,9 +2168,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     if not isinstance(metadata.get('chat_id'), str):
         metadata['chat_id'] = ''
 
-    # Pipeline Inlet -> Filter Inlet -> Chat Memory -> Chat Web Search -> Chat Image Generation
-    # -> Chat Code Interpreter (Form Data Update) -> (Default) Chat Tools Function Calling
-    # -> Chat Files
+    # Filters -> image generation -> code interpreter -> tools -> attached files.
 
     # Captured before apply_params_to_form_data pops 'params'; populates metadata['system_prompt'] below
     model_system_prompt = (form_data.get('params') or {}).get('system')
@@ -2594,57 +2324,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             if 'system_prompt' in folder.data:
                 form_data = await apply_system_prompt_to_body(folder.data['system_prompt'], form_data, metadata, user)
             if 'files' in folder.data:
-                if metadata.get('params', {}).get('function_calling') == 'legacy':
-                    form_data['files'] = [
-                        {'type': 'folder', 'id': folder.id},
-                        *form_data.get('files', []),
-                    ]
-                else:
-                    # Native FC: skip RAG injection, builtin tools
-                    # will read folder knowledge from metadata.
-                    metadata['folder_knowledge'] = await get_owner_accessible_folder_files(folder)
-
-    # Model "Knowledge" handling
-    user_message = get_last_user_message(form_data['messages'])
-    model_knowledge = model.get('info', {}).get('meta', {}).get('knowledge', False)
-
-    if model_knowledge and metadata.get('params', {}).get('function_calling') == 'legacy':
-        await event_emitter(
-            {
-                'type': 'status',
-                'data': {
-                    'action': 'knowledge_search',
-                    'query': user_message,
-                    'done': False,
-                },
-            }
-        )
-
-        knowledge_files = []
-        for item in model_knowledge:
-            if item.get('collection_name'):
-                knowledge_files.append(
-                    {
-                        'id': item.get('collection_name'),
-                        'name': item.get('name'),
-                        'legacy': True,
-                    }
-                )
-            elif item.get('collection_names'):
-                knowledge_files.append(
-                    {
-                        'name': item.get('name'),
-                        'type': 'collection',
-                        'collection_names': item.get('collection_names'),
-                        'legacy': True,
-                    }
-                )
-            else:
-                knowledge_files.append(item)
-
-        files = form_data.get('files', [])
-        files.extend(knowledge_files)
-        form_data['files'] = files
+                folder_files = [
+                    item
+                    for item in await get_owner_accessible_folder_files(folder)
+                    if item.get('type') == 'file'
+                ]
+                form_data['files'] = [*folder_files, *form_data.get('files', [])]
 
     form_data.pop('variables', None)
     payload_tools = form_data.get('tools', None)  # snapshot before filters
@@ -2679,31 +2364,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     template,
                     form_data['messages'],
                 )
-
-        if (
-            'memory' in features
-            and features['memory']
-            and await Config.get('memories.enable')
-            and await Config.get('memories.system_context.enable')
-        ):
-            # features is client-supplied; re-check the permission the native FC path enforces.
-            if getattr(user, 'role', None) == 'admin' or await has_permission(
-                getattr(user, 'id', ''),
-                'features.memories',
-                await Config.get('user.permissions'),
-            ):
-                form_data = await add_memory_context(request, form_data, user, model)
-
-        if 'web_search' in features and features['web_search'] and await Config.get('web.search.enable'):
-            # features is client-supplied; re-check the permission the native FC path enforces.
-            if getattr(user, 'role', None) == 'admin' or await has_permission(
-                getattr(user, 'id', ''),
-                'features.web_search',
-                await Config.get('user.permissions'),
-            ):
-                # Skip forced RAG web search when native FC is enabled - model can use web_search tool
-                if metadata.get('params', {}).get('function_calling') == 'legacy':
-                    form_data = await chat_web_search_handler(request, form_data, extra_params, user)
 
         if 'image_generation' in features and features['image_generation']:
             # features is client-supplied; re-check the permission the direct /images routes enforce.
@@ -3105,27 +2765,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             chat_id = metadata.get('chat_id')
             form_data['messages'] = await add_file_context(form_data.get('messages', []), chat_id, user)
 
-            if (model.get('info', {}).get('meta', {}).get('builtinTools') or {}).get('knowledge', True):
-                from html import escape
-
-                knowledge_tags = []
-                for item in get_attached_knowledge(model, metadata):
-                    if not item.get('id') or not item.get('type'):
-                        continue
-                    attrs = f'type="{escape(str(item["type"]), quote=True)}" id="{escape(str(item["id"]), quote=True)}"'
-                    if item.get('name'):
-                        attrs += f' name="{escape(str(item["name"]), quote=True)}"'
-                    if item.get('source'):
-                        attrs += f' source="{escape(str(item["source"]), quote=True)}"'
-                    knowledge_tags.append(f'<knowledge {attrs}/>')
-
-                if knowledge_tags:
-                    form_data['messages'] = add_or_update_system_message(
-                        '<attached_knowledge>\n' + '\n'.join(knowledge_tags) + '\n</attached_knowledge>',
-                        form_data['messages'],
-                        append=True,
-                    )
-
             builtin_tools = await get_builtin_tools(
                 request,
                 {
@@ -3230,9 +2869,8 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         except Exception as e:
             log.exception(e)
 
-    # Save the pre-RAG message state so the native tool call loop can
-    # restore to the true original (before file-source injection) rather
-    # than a snapshot that already has the RAG template baked in.
+    # Save the pre-attachment message state so the native tool loop can
+    # restore it before rebuilding citation context.
     system_message = get_system_message(form_data['messages'])
     system_content = get_content_from_message(system_message) if system_message else ''
     resolved_model_system_prompt = await resolve_system_prompt(
@@ -3261,19 +2899,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     if len(sources) > 0:
         events.append({'sources': sources})
-
-    if model_knowledge:
-        await event_emitter(
-            {
-                'type': 'status',
-                'data': {
-                    'action': 'knowledge_search',
-                    'query': user_message,
-                    'done': True,
-                    'hidden': True,
-                },
-            }
-        )
 
     if ENABLE_PLUGINS:
         try:
@@ -4051,18 +3676,6 @@ async def background_tasks_handler(ctx):
                             )
                         except Exception as e:
                             pass
-
-        if messages:
-            await review_memory_after_turn(
-                request=request,
-                user=user,
-                model=ctx['model'],
-                metadata=metadata,
-                form_data=form_data,
-                assistant_message=ctx.get('assistant_message') or {},
-                messages=messages,
-            )
-
 
 async def outlet_filter_handler(ctx):
     """Run outlet filters inline after chat completion.
@@ -6072,8 +5685,6 @@ async def streaming_chat_response_handler(response, ctx):
                             in [
                                 'fetch_url',
                                 'view_file',
-                                'view_knowledge_file',
-                                'query_knowledge_files',
                                 'query_chat_files',
                             ]
                             and tool_result
@@ -6145,12 +5756,9 @@ async def streaming_chat_response_handler(response, ctx):
                             await event_emitter({'type': 'source', 'data': source})
 
                         # Apply tool source context to messages for the model.
-                        # Restoring to pre-RAG original prevents duplicating
-                        # the RAG template across file and tool sources.
                         all_tool_call_sources.extend(tool_call_sources)
                         if all_tool_call_sources and user_message:
-                            # Restore pre-RAG message state before re-applying
-                            # to prevent RAG template duplication.
+                            # Restore the original message state before rebuilding context.
                             original_user_message = metadata.get('user_prompt') or user_message
                             set_last_user_message_content(
                                 original_user_message,
@@ -6182,23 +5790,12 @@ async def streaming_chat_response_handler(response, ctx):
                             )
                             source_context = source_context.strip()
                             if source_context:
-                                rag_content = await rag_template(
-                                    await Config.get('rag.template'),
-                                    source_context,
-                                    user_message,
+                                form_data['messages'] = add_or_update_system_message(
+                                    'Use the following attached-file and tool citation context when relevant.\n\n'
+                                    f'<source_context>\n{source_context}\n</source_context>',
+                                    form_data['messages'],
+                                    append=True,
                                 )
-                                if RAG_SYSTEM_CONTEXT:
-                                    form_data['messages'] = add_or_update_system_message(
-                                        rag_content,
-                                        form_data['messages'],
-                                        append=True,
-                                    )
-                                else:
-                                    form_data['messages'] = add_or_update_user_message(
-                                        rag_content,
-                                        form_data['messages'],
-                                        append=False,
-                                    )
                         tool_call_sources.clear()
 
                     await emit_output()

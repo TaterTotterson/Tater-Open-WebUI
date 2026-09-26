@@ -184,7 +184,6 @@ async def _resolve_model_defaults(app, model_id: str) -> dict:
     # code_interpreter is excluded: it requires the frontend event emitter
     # and does not work in headless backend execution.
     feature_checks = {
-        'web_search': await Config.get('web.search.enable'),
         'image_generation': await Config.get('image_generation.enable'),
     }
 

@@ -367,12 +367,7 @@ DATABASE_ENABLE_SESSION_SHARING = os.getenv('DATABASE_ENABLE_SESSION_SHARING', '
 ENABLE_PUBLIC_ACTIVE_USERS_COUNT = os.getenv('ENABLE_PUBLIC_ACTIVE_USERS_COUNT', 'True').lower() == 'true'
 RESET_CONFIG_ON_START = os.getenv('RESET_CONFIG_ON_START', 'False').lower() == 'true'
 ENABLE_REALTIME_CHAT_SAVE = os.getenv('ENABLE_REALTIME_CHAT_SAVE', 'False').lower() == 'true'
-ENABLE_QUERIES_CACHE = os.getenv('ENABLE_QUERIES_CACHE', 'False').lower() == 'true'
 ENABLE_ADMIN_CHAT_ACCESS = os.getenv('ENABLE_ADMIN_CHAT_ACCESS', 'True').lower() == 'true'
-RAG_SYSTEM_CONTEXT = os.getenv('RAG_SYSTEM_CONTEXT', 'False').lower() == 'true'
-
-# Empty by default: chunk metadata also holds internal bookkeeping (file hashes, collection names, scores).
-RAG_SOURCE_METADATA_KEYS = [key.strip() for key in os.getenv('RAG_SOURCE_METADATA_KEYS', '').split(',') if key.strip()]
 
 ####################################
 # REDIS
@@ -733,17 +728,6 @@ try:
 except ValueError:
     AIOHTTP_POOL_DNS_TTL = 300
 
-RAG_EMBEDDING_TIMEOUT = os.getenv('RAG_EMBEDDING_TIMEOUT', '')
-
-if RAG_EMBEDDING_TIMEOUT == '':
-    RAG_EMBEDDING_TIMEOUT = None
-else:
-    try:
-        RAG_EMBEDDING_TIMEOUT = int(RAG_EMBEDDING_TIMEOUT)
-    except Exception:
-        RAG_EMBEDDING_TIMEOUT = None
-
-
 ####################################
 # Auth
 ####################################
@@ -830,23 +814,6 @@ PASSWORD_VALIDATION_HINT = os.getenv('PASSWORD_VALIDATION_HINT', '')
 
 
 BYPASS_MODEL_ACCESS_CONTROL = os.getenv('BYPASS_MODEL_ACCESS_CONTROL', 'False').lower() == 'true'
-BYPASS_RETRIEVAL_ACCESS_CONTROL = os.getenv('BYPASS_RETRIEVAL_ACCESS_CONTROL', 'False').lower() == 'true'
-
-# When True, collection names that do not match any known file-*, user-memory-*,
-# web-search-*, or knowledge-base collection are allowed through access control
-# for non-admin users.  When False (default), unknown collection names are
-# denied — closing the legacy unscoped namespace.
-ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS = os.getenv('ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS', 'False').lower() == 'true'
-
-# Falls back to the upload size limit, because a document cannot legitimately carry more metadata
-# than the file itself is allowed to be. Left unbounded, a small archive that expands enormously
-# during extraction can exhaust memory. RAG_FILE_MAX_SIZE is in MB.
-RAG_METADATA_MAX_VALUE_CHARS = (
-    int(os.getenv('RAG_METADATA_MAX_VALUE_CHARS'))
-    if os.getenv('RAG_METADATA_MAX_VALUE_CHARS')
-    else ((int(os.getenv('RAG_FILE_MAX_SIZE', '0')) or 0) * 1024 * 1024 or None)
-)
-
 MINERU_MAX_MARKDOWN_BYTES = (
     int(os.getenv('MINERU_MAX_MARKDOWN_BYTES')) if os.getenv('MINERU_MAX_MARKDOWN_BYTES') else None
 )
@@ -1117,69 +1084,6 @@ else:
     except Exception:
         CHAT_STREAM_RESPONSE_CHUNK_MAX_BUFFER_SIZE = None
 
-
-####################################
-# SENTENCE TRANSFORMERS
-####################################
-
-
-SENTENCE_TRANSFORMERS_BACKEND = os.getenv('SENTENCE_TRANSFORMERS_BACKEND', '')
-if SENTENCE_TRANSFORMERS_BACKEND == '':
-    SENTENCE_TRANSFORMERS_BACKEND = 'torch'
-
-
-SENTENCE_TRANSFORMERS_MODEL_KWARGS = os.getenv('SENTENCE_TRANSFORMERS_MODEL_KWARGS', '')
-if SENTENCE_TRANSFORMERS_MODEL_KWARGS == '':
-    SENTENCE_TRANSFORMERS_MODEL_KWARGS = None
-else:
-    try:
-        SENTENCE_TRANSFORMERS_MODEL_KWARGS = json.loads(SENTENCE_TRANSFORMERS_MODEL_KWARGS)
-    except Exception:
-        SENTENCE_TRANSFORMERS_MODEL_KWARGS = None
-
-
-SENTENCE_TRANSFORMERS_CROSS_ENCODER_BACKEND = os.getenv('SENTENCE_TRANSFORMERS_CROSS_ENCODER_BACKEND', '')
-if SENTENCE_TRANSFORMERS_CROSS_ENCODER_BACKEND == '':
-    SENTENCE_TRANSFORMERS_CROSS_ENCODER_BACKEND = 'torch'
-
-
-SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS = os.getenv('SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS', '')
-if SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS == '':
-    SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS = None
-else:
-    try:
-        SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS = json.loads(SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS)
-    except Exception:
-        SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS = None
-
-# Whether to apply sigmoid normalization to CrossEncoder reranking scores.
-# When enabled (default), scores are normalized to 0-1 range for proper
-# relevance threshold behavior with MS MARCO models.
-SENTENCE_TRANSFORMERS_CROSS_ENCODER_SIGMOID_ACTIVATION_FUNCTION = (
-    os.getenv('SENTENCE_TRANSFORMERS_CROSS_ENCODER_SIGMOID_ACTIVATION_FUNCTION', 'True').lower() == 'true'
-)
-
-####################################
-# KNOWLEDGE TOOLS
-####################################
-
-
-def _int_env(name: str, default: int) -> int:
-    try:
-        return max(int(os.getenv(name) or default), 1)
-    except (ValueError, TypeError):
-        return default
-
-
-# Total output of a single kb_exec call, whatever the command.
-KB_EXEC_MAX_OUTPUT_CHARS = _int_env('KB_EXEC_MAX_OUTPUT_CHARS', 30_000)
-# Files a single kb_exec grep may scan before it asks for a narrower scope.
-KB_EXEC_MAX_GREP_FILES = _int_env('KB_EXEC_MAX_GREP_FILES', 200)
-# Matching lines returned by kb_exec grep and grep_knowledge_files.
-KNOWLEDGE_GREP_MAX_MATCHES = _int_env('KNOWLEDGE_GREP_MAX_MATCHES', 50)
-# Characters returned by view_file / view_knowledge_file.
-VIEW_FILE_MAX_CHARS = _int_env('VIEW_FILE_MAX_CHARS', 100_000)
-VIEW_FILE_DEFAULT_MAX_CHARS = _int_env('VIEW_FILE_DEFAULT_MAX_CHARS', 10_000)
 
 ####################################
 # TOOLS/FUNCTIONS PIP OPTIONS

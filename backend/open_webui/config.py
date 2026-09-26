@@ -15,9 +15,7 @@ from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 
 from open_webui.env import (
-    USE_SLIM,
     DATA_DIR,
-    DATABASE_URL,
     ENABLE_ADMIN_CHAT_ACCESS,
     ENABLE_DB_MIGRATIONS,
     ENV,
@@ -44,7 +42,6 @@ from open_webui.utils.tater_profile import (
 
 
 async def seed_registered_defaults():
-    await Config.rename_prefix('rag.web', 'web')
     await Config.repair_config_rows()
     await Config.seed_defaults(DEFAULT_CONFIG)
 
@@ -319,13 +316,6 @@ CODE_EXECUTION_JUPYTER_TIMEOUT = int(os.getenv('CODE_EXECUTION_JUPYTER_TIMEOUT',
 
 ENABLE_CODE_INTERPRETER = os.getenv('ENABLE_CODE_INTERPRETER', 'False').lower() == 'true'
 
-ENABLE_MEMORIES = os.getenv('ENABLE_MEMORIES', 'False').lower() == 'true'
-ENABLE_MEMORY_SYSTEM_CONTEXT = os.getenv('ENABLE_MEMORY_SYSTEM_CONTEXT', 'True').lower() == 'true'
-ENABLE_MEMORY_BACKGROUND_REVIEW = os.getenv('ENABLE_MEMORY_BACKGROUND_REVIEW', 'False').lower() == 'true'
-MEMORIES_REVIEW_INTERVAL_TURNS = int(os.getenv('MEMORIES_REVIEW_INTERVAL_TURNS', '10'))
-MEMORIES_USER_CHAR_LIMIT = int(os.getenv('MEMORIES_USER_CHAR_LIMIT', '2000'))
-MEMORIES_CONTEXT_CHAR_LIMIT = int(os.getenv('MEMORIES_CONTEXT_CHAR_LIMIT', '2000'))
-
 CODE_INTERPRETER_ENGINE = os.getenv('CODE_INTERPRETER_ENGINE', 'pyodide')
 
 CODE_INTERPRETER_PROMPT_TEMPLATE = os.getenv('CODE_INTERPRETER_PROMPT_TEMPLATE', '')
@@ -393,345 +383,7 @@ CODE_INTERPRETER_PYODIDE_PROMPT = """
 
 
 ####################################
-# Vector Database
-####################################
-
-VECTOR_DB = os.getenv('VECTOR_DB', 'pgvector' if USE_SLIM else 'chroma')
-
-# Chroma
-CHROMA_DATA_PATH = f'{DATA_DIR}/vector_db'
-
-if VECTOR_DB == 'chroma' and not USE_SLIM:
-    import chromadb
-
-    CHROMA_TENANT = os.getenv('CHROMA_TENANT', chromadb.DEFAULT_TENANT)
-    CHROMA_DATABASE = os.getenv('CHROMA_DATABASE', chromadb.DEFAULT_DATABASE)
-    CHROMA_HTTP_HOST = os.getenv('CHROMA_HTTP_HOST', '')
-    CHROMA_HTTP_PORT = int(os.getenv('CHROMA_HTTP_PORT', '8000'))
-    CHROMA_CLIENT_AUTH_PROVIDER = os.getenv('CHROMA_CLIENT_AUTH_PROVIDER', '')
-    CHROMA_CLIENT_AUTH_CREDENTIALS = os.getenv('CHROMA_CLIENT_AUTH_CREDENTIALS', '')
-    # Comma-separated list of header=value pairs
-    CHROMA_HTTP_HEADERS = os.getenv('CHROMA_HTTP_HEADERS', '')
-    if CHROMA_HTTP_HEADERS:
-        CHROMA_HTTP_HEADERS = dict([pair.split('=') for pair in CHROMA_HTTP_HEADERS.split(',')])
-    else:
-        CHROMA_HTTP_HEADERS = None
-    CHROMA_HTTP_SSL = os.getenv('CHROMA_HTTP_SSL', 'false').lower() == 'true'
-# this uses the model defined in the Dockerfile ENV variable. If you dont use docker or docker based deployments such as k8s, the default embedding model will be used (sentence-transformers/all-MiniLM-L6-v2)
-
-
-# MariaDB Vector (mariadb-vector)
-MARIADB_VECTOR_DB_URL = os.getenv('MARIADB_VECTOR_DB_URL', '').strip()
-
-MARIADB_VECTOR_INITIALIZE_MAX_VECTOR_LENGTH = int(
-    os.getenv('MARIADB_VECTOR_INITIALIZE_MAX_VECTOR_LENGTH', '1536').strip() or '1536'
-)
-
-# Distance strategy:
-#   - cosine     => vec_distance_cosine(...)
-#   - euclidean  => vec_distance_euclidean(...)
-MARIADB_VECTOR_DISTANCE_STRATEGY = os.getenv('MARIADB_VECTOR_DISTANCE_STRATEGY', 'cosine').strip().lower()
-
-# HNSW M parameter (MariaDB VECTOR INDEX ... M=<int>)
-MARIADB_VECTOR_INDEX_M = int(os.getenv('MARIADB_VECTOR_INDEX_M', '8').strip() or '8')
-
-# Pooling (MariaDB-Vector)
-MARIADB_VECTOR_POOL_SIZE = os.getenv('MARIADB_VECTOR_POOL_SIZE', None)
-
-if MARIADB_VECTOR_POOL_SIZE != None:
-    try:
-        MARIADB_VECTOR_POOL_SIZE = int(MARIADB_VECTOR_POOL_SIZE)
-    except Exception:
-        MARIADB_VECTOR_POOL_SIZE = None
-
-MARIADB_VECTOR_POOL_MAX_OVERFLOW = os.getenv('MARIADB_VECTOR_POOL_MAX_OVERFLOW', 0)
-
-if MARIADB_VECTOR_POOL_MAX_OVERFLOW == '':
-    MARIADB_VECTOR_POOL_MAX_OVERFLOW = 0
-else:
-    try:
-        MARIADB_VECTOR_POOL_MAX_OVERFLOW = int(MARIADB_VECTOR_POOL_MAX_OVERFLOW)
-    except Exception:
-        MARIADB_VECTOR_POOL_MAX_OVERFLOW = 0
-
-MARIADB_VECTOR_POOL_TIMEOUT = os.getenv('MARIADB_VECTOR_POOL_TIMEOUT', 30)
-
-if MARIADB_VECTOR_POOL_TIMEOUT == '':
-    MARIADB_VECTOR_POOL_TIMEOUT = 30
-else:
-    try:
-        MARIADB_VECTOR_POOL_TIMEOUT = int(MARIADB_VECTOR_POOL_TIMEOUT)
-    except Exception:
-        MARIADB_VECTOR_POOL_TIMEOUT = 30
-
-MARIADB_VECTOR_POOL_RECYCLE = os.getenv('MARIADB_VECTOR_POOL_RECYCLE', 3600)
-
-if MARIADB_VECTOR_POOL_RECYCLE == '':
-    MARIADB_VECTOR_POOL_RECYCLE = 3600
-else:
-    try:
-        MARIADB_VECTOR_POOL_RECYCLE = int(MARIADB_VECTOR_POOL_RECYCLE)
-    except Exception:
-        MARIADB_VECTOR_POOL_RECYCLE = 3600
-
-ENABLE_MARIADB_VECTOR = True
-if VECTOR_DB == 'mariadb-vector':
-    if not MARIADB_VECTOR_DB_URL:
-        ENABLE_MARIADB_VECTOR = False
-    else:
-        try:
-            parsed = urlparse(MARIADB_VECTOR_DB_URL)
-            scheme = (parsed.scheme or '').lower()
-            # Require official driver so VECTOR binds as float32 bytes correctly
-            if scheme != 'mariadb+mariadbconnector':
-                ENABLE_MARIADB_VECTOR = False
-        except Exception:
-            ENABLE_MARIADB_VECTOR = False
-
-
-# Milvus
-MILVUS_URI = os.getenv('MILVUS_URI', f'{DATA_DIR}/vector_db/milvus.db')
-MILVUS_DB = os.getenv('MILVUS_DB', 'default')
-MILVUS_TOKEN = os.getenv('MILVUS_TOKEN', None)
-MILVUS_INDEX_TYPE = os.getenv('MILVUS_INDEX_TYPE', 'HNSW')
-MILVUS_METRIC_TYPE = os.getenv('MILVUS_METRIC_TYPE', 'COSINE')
-MILVUS_HNSW_M = int(os.getenv('MILVUS_HNSW_M', '16'))
-MILVUS_HNSW_EFCONSTRUCTION = int(os.getenv('MILVUS_HNSW_EFCONSTRUCTION', '100'))
-MILVUS_IVF_FLAT_NLIST = int(os.getenv('MILVUS_IVF_FLAT_NLIST', '128'))
-MILVUS_DISKANN_MAX_DEGREE = int(os.getenv('MILVUS_DISKANN_MAX_DEGREE', '56'))
-MILVUS_DISKANN_SEARCH_LIST_SIZE = int(os.getenv('MILVUS_DISKANN_SEARCH_LIST_SIZE', '100'))
-ENABLE_MILVUS_MULTITENANCY_MODE = os.getenv('ENABLE_MILVUS_MULTITENANCY_MODE', 'false').lower() == 'true'
-# Hyphens not allowed, need to use underscores in collection names
-MILVUS_COLLECTION_PREFIX = os.getenv('MILVUS_COLLECTION_PREFIX', 'open_webui')
-
-# Qdrant
-QDRANT_URI = os.getenv('QDRANT_URI', None)
-QDRANT_API_KEY = os.getenv('QDRANT_API_KEY', None)
-QDRANT_ON_DISK = os.getenv('QDRANT_ON_DISK', 'false').lower() == 'true'
-QDRANT_PREFER_GRPC = os.getenv('QDRANT_PREFER_GRPC', 'false').lower() == 'true'
-QDRANT_GRPC_PORT = int(os.getenv('QDRANT_GRPC_PORT', '6334'))
-QDRANT_TIMEOUT = int(os.getenv('QDRANT_TIMEOUT', '5'))
-QDRANT_HNSW_M = int(os.getenv('QDRANT_HNSW_M', '16'))
-ENABLE_QDRANT_MULTITENANCY_MODE = os.getenv('ENABLE_QDRANT_MULTITENANCY_MODE', 'true').lower() == 'true'
-QDRANT_COLLECTION_PREFIX = os.getenv('QDRANT_COLLECTION_PREFIX', 'open-webui')
-
-WEAVIATE_HTTP_HOST = os.getenv('WEAVIATE_HTTP_HOST', '')
-WEAVIATE_GRPC_HOST = os.getenv('WEAVIATE_GRPC_HOST', '')
-WEAVIATE_HTTP_PORT = int(os.getenv('WEAVIATE_HTTP_PORT', '8080'))
-WEAVIATE_GRPC_PORT = int(os.getenv('WEAVIATE_GRPC_PORT', '50051'))
-WEAVIATE_API_KEY = os.getenv('WEAVIATE_API_KEY')
-WEAVIATE_HTTP_SECURE = os.getenv('WEAVIATE_HTTP_SECURE', 'false').lower() == 'true'
-WEAVIATE_GRPC_SECURE = os.getenv('WEAVIATE_GRPC_SECURE', 'false').lower() == 'true'
-WEAVIATE_SKIP_INIT_CHECKS = os.getenv('WEAVIATE_SKIP_INIT_CHECKS', 'false').lower() == 'true'
-
-# OpenSearch
-OPENSEARCH_URI = os.getenv('OPENSEARCH_URI', 'https://localhost:9200')
-OPENSEARCH_SSL = os.getenv('OPENSEARCH_SSL', 'true').lower() == 'true'
-OPENSEARCH_CERT_VERIFY = os.getenv('OPENSEARCH_CERT_VERIFY', 'false').lower() == 'true'
-OPENSEARCH_USERNAME = os.getenv('OPENSEARCH_USERNAME', None)
-OPENSEARCH_PASSWORD = os.getenv('OPENSEARCH_PASSWORD', None)
-
-# ElasticSearch
-ELASTICSEARCH_URL = os.getenv('ELASTICSEARCH_URL', 'https://localhost:9200')
-ELASTICSEARCH_CA_CERTS = os.getenv('ELASTICSEARCH_CA_CERTS', None)
-ELASTICSEARCH_API_KEY = os.getenv('ELASTICSEARCH_API_KEY', None)
-ELASTICSEARCH_USERNAME = os.getenv('ELASTICSEARCH_USERNAME', None)
-ELASTICSEARCH_PASSWORD = os.getenv('ELASTICSEARCH_PASSWORD', None)
-ELASTICSEARCH_CLOUD_ID = os.getenv('ELASTICSEARCH_CLOUD_ID', None)
-SSL_ASSERT_FINGERPRINT = os.getenv('SSL_ASSERT_FINGERPRINT', None)
-ELASTICSEARCH_INDEX_PREFIX = os.getenv('ELASTICSEARCH_INDEX_PREFIX', 'open_webui_collections')
-# Pgvector
-PGVECTOR_DB_URL = os.getenv('PGVECTOR_DB_URL', DATABASE_URL)
-if not USE_SLIM and VECTOR_DB == 'pgvector' and not PGVECTOR_DB_URL.startswith('postgres'):
-    raise ValueError(
-        'Pgvector requires setting PGVECTOR_DB_URL or using Postgres with vector extension as the primary database.'
-    )
-PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH = int(os.getenv('PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH', '1536'))
-
-PGVECTOR_USE_HALFVEC = os.getenv('PGVECTOR_USE_HALFVEC', 'false').lower() == 'true'
-
-if PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH > 2000 and not PGVECTOR_USE_HALFVEC:
-    raise ValueError(
-        'PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH is set to '
-        f'{PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH}, which exceeds the 2000 dimension limit of the '
-        "'vector' type. Set PGVECTOR_USE_HALFVEC=true to enable the 'halfvec' "
-        'type required for high-dimensional embeddings.'
-    )
-
-PGVECTOR_CREATE_EXTENSION = os.getenv('PGVECTOR_CREATE_EXTENSION', 'true').lower() == 'true'
-PGVECTOR_PGCRYPTO = os.getenv('PGVECTOR_PGCRYPTO', 'false').lower() == 'true'
-PGVECTOR_PGCRYPTO_KEY = os.getenv('PGVECTOR_PGCRYPTO_KEY', None)
-if PGVECTOR_PGCRYPTO and not PGVECTOR_PGCRYPTO_KEY:
-    raise ValueError('PGVECTOR_PGCRYPTO is enabled but PGVECTOR_PGCRYPTO_KEY is not set. Please provide a valid key.')
-
-
-PGVECTOR_POOL_SIZE = os.getenv('PGVECTOR_POOL_SIZE', None)
-
-if PGVECTOR_POOL_SIZE != None:
-    try:
-        PGVECTOR_POOL_SIZE = int(PGVECTOR_POOL_SIZE)
-    except Exception:
-        PGVECTOR_POOL_SIZE = None
-
-PGVECTOR_POOL_MAX_OVERFLOW = os.getenv('PGVECTOR_POOL_MAX_OVERFLOW', 0)
-
-if PGVECTOR_POOL_MAX_OVERFLOW == '':
-    PGVECTOR_POOL_MAX_OVERFLOW = 0
-else:
-    try:
-        PGVECTOR_POOL_MAX_OVERFLOW = int(PGVECTOR_POOL_MAX_OVERFLOW)
-    except Exception:
-        PGVECTOR_POOL_MAX_OVERFLOW = 0
-
-PGVECTOR_POOL_TIMEOUT = os.getenv('PGVECTOR_POOL_TIMEOUT', 30)
-
-if PGVECTOR_POOL_TIMEOUT == '':
-    PGVECTOR_POOL_TIMEOUT = 30
-else:
-    try:
-        PGVECTOR_POOL_TIMEOUT = int(PGVECTOR_POOL_TIMEOUT)
-    except Exception:
-        PGVECTOR_POOL_TIMEOUT = 30
-
-PGVECTOR_POOL_RECYCLE = os.getenv('PGVECTOR_POOL_RECYCLE', 3600)
-
-if PGVECTOR_POOL_RECYCLE == '':
-    PGVECTOR_POOL_RECYCLE = 3600
-else:
-    try:
-        PGVECTOR_POOL_RECYCLE = int(PGVECTOR_POOL_RECYCLE)
-    except Exception:
-        PGVECTOR_POOL_RECYCLE = 3600
-
-PGVECTOR_INDEX_METHOD = os.getenv('PGVECTOR_INDEX_METHOD', '').strip().lower()
-if PGVECTOR_INDEX_METHOD not in ('ivfflat', 'hnsw', ''):
-    PGVECTOR_INDEX_METHOD = ''
-
-PGVECTOR_HNSW_M = os.getenv('PGVECTOR_HNSW_M', 16)
-
-if PGVECTOR_HNSW_M == '':
-    PGVECTOR_HNSW_M = 16
-else:
-    try:
-        PGVECTOR_HNSW_M = int(PGVECTOR_HNSW_M)
-    except Exception:
-        PGVECTOR_HNSW_M = 16
-
-PGVECTOR_HNSW_EF_CONSTRUCTION = os.getenv('PGVECTOR_HNSW_EF_CONSTRUCTION', 64)
-
-if PGVECTOR_HNSW_EF_CONSTRUCTION == '':
-    PGVECTOR_HNSW_EF_CONSTRUCTION = 64
-else:
-    try:
-        PGVECTOR_HNSW_EF_CONSTRUCTION = int(PGVECTOR_HNSW_EF_CONSTRUCTION)
-    except Exception:
-        PGVECTOR_HNSW_EF_CONSTRUCTION = 64
-
-PGVECTOR_IVFFLAT_LISTS = os.getenv('PGVECTOR_IVFFLAT_LISTS', 100)
-
-if PGVECTOR_IVFFLAT_LISTS == '':
-    PGVECTOR_IVFFLAT_LISTS = 100
-else:
-    try:
-        PGVECTOR_IVFFLAT_LISTS = int(PGVECTOR_IVFFLAT_LISTS)
-    except Exception:
-        PGVECTOR_IVFFLAT_LISTS = 100
-
-PGVECTOR_ITERATIVE_SCAN = os.getenv('PGVECTOR_ITERATIVE_SCAN', 'relaxed_order').strip().lower()
-if PGVECTOR_ITERATIVE_SCAN not in ('off', 'relaxed_order', 'strict_order'):
-    PGVECTOR_ITERATIVE_SCAN = 'relaxed_order'
-
-# openGauss
-OPENGAUSS_DB_URL = os.getenv('OPENGAUSS_DB_URL', DATABASE_URL)
-
-OPENGAUSS_INITIALIZE_MAX_VECTOR_LENGTH = int(os.getenv('OPENGAUSS_INITIALIZE_MAX_VECTOR_LENGTH', '1536'))
-
-OPENGAUSS_POOL_SIZE = os.getenv('OPENGAUSS_POOL_SIZE', None)
-
-if OPENGAUSS_POOL_SIZE != None:
-    try:
-        OPENGAUSS_POOL_SIZE = int(OPENGAUSS_POOL_SIZE)
-    except Exception:
-        OPENGAUSS_POOL_SIZE = None
-
-OPENGAUSS_POOL_MAX_OVERFLOW = os.getenv('OPENGAUSS_POOL_MAX_OVERFLOW', 0)
-
-if OPENGAUSS_POOL_MAX_OVERFLOW == '':
-    OPENGAUSS_POOL_MAX_OVERFLOW = 0
-else:
-    try:
-        OPENGAUSS_POOL_MAX_OVERFLOW = int(OPENGAUSS_POOL_MAX_OVERFLOW)
-    except Exception:
-        OPENGAUSS_POOL_MAX_OVERFLOW = 0
-
-OPENGAUSS_POOL_TIMEOUT = os.getenv('OPENGAUSS_POOL_TIMEOUT', 30)
-
-if OPENGAUSS_POOL_TIMEOUT == '':
-    OPENGAUSS_POOL_TIMEOUT = 30
-else:
-    try:
-        OPENGAUSS_POOL_TIMEOUT = int(OPENGAUSS_POOL_TIMEOUT)
-    except Exception:
-        OPENGAUSS_POOL_TIMEOUT = 30
-
-OPENGAUSS_POOL_RECYCLE = os.getenv('OPENGAUSS_POOL_RECYCLE', 3600)
-
-if OPENGAUSS_POOL_RECYCLE == '':
-    OPENGAUSS_POOL_RECYCLE = 3600
-else:
-    try:
-        OPENGAUSS_POOL_RECYCLE = int(OPENGAUSS_POOL_RECYCLE)
-    except Exception:
-        OPENGAUSS_POOL_RECYCLE = 3600
-
-# Pinecone
-PINECONE_API_KEY = os.getenv('PINECONE_API_KEY', None)
-PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT', None)
-PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'open-webui-index')
-PINECONE_DIMENSION = int(os.getenv('PINECONE_DIMENSION', 1536))  # or 3072, 1024, 768
-PINECONE_METRIC = os.getenv('PINECONE_METRIC', 'cosine')
-PINECONE_CLOUD = os.getenv('PINECONE_CLOUD', 'aws')  # or "gcp" or "azure"
-
-# ORACLE23AI (Oracle23ai Vector Search)
-
-ORACLE_DB_USE_WALLET = os.getenv('ORACLE_DB_USE_WALLET', 'false').lower() == 'true'
-ORACLE_DB_USER = os.getenv('ORACLE_DB_USER', None)  #
-ORACLE_DB_PASSWORD = os.getenv('ORACLE_DB_PASSWORD', None)  #
-ORACLE_DB_DSN = os.getenv('ORACLE_DB_DSN', None)  #
-ORACLE_WALLET_DIR = os.getenv('ORACLE_WALLET_DIR', None)
-ORACLE_WALLET_PASSWORD = os.getenv('ORACLE_WALLET_PASSWORD', None)
-ORACLE_VECTOR_LENGTH = os.getenv('ORACLE_VECTOR_LENGTH', 768)
-
-ORACLE_DB_POOL_MIN = int(os.getenv('ORACLE_DB_POOL_MIN', 2))
-ORACLE_DB_POOL_MAX = int(os.getenv('ORACLE_DB_POOL_MAX', 10))
-ORACLE_DB_POOL_INCREMENT = int(os.getenv('ORACLE_DB_POOL_INCREMENT', 1))
-
-
-if not USE_SLIM and VECTOR_DB == 'oracle23ai':
-    if not ORACLE_DB_USER or not ORACLE_DB_PASSWORD or not ORACLE_DB_DSN:
-        raise ValueError('Oracle23ai requires setting ORACLE_DB_USER, ORACLE_DB_PASSWORD, and ORACLE_DB_DSN.')
-    if ORACLE_DB_USE_WALLET and (not ORACLE_WALLET_DIR or not ORACLE_WALLET_PASSWORD):
-        raise ValueError(
-            'Oracle23ai requires setting ORACLE_WALLET_DIR and ORACLE_WALLET_PASSWORD when using wallet authentication.'
-        )
-
-log.info('VECTOR_DB: %s', VECTOR_DB)
-
-# S3 Vector
-S3_VECTOR_BUCKET_NAME = os.getenv('S3_VECTOR_BUCKET_NAME', None)
-S3_VECTOR_REGION = os.getenv('S3_VECTOR_REGION', None)
-
-# Valkey Vector Store
-VALKEY_URL = os.getenv('VALKEY_URL', '')
-VALKEY_COLLECTION_PREFIX = os.getenv('VALKEY_COLLECTION_PREFIX', 'open_webui')
-VALKEY_INDEX_TYPE = os.getenv('VALKEY_INDEX_TYPE', 'HNSW').upper()
-VALKEY_DISTANCE_METRIC = os.getenv('VALKEY_DISTANCE_METRIC', 'COSINE').upper()
-VALKEY_HNSW_M = int(os.getenv('VALKEY_HNSW_M', '16'))
-VALKEY_HNSW_EF_CONSTRUCTION = int(os.getenv('VALKEY_HNSW_EF_CONSTRUCTION', '200'))
-VALKEY_HNSW_EF_RUNTIME = int(os.getenv('VALKEY_HNSW_EF_RUNTIME', '10'))
-
-####################################
-# Information Retrieval (RAG)
+# Document Attachments
 ####################################
 
 
@@ -858,27 +510,9 @@ PADDLEOCR_VL_BASE_URL = os.getenv('PADDLEOCR_VL_BASE_URL', 'http://localhost:808
 
 PADDLEOCR_VL_TOKEN = os.getenv('PADDLEOCR_VL_TOKEN', '')
 
-BYPASS_EMBEDDING_AND_RETRIEVAL = os.getenv('BYPASS_EMBEDDING_AND_RETRIEVAL', 'False').lower() == 'true'
-
-
-RAG_TOP_K = int(os.getenv('RAG_TOP_K', '3'))
-RAG_TOP_K_RERANKER = int(os.getenv('RAG_TOP_K_RERANKER', '3'))
-RAG_RELEVANCE_THRESHOLD = float(os.getenv('RAG_RELEVANCE_THRESHOLD', '0.0'))
-RAG_HYBRID_BM25_WEIGHT = float(os.getenv('RAG_HYBRID_BM25_WEIGHT', '0.5'))
-
-ENABLE_RAG_HYBRID_SEARCH = os.getenv('ENABLE_RAG_HYBRID_SEARCH', '').lower() == 'true'
-
-ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS = (
-    os.getenv('ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS', 'False').lower() == 'true'
-)
-
-RAG_FULL_CONTEXT = os.getenv('RAG_FULL_CONTEXT', 'False').lower() == 'true'
-
 RAG_FILE_MAX_COUNT = int(os.getenv('RAG_FILE_MAX_COUNT')) if os.getenv('RAG_FILE_MAX_COUNT') else None
 
 RAG_FILE_MAX_SIZE = int(os.getenv('RAG_FILE_MAX_SIZE')) if os.getenv('RAG_FILE_MAX_SIZE') else None
-
-ENABLE_KNOWLEDGE_FILE_RETENTION = os.getenv('ENABLE_KNOWLEDGE_FILE_RETENTION', 'False').lower() == 'true'
 
 RAG_FILE_CONTENT_SEARCH_MAX_CHARS = int(os.getenv('RAG_FILE_CONTENT_SEARCH_MAX_CHARS', str(64 * 1024 * 1024)))
 
@@ -895,113 +529,9 @@ RAG_ALLOWED_FILE_EXTENSIONS = [
     ext.strip() for ext in os.getenv('RAG_ALLOWED_FILE_EXTENSIONS', '').split(',') if ext.strip()
 ]
 
-RAG_EMBEDDING_ENGINE = os.getenv('RAG_EMBEDDING_ENGINE', '')
-
 PDF_EXTRACT_IMAGES = os.getenv('PDF_EXTRACT_IMAGES', 'False').lower() == 'true'
 
 PDF_LOADER_MODE = os.getenv('PDF_LOADER_MODE', 'page')
-
-RAG_EMBEDDING_MODEL = os.getenv('RAG_EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
-log.info('Embedding model set: %s', RAG_EMBEDDING_MODEL)
-
-RAG_TOKENIZER_MODEL = os.getenv('RAG_TOKENIZER_MODEL', '')
-
-RAG_EMBEDDING_MODEL_AUTO_UPDATE = (
-    not OFFLINE_MODE and os.getenv('RAG_EMBEDDING_MODEL_AUTO_UPDATE', 'True').lower() == 'true'
-)
-
-RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE = os.getenv('RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE', 'True').lower() == 'true'
-
-RAG_EMBEDDING_BATCH_SIZE = int(
-    os.getenv('RAG_EMBEDDING_BATCH_SIZE') or os.getenv('RAG_EMBEDDING_OPENAI_BATCH_SIZE', '1')
-)
-
-ENABLE_ASYNC_EMBEDDING = os.getenv('ENABLE_ASYNC_EMBEDDING', 'True').lower() == 'true'
-
-RAG_EMBEDDING_CONCURRENT_REQUESTS = int(os.getenv('RAG_EMBEDDING_CONCURRENT_REQUESTS', '0'))
-
-RAG_EMBEDDING_QUERY_PREFIX = os.getenv('RAG_EMBEDDING_QUERY_PREFIX', None)
-
-RAG_EMBEDDING_CONTENT_PREFIX = os.getenv('RAG_EMBEDDING_CONTENT_PREFIX', None)
-
-RAG_EMBEDDING_PREFIX_FIELD_NAME = os.getenv('RAG_EMBEDDING_PREFIX_FIELD_NAME', None)
-
-RAG_RERANKING_ENGINE = os.getenv('RAG_RERANKING_ENGINE', '')
-
-RAG_RERANKING_MODEL = os.getenv('RAG_RERANKING_MODEL', '')
-if RAG_RERANKING_MODEL != '':
-    log.info('Reranking model set: %s', RAG_RERANKING_MODEL)
-
-
-RAG_RERANKING_MODEL_AUTO_UPDATE = (
-    not OFFLINE_MODE and os.getenv('RAG_RERANKING_MODEL_AUTO_UPDATE', 'True').lower() == 'true'
-)
-
-RAG_RERANKING_MODEL_TRUST_REMOTE_CODE = os.getenv('RAG_RERANKING_MODEL_TRUST_REMOTE_CODE', 'True').lower() == 'true'
-
-RAG_RERANKING_BATCH_SIZE = int(os.getenv('RAG_RERANKING_BATCH_SIZE', '32'))
-
-RAG_EXTERNAL_RERANKER_URL = os.getenv('RAG_EXTERNAL_RERANKER_URL', '')
-
-RAG_EXTERNAL_RERANKER_API_KEY = os.getenv('RAG_EXTERNAL_RERANKER_API_KEY', '')
-
-RAG_EXTERNAL_RERANKER_TIMEOUT = os.getenv('RAG_EXTERNAL_RERANKER_TIMEOUT', '')
-
-
-RAG_TEXT_SPLITTER = os.getenv('RAG_TEXT_SPLITTER', '')
-
-ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER = os.getenv('ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER', 'True').lower() == 'true'
-
-
-TIKTOKEN_CACHE_DIR = os.getenv('TIKTOKEN_CACHE_DIR', f'{CACHE_DIR}/tiktoken')
-TIKTOKEN_ENCODING_NAME = os.getenv('TIKTOKEN_ENCODING_NAME', 'cl100k_base')
-
-
-CHUNK_SIZE = int(os.getenv('CHUNK_SIZE', '1000'))
-
-CHUNK_MIN_SIZE_TARGET = int(os.getenv('CHUNK_MIN_SIZE_TARGET', '0'))
-
-CHUNK_OVERLAP = int(os.getenv('CHUNK_OVERLAP', '100'))
-
-DEFAULT_RAG_TEMPLATE = """### Task:
-Respond to the user query using the provided context, incorporating inline citations in the format [id] **only when the <source> tag includes an explicit id attribute** (e.g., <source id="1">).
-
-### Guidelines:
-- If you don't know the answer, clearly state that.
-- If uncertain, ask the user for clarification.
-- Respond in the same language as the user's query.
-- If the context is unreadable or of poor quality, inform the user and provide the best possible answer.
-- If the answer isn't present in the context but you possess the knowledge, explain this to the user and provide the answer using your own understanding.
-- **Only include inline citations using [id] (e.g., [1], [2]) when the <source> tag includes an id attribute.**
-- Do not cite if the <source> tag does not contain an id attribute.
-- Do not use XML tags in your response.
-- Ensure citations are concise and directly related to the information provided.
-
-### Example of Citation:
-If the user asks about a specific topic and the information is found in a source with a provided id attribute, the response should include the citation like in the following example:
-* "According to the study, the proposed method increases efficiency by 20% [1]."
-
-### Output:
-Provide a clear and direct response to the user's query, including inline citations in the format [id] only when the <source> tag with id attribute is present in the context.
-
-<context>
-{{CONTEXT}}
-</context>
-"""
-
-RAG_TEMPLATE = os.getenv('RAG_TEMPLATE', DEFAULT_RAG_TEMPLATE)
-
-RAG_OPENAI_API_BASE_URL = os.getenv('RAG_OPENAI_API_BASE_URL', OPENAI_API_BASE_URL)
-RAG_OPENAI_API_KEY = os.getenv('RAG_OPENAI_API_KEY', OPENAI_API_KEY)
-
-RAG_AZURE_OPENAI_BASE_URL = os.getenv('RAG_AZURE_OPENAI_BASE_URL', '')
-RAG_AZURE_OPENAI_API_KEY = os.getenv('RAG_AZURE_OPENAI_API_KEY', '')
-RAG_AZURE_OPENAI_API_VERSION = os.getenv('RAG_AZURE_OPENAI_API_VERSION', '')
-
-RAG_OLLAMA_BASE_URL = os.getenv('RAG_OLLAMA_BASE_URL', 'http://localhost:11434')
-
-RAG_OLLAMA_API_KEY = os.getenv('RAG_OLLAMA_API_KEY', '')
-
 
 ENABLE_LOCAL_WEB_FETCH = (
     os.getenv(
@@ -1044,201 +574,6 @@ else:
 
 WEB_FETCH_FILTER_LIST = list(set(DEFAULT_WEB_FETCH_FILTER_LIST + web_fetch_filter_list))
 
-
-YOUTUBE_LOADER_LANGUAGE = os.getenv('YOUTUBE_LOADER_LANGUAGE', 'en').split(',')
-
-YOUTUBE_LOADER_PROXY_URL = os.getenv('YOUTUBE_LOADER_PROXY_URL', '')
-
-
-####################################
-# Web Search
-####################################
-
-ENABLE_WEB_SEARCH = os.getenv('ENABLE_WEB_SEARCH', 'False').lower() == 'true'
-
-ENABLE_WEB_SEARCH_CONFIRMATION = os.getenv('ENABLE_WEB_SEARCH_CONFIRMATION', 'False').lower() == 'true'
-
-WEB_SEARCH_CONFIRMATION_CONTENT = os.getenv(
-    'WEB_SEARCH_CONFIRMATION_CONTENT',
-    'Your query will be sent to the configured web search provider.',
-)
-
-WEB_SEARCH_ENGINE = os.getenv('WEB_SEARCH_ENGINE', '')
-
-BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = (
-    os.getenv('BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL', 'False').lower() == 'true'
-)
-
-
-BYPASS_WEB_SEARCH_WEB_LOADER = os.getenv('BYPASS_WEB_SEARCH_WEB_LOADER', 'False').lower() == 'true'
-
-WEB_SEARCH_RESULT_COUNT = int(os.getenv('WEB_SEARCH_RESULT_COUNT', '3'))
-
-
-try:
-    web_search_domain_filter_list = JSONCodec.loads(os.getenv('WEB_SEARCH_DOMAIN_FILTER_LIST', '[]'))
-except Exception as e:
-    web_search_domain_filter_list = [
-        # "wikipedia.com",
-        # "wikimedia.org",
-        # "wikidata.org",
-        # "!stackoverflow.com",
-    ]
-
-# You can provide a list of your own websites to filter after performing a web search.
-# This ensures the highest level of safety and reliability of the information sources.
-WEB_SEARCH_DOMAIN_FILTER_LIST = web_search_domain_filter_list
-
-WEB_SEARCH_CONCURRENT_REQUESTS = int(os.getenv('WEB_SEARCH_CONCURRENT_REQUESTS', '0'))
-
-WEB_FETCH_MAX_CONTENT_LENGTH = (
-    int(os.getenv('WEB_FETCH_MAX_CONTENT_LENGTH')) if os.getenv('WEB_FETCH_MAX_CONTENT_LENGTH') else None
-)
-
-WEB_LOADER_ENGINE = os.getenv('WEB_LOADER_ENGINE', '')
-
-
-WEB_LOADER_CONCURRENT_REQUESTS = int(os.getenv('WEB_LOADER_CONCURRENT_REQUESTS', '10'))
-
-WEB_LOADER_TIMEOUT = os.getenv('WEB_LOADER_TIMEOUT', '')
-
-
-ENABLE_WEB_LOADER_SSL_VERIFICATION = os.getenv('ENABLE_WEB_LOADER_SSL_VERIFICATION', 'True').lower() == 'true'
-
-WEB_SEARCH_TRUST_ENV = os.getenv('WEB_SEARCH_TRUST_ENV', 'True').lower() == 'true'
-
-
-OLLAMA_CLOUD_WEB_SEARCH_API_KEY = os.getenv('OLLAMA_CLOUD_API_KEY', '')
-
-SEARXNG_QUERY_URL = os.getenv('SEARXNG_QUERY_URL', '')
-OPENSERP_BASE_URL = os.getenv('OPENSERP_BASE_URL', 'http://localhost:7000')
-
-SEARXNG_LANGUAGE = os.getenv('SEARXNG_LANGUAGE', 'all')
-
-YACY_QUERY_URL = os.getenv('YACY_QUERY_URL', '')
-
-YACY_USERNAME = os.getenv('YACY_USERNAME', '')
-
-YACY_PASSWORD = os.getenv('YACY_PASSWORD', '')
-
-GOOGLE_PSE_API_KEY = os.getenv('GOOGLE_PSE_API_KEY', '')
-
-GOOGLE_PSE_ENGINE_ID = os.getenv('GOOGLE_PSE_ENGINE_ID', '')
-
-BRAVE_SEARCH_API_KEY = os.getenv('BRAVE_SEARCH_API_KEY', '')
-
-BRAVE_SEARCH_CONTEXT_TOKENS = int(os.getenv('BRAVE_SEARCH_CONTEXT_TOKENS', '8192'))
-
-KAGI_SEARCH_API_KEY = os.getenv('KAGI_SEARCH_API_KEY', '')
-
-MOJEEK_SEARCH_API_KEY = os.getenv('MOJEEK_SEARCH_API_KEY', '')
-
-BOCHA_SEARCH_API_KEY = os.getenv('BOCHA_SEARCH_API_KEY', '')
-
-SERPSTACK_API_KEY = os.getenv('SERPSTACK_API_KEY', '')
-
-SERPSTACK_HTTPS = os.getenv('SERPSTACK_HTTPS', 'True').lower() == 'true'
-
-SERPER_API_KEY = os.getenv('SERPER_API_KEY', '')
-
-SERPLY_API_KEY = os.getenv('SERPLY_API_KEY', '')
-
-SERPHOUSE_API_KEY = os.getenv('SERPHOUSE_API_KEY', '')
-
-SERPHOUSE_DOMAIN = os.getenv('SERPHOUSE_DOMAIN', 'google.com')
-
-DDGS_BACKEND = os.getenv('DDGS_BACKEND', 'auto')
-
-JINA_API_KEY = os.getenv('JINA_API_KEY', '')
-
-JINA_API_BASE_URL = os.getenv('JINA_API_BASE_URL', '')
-
-SEARCHAPI_API_KEY = os.getenv('SEARCHAPI_API_KEY', '')
-
-SEARCHAPI_ENGINE = os.getenv('SEARCHAPI_ENGINE', '')
-
-SERPAPI_API_KEY = os.getenv('SERPAPI_API_KEY', '')
-
-SERPAPI_ENGINE = os.getenv('SERPAPI_ENGINE', '')
-
-BING_SEARCH_V7_ENDPOINT = os.getenv('BING_SEARCH_V7_ENDPOINT', 'https://api.bing.microsoft.com/v7.0/search')
-
-BING_SEARCH_V7_SUBSCRIPTION_KEY = os.getenv('BING_SEARCH_V7_SUBSCRIPTION_KEY', '')
-
-AZURE_AI_SEARCH_API_KEY = os.getenv('AZURE_AI_SEARCH_API_KEY', '')
-
-AZURE_AI_SEARCH_ENDPOINT = os.getenv('AZURE_AI_SEARCH_ENDPOINT', '')
-
-AZURE_AI_SEARCH_INDEX_NAME = os.getenv('AZURE_AI_SEARCH_INDEX_NAME', '')
-
-EXA_API_KEY = os.getenv('EXA_API_KEY', '')
-EXA_MAX_CONTENT_LENGTH = int(os.environ['EXA_MAX_CONTENT_LENGTH']) if os.getenv('EXA_MAX_CONTENT_LENGTH') else None
-if EXA_MAX_CONTENT_LENGTH is not None and EXA_MAX_CONTENT_LENGTH <= 0:
-    raise ValueError('EXA_MAX_CONTENT_LENGTH must be a positive integer or unset')
-
-PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY', '')
-
-PERPLEXITY_MODEL = os.getenv('PERPLEXITY_MODEL', 'sonar')
-
-PERPLEXITY_SEARCH_CONTEXT_USAGE = os.getenv('PERPLEXITY_SEARCH_CONTEXT_USAGE', 'medium')
-
-PERPLEXITY_SEARCH_API_URL = os.getenv('PERPLEXITY_SEARCH_API_URL', 'https://api.perplexity.ai/search')
-
-MICROSOFT_WEB_IQ_API_BASE_URL = os.getenv('MICROSOFT_WEB_IQ_API_BASE_URL', 'https://api.microsoft.ai/v3')
-
-MICROSOFT_WEB_IQ_API_KEY = os.getenv('MICROSOFT_WEB_IQ_API_KEY', '')
-
-MICROSOFT_WEB_IQ_LANGUAGE = os.getenv('MICROSOFT_WEB_IQ_LANGUAGE', 'en')
-
-SOUGOU_API_SID = os.getenv('SOUGOU_API_SID', '')
-
-SOUGOU_API_SK = os.getenv('SOUGOU_API_SK', '')
-
-TAVILY_API_KEY = os.getenv('TAVILY_API_KEY', '')
-
-TAVILY_EXTRACT_DEPTH = os.getenv('TAVILY_EXTRACT_DEPTH', 'basic')
-
-STAAN_API_KEY = os.getenv('STAAN_API_KEY', '')
-
-STAAN_MARKET = os.getenv('STAAN_MARKET', 'en-us')
-
-STAAN_MAX_SNIPPETS = int(os.getenv('STAAN_MAX_SNIPPETS', '0'))
-
-PLAYWRIGHT_WS_URL = os.getenv('PLAYWRIGHT_WS_URL', '')
-
-PLAYWRIGHT_TIMEOUT = int(os.getenv('PLAYWRIGHT_TIMEOUT', '10000'))
-
-FIRECRAWL_API_KEY = os.getenv('FIRECRAWL_API_KEY', '')
-
-FIRECRAWL_API_BASE_URL = os.getenv('FIRECRAWL_API_BASE_URL', 'https://api.firecrawl.dev')
-
-FIRECRAWL_TIMEOUT = os.getenv('FIRECRAWL_TIMEOUT', '')
-
-EXTERNAL_WEB_SEARCH_URL = os.getenv('EXTERNAL_WEB_SEARCH_URL', '')
-
-EXTERNAL_WEB_SEARCH_API_KEY = os.getenv('EXTERNAL_WEB_SEARCH_API_KEY', '')
-
-EXTERNAL_WEB_LOADER_URL = os.getenv('EXTERNAL_WEB_LOADER_URL', '')
-
-EXTERNAL_WEB_LOADER_API_KEY = os.getenv('EXTERNAL_WEB_LOADER_API_KEY', '')
-
-YANDEX_WEB_SEARCH_URL = os.getenv('YANDEX_WEB_SEARCH_URL', '')
-
-YANDEX_WEB_SEARCH_API_KEY = os.getenv('YANDEX_WEB_SEARCH_API_KEY', '')
-
-YANDEX_WEB_SEARCH_CONFIG = os.getenv('YANDEX_WEB_SEARCH_CONFIG', '')
-
-YOUCOM_API_KEY = os.getenv('YOUCOM_API_KEY', os.getenv('YDC_API_KEY', ''))
-
-LINKUP_API_KEY = os.getenv('LINKUP_API_KEY', '')
-
-linkup_search_params = os.getenv('LINKUP_SEARCH_PARAMS', '')
-try:
-    linkup_search_params = JSONCodec.loads(linkup_search_params)
-except JSONCodec.JSONDecodeError:
-    linkup_search_params = {}
-
-LINKUP_SEARCH_PARAMS = linkup_search_params
 
 ####################################
 # Images
@@ -1744,8 +1079,6 @@ USER_PERMISSIONS_CHAT_PARAMS = os.getenv('USER_PERMISSIONS_CHAT_PARAMS', 'True')
 
 USER_PERMISSIONS_CHAT_FILE_UPLOAD = os.getenv('USER_PERMISSIONS_CHAT_FILE_UPLOAD', 'True').lower() == 'true'
 
-USER_PERMISSIONS_CHAT_WEB_UPLOAD = os.getenv('USER_PERMISSIONS_CHAT_WEB_UPLOAD', 'True').lower() == 'true'
-
 USER_PERMISSIONS_CHAT_DELETE = os.getenv('USER_PERMISSIONS_CHAT_DELETE', 'True').lower() == 'true'
 
 USER_PERMISSIONS_CHAT_DELETE_MESSAGE = os.getenv('USER_PERMISSIONS_CHAT_DELETE_MESSAGE', 'True').lower() == 'true'
@@ -1793,8 +1126,6 @@ USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS = (
     os.getenv('USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS', 'False').lower() == 'true'
 )
 
-USER_PERMISSIONS_FEATURES_WEB_SEARCH = os.getenv('USER_PERMISSIONS_FEATURES_WEB_SEARCH', 'True').lower() == 'true'
-
 USER_PERMISSIONS_FEATURES_IMAGE_GENERATION = (
     os.getenv('USER_PERMISSIONS_FEATURES_IMAGE_GENERATION', 'True').lower() == 'true'
 )
@@ -1806,8 +1137,6 @@ USER_PERMISSIONS_FEATURES_CODE_INTERPRETER = (
 USER_PERMISSIONS_FEATURES_FOLDERS = os.getenv('USER_PERMISSIONS_FEATURES_FOLDERS', 'True').lower() == 'true'
 
 USER_PERMISSIONS_FEATURES_API_KEYS = os.getenv('USER_PERMISSIONS_FEATURES_API_KEYS', 'False').lower() == 'true'
-
-USER_PERMISSIONS_FEATURES_MEMORIES = os.getenv('USER_PERMISSIONS_FEATURES_MEMORIES', 'True').lower() == 'true'
 
 USER_PERMISSIONS_FEATURES_USER_WEBHOOKS = (
     os.getenv('USER_PERMISSIONS_FEATURES_USER_WEBHOOKS', 'False').lower() == 'true'
@@ -1858,7 +1187,6 @@ DEFAULT_USER_PERMISSIONS = {
         'system_prompt': USER_PERMISSIONS_CHAT_SYSTEM_PROMPT,
         'params': USER_PERMISSIONS_CHAT_PARAMS,
         'file_upload': USER_PERMISSIONS_CHAT_FILE_UPLOAD,
-        'web_upload': USER_PERMISSIONS_CHAT_WEB_UPLOAD,
         'delete': USER_PERMISSIONS_CHAT_DELETE,
         'delete_message': USER_PERMISSIONS_CHAT_DELETE_MESSAGE,
         'continue_response': USER_PERMISSIONS_CHAT_CONTINUE_RESPONSE,
@@ -1881,10 +1209,8 @@ DEFAULT_USER_PERMISSIONS = {
         'folders': USER_PERMISSIONS_FEATURES_FOLDERS,
         'direct_tool_servers': USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS,
         # Chat features
-        'web_search': USER_PERMISSIONS_FEATURES_WEB_SEARCH,
         'image_generation': USER_PERMISSIONS_FEATURES_IMAGE_GENERATION,
         'code_interpreter': USER_PERMISSIONS_FEATURES_CODE_INTERPRETER,
-        'memories': USER_PERMISSIONS_FEATURES_MEMORIES,
         'webhooks': USER_PERMISSIONS_FEATURES_USER_WEBHOOKS,
     },
     'settings': {
@@ -2127,37 +1453,6 @@ ENABLE_TAGS_GENERATION = os.getenv('ENABLE_TAGS_GENERATION', 'True').lower() == 
 
 ENABLE_TITLE_GENERATION = os.getenv('ENABLE_TITLE_GENERATION', 'True').lower() == 'true'
 
-
-ENABLE_SEARCH_QUERY_GENERATION = os.getenv('ENABLE_SEARCH_QUERY_GENERATION', 'True').lower() == 'true'
-
-ENABLE_RETRIEVAL_QUERY_GENERATION = os.getenv('ENABLE_RETRIEVAL_QUERY_GENERATION', 'True').lower() == 'true'
-
-
-QUERY_GENERATION_PROMPT_TEMPLATE = os.getenv('QUERY_GENERATION_PROMPT_TEMPLATE', '')
-
-DEFAULT_QUERY_GENERATION_PROMPT_TEMPLATE = """### Task:
-Analyze the chat history to determine the necessity of generating search queries, in the given language. By default, **prioritize generating 1-3 broad and relevant search queries** unless it is absolutely certain that no additional information is required. The aim is to retrieve comprehensive, updated, and valuable information even with minimal uncertainty. If no search is unequivocally needed, return an empty list.
-
-### Guidelines:
-- Respond **EXCLUSIVELY** with a JSON object. Any form of extra commentary, explanation, or additional text is strictly prohibited.
-- When generating search queries, respond in the format: { "queries": ["query1", "query2"] }, ensuring each query is distinct, concise, and relevant to the topic.
-- If and only if it is entirely certain that no useful results can be retrieved by a search, return: { "queries": [] }.
-- Err on the side of suggesting search queries if there is **any chance** they might provide useful or updated information.
-- Be concise and focused on composing high-quality search queries, avoiding unnecessary elaboration, commentary, or assumptions.
-- Today's date is: {{CURRENT_DATE}}.
-- Always prioritize providing actionable and broad queries that maximize informational coverage.
-
-### Output:
-Strictly return in JSON format: 
-{
-  "queries": ["query1", "query2"]
-}
-
-### Chat History:
-<chat_history>
-{{MESSAGES:END:6}}
-</chat_history>
-"""
 
 ENABLE_AUTOCOMPLETE_GENERATION = os.getenv('ENABLE_AUTOCOMPLETE_GENERATION', 'False').lower() == 'true'
 
@@ -2667,12 +1962,6 @@ DEFAULT_CONFIG = {
     'code_execution.jupyter.auth_password': CODE_EXECUTION_JUPYTER_AUTH_PASSWORD,
     'code_execution.jupyter.timeout': CODE_EXECUTION_JUPYTER_TIMEOUT,
     'code_interpreter.enable': ENABLE_CODE_INTERPRETER,
-    'memories.enable': ENABLE_MEMORIES,
-    'memories.system_context.enable': ENABLE_MEMORY_SYSTEM_CONTEXT,
-    'memories.background_review.enable': ENABLE_MEMORY_BACKGROUND_REVIEW,
-    'memories.review_interval_turns': MEMORIES_REVIEW_INTERVAL_TURNS,
-    'memories.user_char_limit': MEMORIES_USER_CHAR_LIMIT,
-    'memories.context_char_limit': MEMORIES_CONTEXT_CHAR_LIMIT,
     'code_interpreter.engine': CODE_INTERPRETER_ENGINE,
     'code_interpreter.prompt_template': CODE_INTERPRETER_PROMPT_TEMPLATE,
     'code_interpreter.jupyter.url': CODE_INTERPRETER_JUPYTER_URL,
@@ -2721,127 +2010,13 @@ DEFAULT_CONFIG = {
     'rag.mistral_ocr_use_base64': MISTRAL_OCR_USE_BASE64,
     'rag.paddleocr_vl_base_url': PADDLEOCR_VL_BASE_URL,
     'rag.paddleocr_vl_token': PADDLEOCR_VL_TOKEN,
-    'rag.bypass_embedding_and_retrieval': BYPASS_EMBEDDING_AND_RETRIEVAL,
-    'rag.top_k': RAG_TOP_K,
-    'rag.top_k_reranker': RAG_TOP_K_RERANKER,
-    'rag.relevance_threshold': RAG_RELEVANCE_THRESHOLD,
-    'rag.hybrid_bm25_weight': RAG_HYBRID_BM25_WEIGHT,
-    'rag.enable_hybrid_search': ENABLE_RAG_HYBRID_SEARCH,
-    'rag.enable_hybrid_search_enriched_texts': ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS,
-    'rag.full_context': RAG_FULL_CONTEXT,
     'rag.file.max_count': RAG_FILE_MAX_COUNT,
     'rag.file.max_size': RAG_FILE_MAX_SIZE,
     'file.image_compression_width': FILE_IMAGE_COMPRESSION_WIDTH,
     'file.image_compression_height': FILE_IMAGE_COMPRESSION_HEIGHT,
     'rag.file.allowed_extensions': RAG_ALLOWED_FILE_EXTENSIONS,
-    'rag.embedding_engine': RAG_EMBEDDING_ENGINE,
     'rag.pdf_extract_images': PDF_EXTRACT_IMAGES,
     'rag.pdf_loader_mode': PDF_LOADER_MODE,
-    'rag.embedding_model': RAG_EMBEDDING_MODEL,
-    'rag.tokenizer_model': RAG_TOKENIZER_MODEL,
-    'rag.embedding_batch_size': RAG_EMBEDDING_BATCH_SIZE,
-    'rag.enable_async_embedding': ENABLE_ASYNC_EMBEDDING,
-    'rag.embedding_concurrent_requests': RAG_EMBEDDING_CONCURRENT_REQUESTS,
-    'rag.reranking_engine': RAG_RERANKING_ENGINE,
-    'rag.reranking_model': RAG_RERANKING_MODEL,
-    'rag.reranking_batch_size': RAG_RERANKING_BATCH_SIZE,
-    'rag.external_reranker_url': RAG_EXTERNAL_RERANKER_URL,
-    'rag.external_reranker_api_key': RAG_EXTERNAL_RERANKER_API_KEY,
-    'rag.external_reranker_timeout': RAG_EXTERNAL_RERANKER_TIMEOUT,
-    'rag.text_splitter': RAG_TEXT_SPLITTER,
-    'rag.enable_markdown_header_text_splitter': ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER,
-    'rag.tiktoken_encoding_name': TIKTOKEN_ENCODING_NAME,
-    'rag.chunk_size': CHUNK_SIZE,
-    'rag.chunk_min_size_target': CHUNK_MIN_SIZE_TARGET,
-    'rag.chunk_overlap': CHUNK_OVERLAP,
-    'rag.template': RAG_TEMPLATE,
-    'rag.openai.api_base_url': RAG_OPENAI_API_BASE_URL,
-    'rag.openai.api_key': RAG_OPENAI_API_KEY,
-    'rag.azure_openai.base_url': RAG_AZURE_OPENAI_BASE_URL,
-    'rag.azure_openai.api_key': RAG_AZURE_OPENAI_API_KEY,
-    'rag.azure_openai.api_version': RAG_AZURE_OPENAI_API_VERSION,
-    'rag.ollama.base_url': RAG_OLLAMA_BASE_URL,
-    'rag.ollama.api_key': RAG_OLLAMA_API_KEY,
-    'rag.youtube_loader_language': YOUTUBE_LOADER_LANGUAGE,
-    'rag.youtube_loader_proxy_url': YOUTUBE_LOADER_PROXY_URL,
-    'web.search.enable': ENABLE_WEB_SEARCH,
-    'web.search.confirmation.enable': ENABLE_WEB_SEARCH_CONFIRMATION,
-    'web.search.confirmation.content': WEB_SEARCH_CONFIRMATION_CONTENT,
-    'web.search.engine': WEB_SEARCH_ENGINE,
-    'web.search.bypass_embedding_and_retrieval': BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
-    'web.search.bypass_web_loader': BYPASS_WEB_SEARCH_WEB_LOADER,
-    'web.search.result_count': WEB_SEARCH_RESULT_COUNT,
-    'web.search.domain.filter_list': WEB_SEARCH_DOMAIN_FILTER_LIST,
-    'web.search.concurrent_requests': WEB_SEARCH_CONCURRENT_REQUESTS,
-    'web.fetch.max_content_length': WEB_FETCH_MAX_CONTENT_LENGTH,
-    'web.loader.engine': WEB_LOADER_ENGINE,
-    'web.loader.concurrent_requests': WEB_LOADER_CONCURRENT_REQUESTS,
-    'web.loader.timeout': WEB_LOADER_TIMEOUT,
-    'web.loader.ssl_verification': ENABLE_WEB_LOADER_SSL_VERIFICATION,
-    'web.search.trust_env': WEB_SEARCH_TRUST_ENV,
-    'web.search.ollama_cloud_api_key': OLLAMA_CLOUD_WEB_SEARCH_API_KEY,
-    'web.search.searxng_query_url': SEARXNG_QUERY_URL,
-    'web.search.openserp_base_url': OPENSERP_BASE_URL,
-    'web.search.searxng_language': SEARXNG_LANGUAGE,
-    'web.search.yacy_query_url': YACY_QUERY_URL,
-    'web.search.yacy_username': YACY_USERNAME,
-    'web.search.yacy_password': YACY_PASSWORD,
-    'web.search.google_pse_api_key': GOOGLE_PSE_API_KEY,
-    'web.search.google_pse_engine_id': GOOGLE_PSE_ENGINE_ID,
-    'web.search.brave_search_api_key': BRAVE_SEARCH_API_KEY,
-    'web.search.brave_search_context_tokens': BRAVE_SEARCH_CONTEXT_TOKENS,
-    'web.search.kagi_search_api_key': KAGI_SEARCH_API_KEY,
-    'web.search.mojeek_search_api_key': MOJEEK_SEARCH_API_KEY,
-    'web.search.bocha_search_api_key': BOCHA_SEARCH_API_KEY,
-    'web.search.serpstack_api_key': SERPSTACK_API_KEY,
-    'web.search.serpstack_https': SERPSTACK_HTTPS,
-    'web.search.serper_api_key': SERPER_API_KEY,
-    'web.search.serply_api_key': SERPLY_API_KEY,
-    'web.search.serphouse_api_key': SERPHOUSE_API_KEY,
-    'web.search.serphouse_domain': SERPHOUSE_DOMAIN,
-    'web.search.ddgs_backend': DDGS_BACKEND,
-    'web.search.jina_api_key': JINA_API_KEY,
-    'web.search.jina_api_base_url': JINA_API_BASE_URL,
-    'web.search.searchapi_api_key': SEARCHAPI_API_KEY,
-    'web.search.searchapi_engine': SEARCHAPI_ENGINE,
-    'web.search.serpapi_api_key': SERPAPI_API_KEY,
-    'web.search.serpapi_engine': SERPAPI_ENGINE,
-    'web.search.bing_search_v7_endpoint': BING_SEARCH_V7_ENDPOINT,
-    'web.search.bing_search_v7_subscription_key': BING_SEARCH_V7_SUBSCRIPTION_KEY,
-    'web.search.azure_ai_search_api_key': AZURE_AI_SEARCH_API_KEY,
-    'web.search.azure_ai_search_endpoint': AZURE_AI_SEARCH_ENDPOINT,
-    'web.search.azure_ai_search_index_name': AZURE_AI_SEARCH_INDEX_NAME,
-    'web.search.exa_api_key': EXA_API_KEY,
-    'web.search.exa_max_content_length': EXA_MAX_CONTENT_LENGTH,
-    'web.search.perplexity_api_key': PERPLEXITY_API_KEY,
-    'web.search.perplexity_model': PERPLEXITY_MODEL,
-    'web.search.perplexity_search_context_usage': PERPLEXITY_SEARCH_CONTEXT_USAGE,
-    'web.search.perplexity_search_api_url': PERPLEXITY_SEARCH_API_URL,
-    'web.search.microsoft_web_iq_api_base_url': MICROSOFT_WEB_IQ_API_BASE_URL,
-    'web.search.microsoft_web_iq_api_key': MICROSOFT_WEB_IQ_API_KEY,
-    'web.search.microsoft_web_iq_language': MICROSOFT_WEB_IQ_LANGUAGE,
-    'web.search.sougou_api_sid': SOUGOU_API_SID,
-    'web.search.sougou_api_sk': SOUGOU_API_SK,
-    'web.search.tavily_api_key': TAVILY_API_KEY,
-    'web.search.tavily_extract_depth': TAVILY_EXTRACT_DEPTH,
-    'web.search.staan_api_key': STAAN_API_KEY,
-    'web.search.staan_market': STAAN_MARKET,
-    'web.search.staan_max_snippets': STAAN_MAX_SNIPPETS,
-    'web.loader.playwright_ws_url': PLAYWRIGHT_WS_URL,
-    'web.loader.playwright_timeout': PLAYWRIGHT_TIMEOUT,
-    'web.loader.firecrawl_api_key': FIRECRAWL_API_KEY,
-    'web.loader.firecrawl_api_url': FIRECRAWL_API_BASE_URL,
-    'web.loader.firecrawl_timeout': FIRECRAWL_TIMEOUT,
-    'web.search.external_web_search_url': EXTERNAL_WEB_SEARCH_URL,
-    'web.search.external_web_search_api_key': EXTERNAL_WEB_SEARCH_API_KEY,
-    'web.loader.external_web_loader_url': EXTERNAL_WEB_LOADER_URL,
-    'web.loader.external_web_loader_api_key': EXTERNAL_WEB_LOADER_API_KEY,
-    'web.search.yandex_web_search_url': YANDEX_WEB_SEARCH_URL,
-    'web.search.yandex_web_search_api_key': YANDEX_WEB_SEARCH_API_KEY,
-    'web.search.yandex_web_search_config': YANDEX_WEB_SEARCH_CONFIG,
-    'web.search.youcom_api_key': YOUCOM_API_KEY,
-    'web.search.linkup_api_key': LINKUP_API_KEY,
-    'web.search.linkup_search_params': LINKUP_SEARCH_PARAMS,
     'image_generation.enable': ENABLE_IMAGE_GENERATION,
     'image_generation.engine': IMAGE_GENERATION_ENGINE,
     'image_generation.model': IMAGE_GENERATION_MODEL,
@@ -2959,9 +2134,6 @@ DEFAULT_CONFIG = {
     'task.follow_up.enable': ENABLE_FOLLOW_UP_GENERATION,
     'task.tags.enable': ENABLE_TAGS_GENERATION,
     'task.title.enable': ENABLE_TITLE_GENERATION,
-    'task.query.search.enable': ENABLE_SEARCH_QUERY_GENERATION,
-    'task.query.retrieval.enable': ENABLE_RETRIEVAL_QUERY_GENERATION,
-    'task.query.prompt_template': QUERY_GENERATION_PROMPT_TEMPLATE,
     'task.autocomplete.enable': ENABLE_AUTOCOMPLETE_GENERATION,
     'task.autocomplete.input_max_length': AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH,
     'task.autocomplete.prompt_template': AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE,

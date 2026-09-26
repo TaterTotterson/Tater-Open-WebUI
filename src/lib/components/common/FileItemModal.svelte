@@ -7,7 +7,6 @@
 	import { formatFileSize, getLineCount } from '$lib/utils';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { settings } from '$lib/stores';
-	import { getKnowledgeById } from '$lib/apis/knowledge';
 	import { getFileById, getFileContentById } from '$lib/apis/files';
 
 	import CodeBlock from '$lib/components/chat/Messages/CodeBlock.svelte';
@@ -20,9 +19,7 @@
 
 	import Modal from './Modal.svelte';
 	import XMark from '../icons/XMark.svelte';
-	import Switch from './Switch.svelte';
 	import Tooltip from './Tooltip.svelte';
-	import dayjs from 'dayjs';
 	import Spinner from './Spinner.svelte';
 	import PDFViewer from './PDFViewer.svelte';
 	import PanzoomContainer from './PanzoomContainer.svelte';
@@ -34,7 +31,6 @@
 	export let show = false;
 	export let edit = false;
 
-	let enableFullContent = false;
 	let loading = false;
 
 	let isPDF = false;
@@ -201,19 +197,7 @@
 		selectedTab = '';
 		expandedContent = false;
 		docxData = null;
-		if (item?.type === 'collection') {
-			loading = true;
-
-			const knowledge = await getKnowledgeById(localStorage.token, item.id).catch((e) => {
-				console.error('Error fetching knowledge base:', e);
-				return null;
-			});
-
-			if (knowledge) {
-				item.files = knowledge.files || [];
-			}
-			loading = false;
-		} else if (item?.type === 'file') {
+		if (item?.type === 'file') {
 			loading = true;
 
 			const file = await getFileById(localStorage.token, item.id).catch((e) => {
@@ -248,9 +232,6 @@
 
 	onMount(() => {
 		console.log(item);
-		if (item?.context === 'full') {
-			enableFullContent = true;
-		}
 	});
 </script>
 
@@ -296,24 +277,6 @@
 			<div>
 				<div class="flex flex-col items-center md:flex-row gap-1 justify-between w-full">
 					<div class=" flex flex-wrap text-xs gap-1 text-gray-500">
-						{#if item?.type === 'collection'}
-							{#if item?.type}
-								<div class="capitalize shrink-0">{item.type}</div>
-								•
-							{/if}
-
-							{#if item?.description}
-								<div class="line-clamp-1">{item.description}</div>
-								•
-							{/if}
-
-							{#if item?.created_at}
-								<div class="capitalize shrink-0">
-									{dayjs(item.created_at * 1000).format('LL')}
-								</div>
-							{/if}
-						{/if}
-
 						{#if item.size}
 							<div class="capitalize shrink-0">{formatFileSize(item.size)}</div>
 							•
@@ -337,57 +300,13 @@
 							</div>
 						{/if}
 
-						{#if item?.knowledge}
-							<div class="capitalize shrink-0">
-								{$i18n.t('Knowledge Base')}
-							</div>
-						{/if}
 					</div>
-
-					{#if edit}
-						<div class=" self-end">
-							<Tooltip
-								content={enableFullContent
-									? $i18n.t(
-											'Inject the entire content as context for comprehensive processing, this is recommended for complex queries.'
-										)
-									: $i18n.t(
-											'Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.'
-										)}
-							>
-								<div class="flex items-center gap-1.5 text-xs">
-									{#if enableFullContent}
-										{$i18n.t('Using Entire Document')}
-									{:else}
-										{$i18n.t('Using Focused Retrieval')}
-									{/if}
-									<Switch
-										bind:state={enableFullContent}
-										on:change={(e) => {
-											item.context = e.detail ? 'full' : undefined;
-										}}
-									/>
-								</div>
-							</Tooltip>
-						</div>
-					{/if}
 				</div>
 			</div>
 		</div>
 
 		<div class="max-h-[75vh] overflow-auto">
 			{#if !loading}
-				{#if item?.type === 'collection'}
-					<div>
-						{#each item?.files as file}
-							<div class="flex items-center gap-2 mb-2">
-								<div class="flex-shrink-0 text-xs">
-									{file?.meta?.name}
-								</div>
-							</div>
-						{/each}
-					</div>
-				{/if}
 
 				{#if isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx}
 					<div

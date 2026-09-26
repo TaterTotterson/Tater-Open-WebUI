@@ -37,7 +37,6 @@
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Cube from '$lib/components/icons/Cube.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
-	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Terminal from '$lib/components/icons/Terminal.svelte';
 	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
@@ -73,8 +72,6 @@
 	}[] = [];
 	export let selectedFilterIds: string[] = [];
 
-	export let showWebSearchButton = false;
-	export let webSearchEnabled = false;
 	export let showImageGenerationButton = false;
 	export let imageGenerationEnabled = false;
 	export let showCodeInterpreterButton = false;
@@ -82,7 +79,6 @@
 
 	export let onShowValves: Function;
 	export let onClose: Function;
-	export let onWebSearchToggle: Function = () => {};
 	export let closeOnOutsideClick = true;
 
 	let show = false;
@@ -439,33 +435,6 @@
 								</button>
 							</Tooltip>
 						{/each}
-					{/if}
-
-					{#if showWebSearchButton}
-						<Tooltip content={$i18n.t('Search the internet')} placement="top-start">
-							<button
-								class="flex w-full justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
-								aria-pressed={webSearchEnabled}
-								on:click={() => {
-									webSearchEnabled = !webSearchEnabled;
-									onWebSearchToggle(webSearchEnabled);
-								}}
-							>
-								<div class="flex-1 truncate">
-									<div class="flex flex-1 gap-2 items-center">
-										<div class="shrink-0">
-											<GlobeAlt />
-										</div>
-
-										<div class=" truncate">{$i18n.t('Web Search')}</div>
-									</div>
-								</div>
-
-								<div class=" shrink-0" inert>
-									<Switch state={webSearchEnabled} />
-								</div>
-							</button>
-						</Tooltip>
 					{/if}
 
 					{#if showImageGenerationButton}

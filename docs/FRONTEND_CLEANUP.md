@@ -23,7 +23,10 @@ terminal, file navigation, and Tater configuration paths.
 - Arena configuration, random-model response metadata, and arena-specific
   rating UI.
 - The final orphaned workspace model screen, editor, and editor-only selector
-  components. The shared knowledge picker and audio voice input remain.
+  components.
+- Knowledge-base, memory, web-search, webpage-attachment, document-retrieval,
+  and related admin/settings components. Ordinary files plus image and audio
+  UI remain.
 
 The corresponding feature defaults are off. Plugins also default off so a new
 TaterChat install does not expose the inherited extension surface accidentally.
@@ -31,7 +34,7 @@ TaterChat install does not expose the inherited extension surface accidentally.
 ## Verification
 
 The upstream build transformed 6,366 modules and exhausted Node's default heap.
-After this slice, the production build transforms 6,076 modules and completes
+After the retrieval cleanup, the production build transforms 6,065 modules and completes
 with the default Node 22 heap.
 
 Image and audio components remain part of the active product and are not

@@ -70,39 +70,6 @@
 		<hr class="border-gray-50 dark:border-gray-850/30 my-1" />
 
 		<div>
-			<div class=" mb-2 text-sm font-normal">{$i18n.t('Knowledge')}</div>
-
-			<div class="flex flex-col w-full">
-				{#if preview.knowledge.items.length === 0}
-					<div class="flex w-full justify-between my-1">
-						<div class=" self-center text-xs text-gray-500">
-							{$i18n.t('No knowledge bases accessible')}
-						</div>
-					</div>
-				{:else}
-					{#each preview.knowledge.items as kb}
-						<div class="flex w-full justify-between my-1">
-							<div class=" self-center text-xs font-normal">{kb.name}</div>
-						</div>
-					{/each}
-
-					{#if preview.knowledge.total > preview.knowledge.items.length}
-						<div class="flex w-full justify-between my-1">
-							<div class=" self-center text-xs text-gray-500">
-								{$i18n.t('{{count}} of {{total}} accessible', {
-									count: preview.knowledge.items.length,
-									total: preview.knowledge.total
-								})}
-							</div>
-						</div>
-					{/if}
-				{/if}
-			</div>
-		</div>
-
-		<hr class="border-gray-50 dark:border-gray-850/30 my-1" />
-
-		<div>
 			<div class=" mb-2 text-sm font-normal">{$i18n.t('Tools')}</div>
 
 			<div class="flex flex-col w-full">

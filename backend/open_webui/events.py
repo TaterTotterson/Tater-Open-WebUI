@@ -11,7 +11,7 @@ from typing import Any
 from open_webui.env import ENABLE_PLUGINS, VERSION
 from open_webui.models.config import Config
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from open_webui.retrieval.web.utils import validate_url
+from open_webui.utils.ssrf import validate_url
 from open_webui.utils.webhook import post_webhook
 
 log = logging.getLogger(__name__)
@@ -344,91 +344,6 @@ class EventDefinitions(BaseModel):
     MEMORY_RESET: EventDefinition = EventDefinition(
         name='memory.reset', description='A memory was reset.', message='Memory reset'
     )
-    KNOWLEDGE_CREATED: EventDefinition = EventDefinition(
-        name='knowledge.created', description='A knowledge was created.', message='Knowledge created'
-    )
-    KNOWLEDGE_UPDATED: EventDefinition = EventDefinition(
-        name='knowledge.updated', description='A knowledge was updated.', message='Knowledge updated'
-    )
-    KNOWLEDGE_DELETED: EventDefinition = EventDefinition(
-        name='knowledge.deleted', description='A knowledge was deleted.', message='Knowledge deleted'
-    )
-    KNOWLEDGE_RESET: EventDefinition = EventDefinition(
-        name='knowledge.reset', description='A knowledge was reset.', message='Knowledge reset'
-    )
-    KNOWLEDGE_REINDEXED: EventDefinition = EventDefinition(
-        name='knowledge.reindexed', description='A knowledge was reindexed.', message='Knowledge reindexed'
-    )
-    KNOWLEDGE_ACCESS_UPDATED: EventDefinition = EventDefinition(
-        name='knowledge.access_updated', description='Knowledge access was updated.', message='Knowledge access updated'
-    )
-    KNOWLEDGE_FILE_ADDED: EventDefinition = EventDefinition(
-        name='knowledge.file.added', description='A file was added to a knowledge base.', message='Knowledge File added'
-    )
-    KNOWLEDGE_FILE_UPDATED: EventDefinition = EventDefinition(
-        name='knowledge.file.updated', description='A knowledge file was updated.', message='Knowledge File updated'
-    )
-    KNOWLEDGE_FILE_REMOVED: EventDefinition = EventDefinition(
-        name='knowledge.file.removed',
-        description='A file was removed from a knowledge base.',
-        message='Knowledge File removed',
-    )
-    KNOWLEDGE_FILE_MOVED: EventDefinition = EventDefinition(
-        name='knowledge.file.moved', description='A knowledge file was moved.', message='Knowledge File moved'
-    )
-    KNOWLEDGE_DIRECTORY_CREATED: EventDefinition = EventDefinition(
-        name='knowledge.directory.created',
-        description='A knowledge directory was created.',
-        message='Knowledge Directory created',
-    )
-    KNOWLEDGE_DIRECTORY_UPDATED: EventDefinition = EventDefinition(
-        name='knowledge.directory.updated',
-        description='A knowledge directory was updated.',
-        message='Knowledge Directory updated',
-    )
-    KNOWLEDGE_DIRECTORY_DELETED: EventDefinition = EventDefinition(
-        name='knowledge.directory.deleted',
-        description='A knowledge directory was deleted.',
-        message='Knowledge Directory deleted',
-    )
-    KNOWLEDGE_EXTERNAL_CONNECTION_CREATED: EventDefinition = EventDefinition(
-        name='knowledge.external_connection.created',
-        description='A knowledge external connection was created.',
-        message='Knowledge External Connection created',
-    )
-    KNOWLEDGE_EXTERNAL_CONNECTION_UPDATED: EventDefinition = EventDefinition(
-        name='knowledge.external_connection.updated',
-        description='A knowledge external connection was updated.',
-        message='Knowledge External Connection updated',
-    )
-    KNOWLEDGE_EXTERNAL_CONNECTION_DELETED: EventDefinition = EventDefinition(
-        name='knowledge.external_connection.deleted',
-        description='A knowledge external connection was deleted.',
-        message='Knowledge External Connection deleted',
-    )
-    RETRIEVAL_CONTENT_PROCESSED: EventDefinition = EventDefinition(
-        name='retrieval.content.processed',
-        description='Retrieval content was processed.',
-        message='Retrieval Content processed',
-    )
-    RETRIEVAL_CONTENT_PROCESS_FAILED: EventDefinition = EventDefinition(
-        name='retrieval.content.process_failed',
-        description='Retrieval content processing failed.',
-        message='Retrieval Content process failed',
-    )
-    RETRIEVAL_COLLECTION_DELETED: EventDefinition = EventDefinition(
-        name='retrieval.collection.deleted',
-        description='A retrieval collection was deleted.',
-        message='Retrieval Collection deleted',
-    )
-    RETRIEVAL_VECTOR_DB_RESET: EventDefinition = EventDefinition(
-        name='retrieval.vector_db.reset',
-        description='The retrieval vector database was reset.',
-        message='Retrieval Vector Db reset',
-    )
-    RETRIEVAL_UPLOADS_RESET: EventDefinition = EventDefinition(
-        name='retrieval.uploads.reset', description='Retrieval uploads were reset.', message='Retrieval Uploads reset'
-    )
     MODEL_CREATED: EventDefinition = EventDefinition(
         name='model.created', description='A model was created.', message='Model created'
     )
@@ -659,7 +574,6 @@ NOTIFICATION_EVENTS = (
     EVENTS.CHAT_FAILED.name,
     EVENTS.CHANNEL_MESSAGE.name,
     EVENTS.CALENDAR_ALERT.name,
-    EVENTS.RETRIEVAL_CONTENT_PROCESS_FAILED.name,
 )
 
 

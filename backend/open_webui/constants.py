@@ -97,7 +97,6 @@ class ERROR_MESSAGES(str, Enum):
 
     INVALID_URL = 'The URL you provided is invalid. Please double-check and try again.'
 
-    WEB_SEARCH_ERROR = 'Something went wrong while searching the web.'
 
 
     FILE_TOO_LARGE = lambda size='': (

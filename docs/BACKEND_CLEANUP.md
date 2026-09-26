@@ -28,6 +28,12 @@ used by its terminal-first work loop.
   model listing, and provider model download/load/unload/delete routes.
 - Direct-model branches in chat, embeddings, actions, tasks, compaction,
   timers, and subagents.
+- Retrieval, knowledge-base, memory, web-search, embedding, reranking, and
+  vector-database routes and runtime code.
+- Chroma, PGVector, Qdrant, Milvus, Pinecone, Weaviate, OpenSearch,
+  Elasticsearch, sentence-transformers, BM25, Playwright, and web-search
+  dependencies and container setup.
+- Retrieval-specific frontend configuration and event definitions.
 
 TaterChat retains `ask_user`, `create_tasks`, and `update_task` as UI-native
 coordination tools. Its unrestricted local terminal and conditional
@@ -38,9 +44,11 @@ Image generation/editing and audio transcription/speech are intentionally
 retained as TaterChat UI capabilities. Surface tests require both routers to
 remain registered.
 
-Retrieval still has an independent `RAG_OLLAMA_BASE_URL` option for remote
-embedding generation. That is not a chat provider and remains only until the
-retrieval subsystem is handled as its own cleanup slice.
+Normal file attachments remain. Documents are extracted once at upload time,
+their full text is stored with the file record, and that text is attached to
+the model request directly. Images, audio, video, raw download/preview, and
+media generation are unchanged; no vector database or embedding model is
+needed for file chat.
 
 ## Compatibility boundary
 
@@ -51,9 +59,8 @@ because shared chat, file, folder, and WebSocket modules still reference it.
 Those references need to be separated before the dormant modules can be safely
 deleted.
 
-Retrieval, memory, and knowledge code are deferred. They cross shared model
-discovery and message-processing paths and should be removed as their own
-measured slices.
+Knowledge and memory database models and historical migrations remain only so
+existing databases stay upgradeable. They have no registered product routes.
 
 ## Verification
 

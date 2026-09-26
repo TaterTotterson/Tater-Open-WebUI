@@ -39,7 +39,6 @@ export const DEFAULT_PERMISSIONS = {
 		system_prompt: true,
 		params: true,
 		file_upload: true,
-		web_upload: true,
 		delete: true,
 		delete_message: true,
 		continue_response: true,
@@ -60,10 +59,8 @@ export const DEFAULT_PERMISSIONS = {
 		api_keys: false,
 		folders: true,
 		direct_tool_servers: false,
-		web_search: true,
 		image_generation: true,
 		code_interpreter: true,
-		memories: true,
 		webhooks: false
 	},
 	settings: {

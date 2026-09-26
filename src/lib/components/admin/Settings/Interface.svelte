@@ -35,9 +35,6 @@
 		AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE: '',
 		TAGS_GENERATION_PROMPT_TEMPLATE: '',
 		ENABLE_TAGS_GENERATION: true,
-		ENABLE_SEARCH_QUERY_GENERATION: true,
-		ENABLE_RETRIEVAL_QUERY_GENERATION: true,
-		QUERY_GENERATION_PROMPT_TEMPLATE: '',
 		TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE: '',
 		ENABLE_VOICE_MODE_PROMPT: true,
 		VOICE_MODE_PROMPT_TEMPLATE: ''
@@ -456,39 +453,6 @@
 						/>
 					</AdminSettingField>
 				{/if}
-
-				<AdminSettingRow
-					label={$i18n.t('settings.admin.interface.retrievalQueryGeneration.label')}
-					description={$i18n.t('settings.admin.interface.retrievalQueryGeneration.description')}
-					let:labelId
-				>
-					<Switch
-						bind:state={taskConfig.ENABLE_RETRIEVAL_QUERY_GENERATION}
-						ariaLabelledbyId={labelId}
-					/>
-				</AdminSettingRow>
-
-				<AdminSettingRow
-					label={$i18n.t('settings.admin.interface.webSearchQueryGeneration.label')}
-					description={$i18n.t('settings.admin.interface.webSearchQueryGeneration.description')}
-					let:labelId
-				>
-					<Switch
-						bind:state={taskConfig.ENABLE_SEARCH_QUERY_GENERATION}
-						ariaLabelledbyId={labelId}
-					/>
-				</AdminSettingRow>
-
-				<AdminSettingField
-					label={$i18n.t('settings.admin.interface.queryGenerationPrompt.label')}
-					description={$i18n.t('settings.admin.interface.queryGenerationPrompt.description')}
-				>
-					<Textarea
-						className={textareaClass}
-						bind:value={taskConfig.QUERY_GENERATION_PROMPT_TEMPLATE}
-						placeholder={$i18n.t('Leave empty to use the default prompt, or enter a custom prompt')}
-					/>
-				</AdminSettingField>
 
 				<AdminSettingRow
 					label={$i18n.t('settings.admin.interface.autocompleteGeneration.label')}

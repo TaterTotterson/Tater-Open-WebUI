@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from open_webui.events import EVENT_DEFINITIONS_BY_NAME, NOTIFICATION_EVENTS
 from open_webui.models.config import Config
 from open_webui.models.users import Users
-from open_webui.retrieval.web.utils import validate_url
+from open_webui.utils.ssrf import validate_url
 from open_webui.utils.webhook import post_webhook
 
 
