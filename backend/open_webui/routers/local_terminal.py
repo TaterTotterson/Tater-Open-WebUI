@@ -330,7 +330,7 @@ async def archive_files(request: Request, form_data: ArchiveForm, user=Depends(g
             if not path.exists():
                 raise FileNotFoundError(str(path))
 
-        temporary = tempfile.NamedTemporaryFile(prefix='taterchat-', suffix='.zip', delete=False)
+        temporary = tempfile.NamedTemporaryFile(prefix='tater-webui-', suffix='.zip', delete=False)
         temporary.close()
 
         def create_archive() -> None:
@@ -347,7 +347,7 @@ async def archive_files(request: Request, form_data: ArchiveForm, user=Depends(g
         return FileResponse(
             temporary.name,
             media_type='application/zip',
-            filename='taterchat-files.zip',
+            filename='tater-webui-files.zip',
             background=BackgroundTask(_remove_temp_file, temporary.name),
         )
     except Exception as exc:

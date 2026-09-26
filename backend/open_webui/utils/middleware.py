@@ -1405,9 +1405,9 @@ async def chat_completion_tools_handler(
     def append_agent_notice(message: str):
         sources.append(
             {
-                'source': {'name': 'taterchat/agent-loop'},
+                'source': {'name': 'tater-webui/agent-loop'},
                 'document': [message],
-                'metadata': [{'source': 'taterchat/agent-loop'}],
+                'metadata': [{'source': 'tater-webui/agent-loop'}],
                 'tool_result': True,
             }
         )

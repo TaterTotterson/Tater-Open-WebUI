@@ -1,14 +1,14 @@
-# TaterChat
+# Tater WebUI
 
-TaterChat is a standalone, terminal-first AI chat application derived from
+Tater WebUI is a standalone, terminal-first AI chat application derived from
 [Open WebUI](https://github.com/open-webui/open-webui). It connects to Tater
 through its standard OpenAI-compatible API and gives the normal chat model full
-terminal, filesystem, process, and Git access on the machine running TaterChat.
+terminal, filesystem, process, and Git access on the machine running Tater WebUI.
 
 ## How routing works
 
 - `tater/base` handles normal conversation and local computer work.
-- Local tools run inside TaterChat; they do not go through Tater or Spudex.
+- Local tools run inside Tater WebUI; they do not go through Tater or Spudex.
 - `tater/hydra` is called only when the model needs a Tater capability, such
   as controlling a device, using a Verba, Core, Portal, media service, or
   automation.
@@ -16,8 +16,8 @@ terminal, filesystem, process, and Git access on the machine running TaterChat.
   endpoint. There is no private Tater API.
 - Image and audio UI capabilities are intentionally retained.
 
-See [the architecture document](docs/TATERCHAT_ARCHITECTURE.md) for the full
-boundary between TaterChat, Tater, Hydra, and the local runtime.
+See [the architecture document](docs/TATER_WEBUI_ARCHITECTURE.md) for the full
+boundary between Tater WebUI, Tater, Hydra, and the local runtime.
 
 ## Quick start with Docker Compose
 
@@ -25,7 +25,7 @@ Requirements:
 
 - a reachable Tater OpenAI-compatible API;
 - Docker with Compose;
-- a host directory that TaterChat is allowed to access.
+- a host directory that Tater WebUI is allowed to access.
 
 ```bash
 cp .env.example .env
@@ -36,7 +36,7 @@ Set these values in `.env`:
 ```dotenv
 TATER_API_BASE_URL=http://host.docker.internal:8501/v1
 TATER_API_KEY=
-TATERCHAT_HOST_WORKSPACE=/absolute/path/to/your/projects
+TATER_WEBUI_HOST_WORKSPACE=/absolute/path/to/your/projects
 WEBUI_SECRET_KEY=replace-with-a-long-random-secret
 ```
 
@@ -49,18 +49,18 @@ docker compose up --build
 Open [http://localhost:3000](http://localhost:3000). The first account created
 becomes the administrator.
 
-The Compose setup mounts `TATERCHAT_HOST_WORKSPACE` at `/workspace`.
-TaterChat can still access the rest of its container filesystem, but host files
+The Compose setup mounts `TATER_WEBUI_HOST_WORKSPACE` at `/workspace`.
+Tater WebUI can still access the rest of its container filesystem, but host files
 outside mounted paths are not visible from inside Docker.
 
 ## GitHub image and Unraid
 
-Every push to `main` builds, boots, health-checks, and publishes the amd64 image
-to `ghcr.io/tatertotterson/taterchat`. Use `latest` for the newest successful
-main build or a version tag such as `0.1.0` for a pinned release.
+Every push to `main` builds, boots, health-checks, and publishes the public
+amd64 image to `ghcr.io/tatertotterson/tater-webui`. Use `latest` for the newest
+successful main build or a version tag such as `0.1.0` for a pinned release.
 
-See [the Unraid deployment guide](docs/UNRAID.md) for registry authentication,
-volume mappings, Tater connectivity, and a complete container command.
+See [the Unraid deployment guide](docs/UNRAID.md) for volume mappings, Tater
+connectivity, and a complete container command.
 
 ## Configuration
 
@@ -72,7 +72,7 @@ volume mappings, Tater connectivity, and a complete container command.
 | `TATER_HYDRA_MODEL`           | `tater/hydra`              | Tater-tool delegation model       |
 | `TATER_HYDRA_TIMEOUT_SECONDS` | `600`                      | Hydra request timeout             |
 | `TATER_AGENT_MAX_ITERATIONS`  | `32`                       | Maximum planning/tool rounds      |
-| `TATERCHAT_WORKSPACE`         | process directory          | Initial local working directory   |
+| `TATER_WEBUI_WORKSPACE`       | process directory          | Initial local working directory   |
 
 The same provider settings are available under **Admin settings → Tater**.
 Details are in [the provider guide](docs/TATER_PROVIDER.md) and
@@ -111,7 +111,7 @@ npm run build
 
 ## Security
 
-Full terminal access is intentionally unrestricted. TaterChat can read
+Full terminal access is intentionally unrestricted. Tater WebUI can read
 credentials available to its operating-system user, edit or delete files,
 install software, control processes, and make network requests. Run it as a
 dedicated user with appropriate permissions and do not expose it directly to
@@ -122,7 +122,7 @@ See [the security notes](docs/SECURITY.md).
 
 ## Project status
 
-TaterChat is being reduced from its Open WebUI baseline in measured,
+Tater WebUI is being reduced from its Open WebUI baseline in measured,
 build-tested slices. The Tater provider profile, bundled local runtime,
 conditional Hydra tool, bounded inspect/edit/verify agent loop, and local
 background-process controls are implemented. Browser-direct connections,

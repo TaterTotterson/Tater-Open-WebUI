@@ -1,6 +1,6 @@
 # Tater provider profile
 
-TaterChat has one server-side OpenAI-compatible provider connection. Configure
+Tater WebUI has one server-side OpenAI-compatible provider connection. Configure
 it from **Admin settings → Tater** or with environment variables on a new data
 directory.
 
@@ -14,7 +14,7 @@ directory.
 | Agent loop limit  | `TATER_AGENT_MAX_ITERATIONS`  | `32` planning rounds       |
 
 The URL must point at the API prefix, not the Chat Completions route itself. For
-example, use `http://tater-host:8501/v1`; TaterChat appends `/models` and
+example, use `http://tater-host:8501/v1`; Tater WebUI appends `/models` and
 `/chat/completions` where needed.
 
 Saving the profile performs these changes atomically:
@@ -34,13 +34,13 @@ In Docker, the included Compose configuration defaults to
 the host. Set `TATER_API_BASE_URL` to the LAN or container-network address when
 Tater runs elsewhere.
 
-This profile does not grant Tater access to the TaterChat host. Local terminal,
-filesystem, process, and Git operations stay in TaterChat's own backend. The
+This profile does not grant Tater access to the Tater WebUI host. Local terminal,
+filesystem, process, and Git operations stay in Tater WebUI's own backend. The
 `tater_hydra` tool uses this same saved provider connection for Tater-only
 actions.
 
 Tater's current `tater/base` endpoint returns text and does not preserve
-caller-provided native OpenAI tool calls. TaterChat therefore selects the
+caller-provided native OpenAI tool calls. Tater WebUI therefore selects the
 existing structured tool-planning mode for this provider. Tater remains
 unchanged, and the actual Hydra delegation still uses the normal
 `POST /v1/chat/completions` endpoint.

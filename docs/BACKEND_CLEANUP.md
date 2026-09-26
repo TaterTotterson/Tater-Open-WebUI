@@ -1,7 +1,7 @@
 # Backend cleanup
 
 The first backend stripping pass removes feature entry points that no longer
-belong in TaterChat and narrows the built-in agent tool surface to the pieces
+belong in Tater WebUI and narrows the built-in agent tool surface to the pieces
 used by its terminal-first work loop.
 
 ## Removed in this slice
@@ -35,13 +35,13 @@ used by its terminal-first work loop.
   dependencies and container setup.
 - Retrieval-specific frontend configuration and event definitions.
 
-TaterChat retains `ask_user`, `create_tasks`, and `update_task` as UI-native
+Tater WebUI retains `ask_user`, `create_tasks`, and `update_task` as UI-native
 coordination tools. Its unrestricted local terminal and conditional
 `tater_hydra` tool remain separate runtime tools and are not affected by the
 built-in-tool reduction.
 
 Image generation/editing and audio transcription/speech are intentionally
-retained as TaterChat UI capabilities. Surface tests require both routers to
+retained as Tater WebUI UI capabilities. Surface tests require both routers to
 remain registered.
 
 Normal file attachments remain. Documents are extracted once at upload time,

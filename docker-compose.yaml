@@ -1,15 +1,17 @@
+name: tater-webui
+
 services:
-  tater-chat:
+  tater-webui:
     build:
       context: .
       dockerfile: Dockerfile
-    image: tater-chat:dev
-    container_name: tater-chat
+    image: tater-webui:dev
+    container_name: tater-webui
     volumes:
-      - tater-chat:/app/backend/data
-      - '${TATERCHAT_HOST_WORKSPACE-.}:/workspace'
+      - tater-webui:/app/backend/data
+      - '${TATER_WEBUI_HOST_WORKSPACE-.}:/workspace'
     ports:
-      - ${TATER_CHAT_PORT-3000}:8080
+      - ${TATER_WEBUI_PORT-3000}:8080
     environment:
       - 'TATER_API_BASE_URL=${TATER_API_BASE_URL-http://host.docker.internal:8501/v1}'
       - 'TATER_API_KEY=${TATER_API_KEY-}'
@@ -17,11 +19,12 @@ services:
       - 'TATER_HYDRA_MODEL=${TATER_HYDRA_MODEL-tater/hydra}'
       - 'TATER_HYDRA_TIMEOUT_SECONDS=${TATER_HYDRA_TIMEOUT_SECONDS-600}'
       - 'TATER_AGENT_MAX_ITERATIONS=${TATER_AGENT_MAX_ITERATIONS-32}'
-      - 'TATERCHAT_WORKSPACE=/workspace'
+      - 'TATER_WEBUI_WORKSPACE=/workspace'
+      - 'WEBUI_NAME=Tater WebUI'
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
 
 volumes:
-  tater-chat: {}
+  tater-webui: {}

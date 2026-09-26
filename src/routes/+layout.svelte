@@ -465,7 +465,7 @@
 
 					if ($isLastActiveTab) {
 						if ($settings?.notificationEnabled ?? false) {
-							new Notification(`${displayTitle} / Open WebUI`, {
+							new Notification(`${displayTitle} / ${$WEBUI_NAME}`, {
 								body: contentPreview,
 								// LICENSE covers this Open WebUI notification identifier.
 								// Do not alter, remove, obscure, or replace it except as LICENSE permits:

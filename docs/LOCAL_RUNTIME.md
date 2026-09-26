@@ -1,25 +1,25 @@
 # Bundled local runtime
 
-TaterChat includes its terminal and filesystem runtime in the FastAPI process. It does not require Open Terminal, Spudex, or a private Tater endpoint. A server-side agent planner presents these local tools to the normal model while all provider traffic continues through standard Chat Completions requests.
+Tater WebUI includes its terminal and filesystem runtime in the FastAPI process. It does not require Open Terminal, Spudex, or a private Tater endpoint. A server-side agent planner presents these local tools to the normal model while all provider traffic continues through standard Chat Completions requests.
 
 ## Access model
 
-The runtime intentionally has the same operating-system access as the TaterChat backend process. It can use absolute paths, move outside its starting workspace, inherit environment variables, run Git and package managers, start background processes, and open an interactive shell. Authentication is required for every HTTP and WebSocket entry point.
+The runtime intentionally has the same operating-system access as the Tater WebUI backend process. It can use absolute paths, move outside its starting workspace, inherit environment variables, run Git and package managers, start background processes, and open an interactive shell. Authentication is required for every HTTP and WebSocket entry point.
 
-This is full access, not a filesystem sandbox. Run TaterChat only as an operating-system user whose permissions are appropriate for the files and credentials the model may reach. Do not expose it directly to the public internet.
+This is full access, not a filesystem sandbox. Run Tater WebUI only as an operating-system user whose permissions are appropriate for the files and credentials the model may reach. Do not expose it directly to the public internet.
 
 ## Working directories
 
-Each user and chat pair gets an independent in-memory working directory. New contexts start at `TATERCHAT_WORKSPACE`, or the backend process working directory when that variable is unset. Changing one chat's directory does not change another chat or the backend process itself.
+Each user and chat pair gets an independent in-memory working directory. New contexts start at `TATER_WEBUI_WORKSPACE`, or the backend process working directory when that variable is unset. Changing one chat's directory does not change another chat or the backend process itself.
 
 The working directory is reset when the backend restarts. Files and command side effects persist normally on disk.
 
-For a native installation, set `TATERCHAT_WORKSPACE` to the initial project directory. Absolute paths remain available outside it.
+For a native installation, set `TATER_WEBUI_WORKSPACE` to the initial project directory. Absolute paths remain available outside it.
 
-Docker Compose mounts `TATERCHAT_HOST_WORKSPACE` at `/workspace`; when unset, it mounts the TaterChat repository itself. For example:
+Docker Compose mounts `TATER_WEBUI_HOST_WORKSPACE` at `/workspace`; when unset, it mounts the Tater WebUI repository itself. For example:
 
 ```dotenv
-TATERCHAT_HOST_WORKSPACE=/Users/me/Projects
+TATER_WEBUI_HOST_WORKSPACE=/Users/me/Projects
 ```
 
 In Docker, "this computer" means the container filesystem plus paths explicitly mounted into it. Mount only the host directories the app should edit.
@@ -47,7 +47,7 @@ Shell calls declare whether they inspect, change, or verify state. Direct file-w
 
 ## Tool routing
 
-Local work stays in TaterChat:
+Local work stays in Tater WebUI:
 
 - terminal commands, processes, Git, builds, tests, package managers;
 - file inspection and edits;

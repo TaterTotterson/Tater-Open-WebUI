@@ -21,10 +21,10 @@ MAX_CONTEXT_PROCESSES = 100
 
 
 def configured_workspace() -> Path:
-    value = os.getenv('TATERCHAT_WORKSPACE', os.getcwd())
+    value = os.getenv('TATER_WEBUI_WORKSPACE', os.getcwd())
     path = Path(value).expanduser().resolve()
     if not path.is_dir():
-        raise RuntimeError(f'TATERCHAT_WORKSPACE is not a directory: {path}')
+        raise RuntimeError(f'TATER_WEBUI_WORKSPACE is not a directory: {path}')
     return path
 
 

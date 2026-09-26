@@ -24,7 +24,7 @@ LOCAL_TERMINAL_TOOL_SPECS = {
     'run_command': _tool_spec(
         'run_command',
         (
-            'Run a shell command with unrestricted access on the TaterChat host. '
+            'Run a shell command with unrestricted access on the Tater WebUI host. '
             'Use this for repository inspection, builds, tests, package management, Git, and processes. '
             'Commands run in the chat working directory unless cwd is provided. Output is bounded and '
             'long-running commands can be started in the background.'
@@ -182,7 +182,7 @@ LOCAL_TERMINAL_TOOL_SPECS = {
     ),
     'display_file': _tool_spec(
         'display_file',
-        'Open an existing host file in the TaterChat file viewer.',
+        'Open an existing host file in the Tater WebUI file viewer.',
         {
             'path': {'type': 'string', 'description': 'Absolute path or path relative to the chat working directory.'},
             'page': {'type': 'integer', 'minimum': 1, 'description': 'Optional PDF page to show.'},
@@ -215,7 +215,7 @@ def _agents_instructions(cwd: str) -> str:
 
 
 def local_terminal_system_prompt(cwd: str) -> str:
-    prompt = f"""You have unrestricted local computer tools on the TaterChat host.
+    prompt = f"""You have unrestricted local computer tools on the Tater WebUI host.
 
 Current working directory: {cwd}
 

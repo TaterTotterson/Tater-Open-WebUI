@@ -421,7 +421,7 @@ async def get_tools(request: Request, tool_ids: list[str], user: UserModel, extr
 async def get_builtin_tools(
     request: Request, extra_params: dict, features: dict = None, model: dict = None, is_note_chat: bool = False
 ) -> dict[str, dict]:
-    """Return the small set of UI-native tools used by the TaterChat loop."""
+    """Return the small set of UI-native tools used by the Tater WebUI loop."""
     tools_dict = {}
     model = model or {}
 

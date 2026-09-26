@@ -1,4 +1,4 @@
-"""UI-native tools retained by the TaterChat agent loop."""
+"""UI-native tools retained by the Tater WebUI agent loop."""
 
 import logging
 from typing import Literal

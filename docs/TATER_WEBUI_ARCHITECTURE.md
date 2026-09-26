@@ -1,15 +1,15 @@
-# TaterChat architecture
+# Tater WebUI architecture and boundaries
 
 ## Product boundary
 
-TaterChat is a standalone computer-agent application derived from Open WebUI. It does not run inside the Tater repository and does not use Spudex for local execution.
+Tater WebUI is a standalone computer-agent application derived from Open WebUI. It does not run inside the Tater repository and does not use Spudex for local execution.
 
-TaterChat owns:
+Tater WebUI owns:
 
 - the browser chat interface;
 - chat history, branching, authentication, and local settings;
 - the agent/tool loop;
-- unrestricted terminal, filesystem, process, and Git access on the machine where TaterChat runs;
+- unrestricted terminal, filesystem, process, and Git access on the machine where Tater WebUI runs;
 - streaming local tool activity and command output;
 - connection to Tater's OpenAI-compatible API.
 
@@ -19,26 +19,26 @@ Tater owns:
 - the `tater/base` model for ordinary completion and caller-provided tool use;
 - the `tater/hydra` model for Tater-specific Verbas, Cores, Portals, devices, media, and automations.
 
-TaterChat must not execute local terminal work through Tater or Spudex. Tater must not execute TaterChat's local terminal calls.
+Tater WebUI must not execute local terminal work through Tater or Spudex. Tater must not execute Tater WebUI's local terminal calls.
 
 ## Model and tool routing
 
-The normal conversation uses `tater/base` (or another non-Hydra model selected by the user). TaterChat provides its local terminal and filesystem tools in the ordinary OpenAI tool-calling request.
+The normal conversation uses `tater/base` (or another non-Hydra model selected by the user). Tater WebUI provides its local terminal and filesystem tools in the ordinary OpenAI tool-calling request.
 
-TaterChat also provides a client-side `tater_hydra` delegation tool. When the primary model selects that tool, TaterChat makes another ordinary request to the same `POST /v1/chat/completions` endpoint with `model: "tater/hydra"`. No private Tater endpoint or server-injected tool is required.
+Tater WebUI also provides a client-side `tater_hydra` delegation tool. When the primary model selects that tool, Tater WebUI makes another ordinary request to the same `POST /v1/chat/completions` endpoint with `model: "tater/hydra"`. No private Tater endpoint or server-injected tool is required.
 
 ```text
 User
-  -> TaterChat agent loop
+  -> Tater WebUI agent loop
        -> ordinary response: tater/base
-       -> local computer task: TaterChat terminal/filesystem tools
+       -> local computer task: Tater WebUI terminal/filesystem tools
        -> Tater capability: POST /v1/chat/completions with model=tater/hydra
 ```
 
 Examples:
 
 - Explain code: answer with the normal model.
-- Inspect a repository, edit files, run tests, or commit: use TaterChat's local tools.
+- Inspect a repository, edit files, run tests, or commit: use Tater WebUI's local tools.
 - Turn on lights or control a Tater-connected device: delegate to `tater/hydra`.
 - Fix a project and announce completion through Tater: use local tools first, then delegate only the announcement to `tater/hydra`.
 
@@ -67,7 +67,7 @@ Primary preservation paths include:
 
 ## Replace
 
-Open WebUI currently expects a separately configured terminal server. TaterChat will replace that dependency with a bundled local runtime in its own FastAPI backend while retaining the useful terminal UI and tool-loop integration.
+Open WebUI currently expects a separately configured terminal server. Tater WebUI will replace that dependency with a bundled local runtime in its own FastAPI backend while retaining the useful terminal UI and tool-loop integration.
 
 The local runtime must provide:
 
@@ -84,7 +84,7 @@ The local runtime must provide:
 
 ## Remove or defer
 
-These features are outside the initial TaterChat product and should be removed only after the retained paths have tests:
+These features are outside the initial Tater WebUI product and should be removed only after the retained paths have tests:
 
 - channels, notes, calendar, and Open WebUI automations;
 - telemetry;
@@ -95,7 +95,7 @@ These features are outside the initial TaterChat product and should be removed o
 Some code in these areas may remain temporarily when shared imports make immediate removal risky. Routes and navigation should disappear before dependency deletion.
 
 Image generation/editing, speech, transcription, and their media UI are part
-of the retained TaterChat experience. Their provider configuration can be
+of the retained Tater WebUI experience. Their provider configuration can be
 narrowed later without removing the user-facing media capabilities.
 
 ## Agent loop requirements
@@ -104,7 +104,7 @@ The loop continues until the task is complete, blocked on required user input, c
 
 1. Send conversation state, the concise system prompt, and available tool schemas to the normal model.
 2. If the model returns text without tool calls, finish the turn.
-3. Execute local terminal/file tools on the TaterChat host.
+3. Execute local terminal/file tools on the Tater WebUI host.
 4. Execute `tater_hydra` by calling the standard Tater Chat Completions endpoint with `model: "tater/hydra"`.
 5. Append every tool result using standard OpenAI tool messages and continue the model call.
 6. Stream command status, output, and assistant text to the browser throughout the loop.
@@ -120,7 +120,7 @@ The prompt should teach routing, not enumerate the whole Tater tool catalog. Hyd
 The normal agent prompt will emphasize:
 
 - Answer ordinary questions directly.
-- Use local tools for terminal, filesystem, processes, Git, builds, tests, package management, and inspection of the TaterChat host.
+- Use local tools for terminal, filesystem, processes, Git, builds, tests, package management, and inspection of the Tater WebUI host.
 - Use `tater_hydra` only for capabilities provided by the connected Tater system.
 - Inspect before editing and preserve unrelated user changes.
 - Continue after tool results; a successful command is not automatically a completed task.
@@ -144,4 +144,4 @@ The normal agent prompt will emphasize:
 
 ## Security boundary
 
-Full Access is intentionally unrestricted host execution. It can read credentials, modify or delete files, install software, control processes, and contact external services. TaterChat must require authentication, keep secrets server-side, log tool execution, and default to local/LAN binding. Remote exposure should be placed behind a trusted VPN or authenticated reverse proxy.
+Full Access is intentionally unrestricted host execution. It can read credentials, modify or delete files, install software, control processes, and contact external services. Tater WebUI must require authentication, keep secrets server-side, log tool execution, and default to local/LAN binding. Remote exposure should be placed behind a trusted VPN or authenticated reverse proxy.

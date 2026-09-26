@@ -1,7 +1,7 @@
 # Frontend cleanup
 
 The first stripping pass removes Open WebUI surfaces that do not belong in the
-TaterChat product while preserving the chat, authentication, history, local
+Tater WebUI product while preserving the chat, authentication, history, local
 terminal, file navigation, and Tater configuration paths.
 
 ## Removed in this slice
@@ -29,7 +29,7 @@ terminal, file navigation, and Tater configuration paths.
   UI remain.
 
 The corresponding feature defaults are off. Plugins also default off so a new
-TaterChat install does not expose the inherited extension surface accidentally.
+Tater WebUI install does not expose the inherited extension surface accidentally.
 
 ## Verification
 
