@@ -39,6 +39,10 @@ In Docker, "this computer" means the container filesystem plus paths explicitly 
 
 The model performs every local action through `terminal`, using ordinary shell tools such as `pwd`, `ls`, `find`, `rg`, `sed`, `cat`, Git, editors, and build tools. Directory listings, file edits, process management, and verification therefore remain visible as real terminal commands.
 
+For multi-step work, the planner may include a short conversational progress update with its next action. Tater WebUI appends that update to the assistant message before starting the command, so the user can see what the agent is doing while terminal work continues. Progress text is separate from executable calls and cannot contain tool-call markup.
+
+After terminal or Hydra work begins, the loop cannot stop with only an empty call list. It must either continue working or provide a complete final answer based on the returned results. That prepared answer is handed to the normal response pass so it does not mistake an unfinished explanation or raw tool token for completion.
+
 The file browser independently supports uploads, downloads, folders, moves, deletion, text search, ZIP archives, and file viewing. Those HTTP endpoints support the UI and are not part of the model's tool catalog.
 
 If an `AGENTS.md` file exists in the current directory or one of its parents, its instructions are added to the local-computer system prompt, from the broadest directory to the most specific.

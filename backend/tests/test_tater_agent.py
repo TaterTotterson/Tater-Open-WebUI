@@ -23,6 +23,28 @@ class TaterAgentTests(unittest.TestCase):
     def test_parses_empty_plan(self):
         self.assertEqual(tater_agent.parse_tool_plan('{"tool_calls":[]}'), [])
 
+    def test_parses_progress_and_final_answer(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"progress":"I’ll inspect the project first.","tool_calls":[],"final_answer":"Done."}'
+        )
+
+        self.assertEqual(plan['progress'], 'I’ll inspect the project first.')
+        self.assertEqual(plan['tool_calls'], [])
+        self.assertEqual(plan['final_answer'], 'Done.')
+
+    def test_rejects_tool_markup_in_progress(self):
+        with self.assertRaisesRegex(ValueError, 'must not contain tool-call markup'):
+            tater_agent.parse_tool_plan_response(
+                '{"progress":"<|tool_call>call:terminal:{}","tool_calls":[],"final_answer":""}'
+            )
+
+    def test_rejects_final_answer_while_more_tools_are_requested(self):
+        with self.assertRaisesRegex(ValueError, 'must be empty'):
+            tater_agent.parse_tool_plan_response(
+                '{"progress":"","tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}],'
+                '"final_answer":"Done."}'
+            )
+
     def test_parses_first_tool_plan_without_consuming_trailing_prose(self):
         calls = tater_agent.parse_tool_plan(
             'Plan: {"tool_calls":[{"name":"terminal","parameters":{"command":"cat a.py"}}]} '

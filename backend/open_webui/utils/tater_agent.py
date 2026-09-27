@@ -10,6 +10,8 @@ MAX_TATER_AGENT_MAX_ITERATIONS = 128
 TATER_AGENT_MAX_CALLS_PER_STEP = 16
 TATER_AGENT_HISTORY_MAX_CHARS = 120_000
 TATER_AGENT_REPEAT_LIMIT = 3
+TATER_AGENT_PROGRESS_MAX_CHARS = 600
+TATER_AGENT_FINAL_ANSWER_MAX_CHARS = 40_000
 
 _VOLATILE_RESULT_KEYS = {
     'created_at',
@@ -31,7 +33,10 @@ def agent_iteration_limit(value: str | int | None = None) -> int:
     return max(1, min(limit, MAX_TATER_AGENT_MAX_ITERATIONS))
 
 
-def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP) -> list[dict[str, Any]]:
+def parse_tool_plan_response(
+    content: str,
+    max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP,
+) -> dict[str, Any]:
     content = str(content or '')
     payload = None
     decoder = json.JSONDecoder()
@@ -42,7 +47,12 @@ def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STE
             candidate, _ = decoder.raw_decode(content[index:])
         except json.JSONDecodeError:
             continue
-        if isinstance(candidate, dict) and ('tool_calls' in candidate or candidate.get('name')):
+        if isinstance(candidate, dict) and (
+            'tool_calls' in candidate
+            or candidate.get('name')
+            or 'progress' in candidate
+            or 'final_answer' in candidate
+        ):
             payload = candidate
             break
     if payload is None:
@@ -67,7 +77,31 @@ def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STE
         if not isinstance(parameters, dict):
             raise ValueError(f'Tool parameters for {name} must be an object')
         calls.append({'name': name, 'parameters': parameters})
-    return calls
+    progress = payload.get('progress', '')
+    final_answer = payload.get('final_answer', '')
+    if not isinstance(progress, str):
+        raise ValueError('progress must be a string')
+    if not isinstance(final_answer, str):
+        raise ValueError('final_answer must be a string')
+
+    progress = progress.strip()[:TATER_AGENT_PROGRESS_MAX_CHARS]
+    final_answer = final_answer.strip()[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS]
+    if '<|tool_call' in progress.lower():
+        raise ValueError('progress must not contain tool-call markup')
+    if '<|tool_call' in final_answer.lower():
+        raise ValueError('final_answer must not contain tool-call markup')
+    if calls and final_answer:
+        raise ValueError('final_answer must be empty while tool_calls are present')
+
+    return {
+        'progress': progress,
+        'tool_calls': calls,
+        'final_answer': final_answer,
+    }
+
+
+def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP) -> list[dict[str, Any]]:
+    return parse_tool_plan_response(content, max_calls=max_calls)['tool_calls']
 
 
 def render_tool_history(records: list[dict[str, Any]], max_chars: int = TATER_AGENT_HISTORY_MAX_CHARS) -> str:

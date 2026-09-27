@@ -76,6 +76,14 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('The following tool calls have already finished for the current request', middleware_source)
         self.assertIn('Do not emit tool-call markup', middleware_source)
 
+    def test_legacy_agent_can_stream_progress_and_requires_completion_answer(self):
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+
+        self.assertIn("'type': 'message'", middleware_source)
+        self.assertIn('A progress update does not complete the task', middleware_source)
+        self.assertIn('The task cannot be marked complete without final_answer', middleware_source)
+        self.assertIn('<prepared_final_answer>', middleware_source)
+
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))
 
