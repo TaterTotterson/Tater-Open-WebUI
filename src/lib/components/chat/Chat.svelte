@@ -1162,7 +1162,15 @@
 
 				if (type === 'status') {
 					if (message?.statusHistory) {
-						message.statusHistory.push(data);
+						const existingIndex = data?.id
+							? message.statusHistory.findIndex((status) => status?.id === data.id)
+							: -1;
+						if (existingIndex === -1) {
+							message.statusHistory.push(data);
+						} else {
+							message.statusHistory[existingIndex] = data;
+							message.statusHistory = [...message.statusHistory];
+						}
 					} else {
 						message.statusHistory = [data];
 					}

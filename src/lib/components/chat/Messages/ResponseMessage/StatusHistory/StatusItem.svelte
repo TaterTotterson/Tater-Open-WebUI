@@ -59,7 +59,7 @@
 				</div>
 			</div>
 		{:else}
-			<div class="flex flex-col justify-center -space-y-0.5">
+			<div class="flex min-w-0 flex-col justify-center gap-0.5">
 				<div
 					class="{(done || status?.done) === false
 						? 'shimmer'
@@ -80,6 +80,14 @@
 						{status?.description}
 					{/if}
 				</div>
+				{#if status?.detail}
+					<div
+						class="max-w-full truncate font-mono text-[0.75rem] text-gray-400 dark:text-gray-600"
+						title={status.detail}
+					>
+						{status.detail}
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</div>

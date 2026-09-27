@@ -123,6 +123,7 @@ from open_webui.utils.tater_agent import (
     render_recent_chat_history,
     render_tool_history,
     task_dispatch_request,
+    tool_activity_status,
     tool_plan_retry_instruction,
     tool_outcome_signature,
 )
@@ -1495,10 +1496,11 @@ async def chat_completion_tools_handler(
         'directly answers the request, the next response must finish with final_answer instead of exploring further. '
         'For repository coding work, begin a new task or resumed task by confirming the working directory, repository '
         'root, branch, and git status in one terminal call. Use the terminal cwd parameter to enter the repository. '
-        'For a useful stage change in a multi-step task, put one short, natural user-facing update in progress; '
-        'otherwise leave it '
-        'empty. A progress update does not complete the task. Never put JSON, commands, tool names, or tool-call '
-        'markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty tool_calls array '
+        'Whenever tool_calls is nonempty, put one short, natural user-facing explanation in progress describing '
+        'what you are about to inspect, change, or verify and why. Make it specific to this step and do not repeat '
+        'an earlier update. A progress update does not complete the task. Never put JSON, commands, tool names, or '
+        'tool-call markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty '
+        'tool_calls array '
         'only after every requested part has been completed or a concrete blocker has been established, and then put '
         'a complete answer for the user in final_answer. On that final response, context must be a concise complete '
         'snapshot with objective, repository_root, branch, requirements, plan, completed, files_changed, tests, '
@@ -1526,7 +1528,15 @@ async def chat_completion_tools_handler(
             }
         )
 
-    async def emit_tool_status(tool_name: str, *, done: bool, failed: bool = False):
+    async def emit_tool_status(
+        tool_name: str,
+        tool_params: dict,
+        status_id: str,
+        *,
+        done: bool,
+        failed: bool = False,
+    ):
+        activity = tool_activity_status(tool_name, tool_params, done=done, failed=failed)
         if background_task_id:
             try:
                 from open_webui.utils.tater_tasks import update_tater_task
@@ -1534,13 +1544,9 @@ async def chat_completion_tools_handler(
                 await update_tater_task(
                     background_task_id,
                     {
-                        'activity': (
-                            f'{tool_name} failed'
-                            if failed
-                            else f'Finished {tool_name}'
-                            if done
-                            else f'Using {tool_name}'
-                        )
+                        'activity': ' — '.join(
+                            value for value in (activity['description'], activity['detail']) if value
+                        )[:240]
                     },
                     user_id=user.id,
                 )
@@ -1553,8 +1559,10 @@ async def chat_completion_tools_handler(
                 {
                     'type': 'status',
                     'data': {
+                        'id': status_id,
                         'action': 'tool_execution',
-                        'description': f'Using {tool_name}',
+                        'tool': tool_name,
+                        **activity,
                         'done': done,
                         **({'error': True} if failed else {}),
                     },
@@ -1612,7 +1620,13 @@ async def chat_completion_tools_handler(
         allowed_params = spec.get('parameters', {}).get('properties', {}).keys()
         tool_function_params = {k: v for k, v in tool_function_params.items() if k in allowed_params}
 
-        await emit_tool_status(tool_function_name, done=False)
+        tool_status_id = f'tater-tool-{iteration}-{uuid4()}'
+        await emit_tool_status(
+            tool_function_name,
+            tool_function_params,
+            tool_status_id,
+            done=False,
+        )
         try:
             if direct_tool:
                 tool_result = await event_caller(
@@ -1671,7 +1685,13 @@ async def chat_completion_tools_handler(
             except Exception as e:
                 log.debug('Could not emit UI result for %s: %s', tool_function_name, e)
 
-        await emit_tool_status(tool_function_name, done=True, failed=failed)
+        await emit_tool_status(
+            tool_function_name,
+            tool_function_params,
+            tool_status_id,
+            done=True,
+            failed=failed,
+        )
 
         if tool_result:
             tool_id = tool.get('tool_id', '')

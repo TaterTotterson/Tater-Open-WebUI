@@ -97,6 +97,14 @@ _PENDING_ACTION_RE = re.compile(
     r'would you like me to|do you want me to|want me to|may i|ready for me to)\b',
     re.IGNORECASE,
 )
+_SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r'(?i)\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)\s*=\s*'
+    r'("[^"]*"|\'[^\']*\'|[^\s;&|]+)'
+)
+_SENSITIVE_FLAG_RE = re.compile(
+    r'(?i)(--?(?:api[-_]?key|token|secret|password|passwd|credential)(?:=|\s+))([^\s;&|]+)'
+)
+_BEARER_RE = re.compile(r'(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+')
 
 
 def _plain_message_text(message: dict[str, Any]) -> str:
@@ -166,6 +174,46 @@ def task_dispatch_request(messages: list[dict[str, Any]]) -> str | None:
             continue
         return candidate
     return None
+
+
+def _safe_activity_preview(value: Any, max_chars: int = 220) -> str:
+    text = re.sub(r'\s+', ' ', str(value or '').strip())
+    text = _SENSITIVE_ASSIGNMENT_RE.sub(lambda match: f'{match.group(1)}=[redacted]', text)
+    text = _SENSITIVE_FLAG_RE.sub(lambda match: f'{match.group(1)}[redacted]', text)
+    text = _BEARER_RE.sub(lambda match: f'{match.group(1)}[redacted]', text)
+    if len(text) > max_chars:
+        return f'{text[: max_chars - 1].rstrip()}…'
+    return text
+
+
+def tool_activity_status(
+    tool_name: str,
+    parameters: dict[str, Any] | None,
+    *,
+    done: bool,
+    failed: bool = False,
+) -> dict[str, str]:
+    parameters = parameters if isinstance(parameters, dict) else {}
+    if tool_name == 'terminal':
+        description = (
+            'Terminal command failed'
+            if failed
+            else 'Finished terminal command'
+            if done
+            else 'Running terminal command'
+        )
+        command = _safe_activity_preview(parameters.get('command'))
+        cwd = _safe_activity_preview(parameters.get('cwd'), max_chars=100)
+        detail = f'{cwd}$ {command}' if cwd and command else command or cwd
+        return {'description': description, 'detail': detail}
+    if tool_name == 'tater_hydra':
+        description = 'Hydra call failed' if failed else 'Hydra call finished' if done else 'Calling Tater Hydra'
+        return {
+            'description': description,
+            'detail': _safe_activity_preview(parameters.get('request')),
+        }
+    description = f'{tool_name} failed' if failed else f'Finished {tool_name}' if done else f'Using {tool_name}'
+    return {'description': description, 'detail': ''}
 
 
 def agent_iteration_limit(value: str | int | None = None) -> int:

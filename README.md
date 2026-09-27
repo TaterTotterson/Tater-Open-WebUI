@@ -95,7 +95,10 @@ files, Git, packages, builds, tests, and process management.
 When a request needs the terminal or Hydra, Tater Open WebUI moves the work into
 a background task. The original chat remains available while the task runs.
 Active tasks appear above Chats in the sidebar, and opening one shows its live,
-read-only transcript in the normal chat layout.
+read-only transcript in the normal chat layout. Each step shows a concise
+explanation plus the terminal command or Hydra request being executed. The
+activity history is expandable, while full tool output stays in the existing
+collapsed result sources.
 
 The agent may show short progress updates while commands run. A completion
 review prevents the task from ending while requested work is unfinished or its

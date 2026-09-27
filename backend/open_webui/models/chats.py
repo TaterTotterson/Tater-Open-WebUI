@@ -1257,7 +1257,19 @@ class ChatTable:
 
                 if message_id in history.get('messages', {}):
                     status_history = history['messages'][message_id].get('statusHistory', [])
-                    status_history.append(status)
+                    status_id = status.get('id') if isinstance(status, dict) else None
+                    existing_index = next(
+                        (
+                            index
+                            for index, item in enumerate(status_history)
+                            if status_id and isinstance(item, dict) and item.get('id') == status_id
+                        ),
+                        None,
+                    )
+                    if existing_index is None:
+                        status_history.append(status)
+                    else:
+                        status_history[existing_index] = status
                     history['messages'][message_id]['statusHistory'] = status_history
 
                 chat['history'] = history

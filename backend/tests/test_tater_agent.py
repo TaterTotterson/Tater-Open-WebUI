@@ -66,6 +66,33 @@ class TaterAgentTests(unittest.TestCase):
             'Find the task logs and show me the failure.',
         )
 
+    def test_terminal_activity_shows_command_and_redacts_secrets(self):
+        status = tater_agent.tool_activity_status(
+            'terminal',
+            {
+                'command': 'API_KEY=very-secret curl --token also-secret https://example.test',
+                'cwd': '/workspace/app',
+            },
+            done=False,
+        )
+
+        self.assertEqual(status['description'], 'Running terminal command')
+        self.assertIn('/workspace/app$', status['detail'])
+        self.assertIn('API_KEY=[redacted]', status['detail'])
+        self.assertIn('--token [redacted]', status['detail'])
+        self.assertNotIn('very-secret', status['detail'])
+        self.assertNotIn('also-secret', status['detail'])
+
+    def test_hydra_activity_summarizes_request(self):
+        status = tater_agent.tool_activity_status(
+            'tater_hydra',
+            {'request': 'Turn on the kitchen lights and set them to 40 percent.'},
+            done=True,
+        )
+
+        self.assertEqual(status['description'], 'Hydra call finished')
+        self.assertEqual(status['detail'], 'Turn on the kitchen lights and set them to 40 percent.')
+
     def test_parses_fenced_tool_plan(self):
         calls = tater_agent.parse_tool_plan(
             '```json\n{"tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}]}\n```'
