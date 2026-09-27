@@ -128,6 +128,10 @@ class TaterAgentTests(unittest.TestCase):
             tater_agent.normalize_task_title('  inspect   Face ID implementation  ', 'ignored'),
             'Inspect Face ID implementation',
         )
+        self.assertEqual(
+            tater_agent.normalize_task_title('Perfect, what do you think of this project?', 'ignored'),
+            'Review this project',
+        )
 
     def test_task_title_fallback_cleans_request_language(self):
         self.assertEqual(
@@ -137,6 +141,57 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(
             tater_agent.normalize_task_title('', 'Is the Tater clone in the home folder?'),
             'Check Tater clone in the home folder',
+        )
+        self.assertEqual(
+            tater_agent.normalize_task_title('', 'Perfect, what do you think of this project?'),
+            'Review this project',
+        )
+
+    def test_future_work_answer_becomes_progress(self):
+        answer = (
+            'To give you a meaningful opinion, I need to inspect the codebase. '
+            'I’ll start by reading the README. One moment while I scan the files.'
+        )
+
+        self.assertEqual(tater_agent.continuation_progress_update(answer), answer)
+        self.assertEqual(
+            tater_agent.continuation_progress_update('I’ll inspect the project now.'),
+            'I’ll inspect the project now.',
+        )
+
+    def test_completed_answer_is_not_treated_as_progress(self):
+        answer = 'I inspected the codebase and found a clean event-driven design. Here is my assessment.'
+
+        self.assertEqual(tater_agent.continuation_progress_update(answer), '')
+
+    def test_background_task_result_is_rendered_directly(self):
+        content = (
+            '[BACKGROUND TASK FINISHED - task-123]\n'
+            'Task: Review this project\n'
+            'Status: completed\n'
+            'Task view: /tasks/task-123\n'
+            '--- RESULT ---\n'
+            'The project has a clear architecture and focused scope.\n\n'
+            '--- FINAL WORKING CONTEXT ---\n'
+            "{'objective': 'Review the project'}"
+        )
+
+        self.assertEqual(
+            tater_agent.background_task_result_answer(content),
+            '**Review this project completed.**\n\n'
+            'The project has a clear architecture and focused scope.',
+        )
+
+    def test_failed_background_task_result_is_explicit(self):
+        content = (
+            'Task: Run project tests\nStatus: failed\n--- RESULT ---\n'
+            'The test runner could not find the required dependency.'
+        )
+
+        self.assertEqual(
+            tater_agent.background_task_result_answer(content),
+            '**Run project tests did not complete successfully.**\n\n'
+            'The test runner could not find the required dependency.',
         )
 
     def test_parses_persistent_context_with_final_answer(self):

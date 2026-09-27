@@ -98,6 +98,17 @@ _PENDING_ACTION_RE = re.compile(
     r'would you like me to|do you want me to|want me to|may i|ready for me to)\b',
     re.IGNORECASE,
 )
+_CONTINUATION_ANSWER_RE = re.compile(
+    r"\b(?:i(?:'ll| will| am going to|'m going to| need to| have to)\b|let me\b|"
+    r"one moment\b|give me a moment\b|i(?:'ll| will) start by\b|i(?:'ll| will) now\b)",
+    re.IGNORECASE,
+)
+_COMPLETION_ANSWER_RE = re.compile(
+    r"\b(?:completed|finished|done|i (?:found|confirmed|verified|changed|updated|fixed|implemented|ran|tested)|"
+    r"tests? (?:pass|passed)|here(?:'s| is) (?:the|my) (?:result|assessment|summary)|"
+    r"the (?:result|answer|issue|cause) is)\b",
+    re.IGNORECASE,
+)
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r'(?i)\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)\s*=\s*'
     r'("[^"]*"|\'[^\']*\'|[^\s;&|]+)'
@@ -223,19 +234,34 @@ def normalize_task_title(planned_title: Any, prompt: str) -> str:
     title = re.sub(r'\s+', ' ', str(planned_title or '')).strip(' \t\r\n"\'`.,!?')
     if not title:
         title = re.sub(r'\s+', ' ', str(prompt or '')).strip(' \t\r\n"\'`.,!?')
-        title = re.sub(
-            r'^(?:(?:can|could|would|will) you|please|i (?:want|need) you to)\s+',
-            '',
-            title,
-            flags=re.IGNORECASE,
-        )
-        question = re.match(
-            r'^(?:is|are|was|were|do|does|did)\s+(?:the\s+|a\s+|an\s+)?(.+)$',
-            title,
-            flags=re.IGNORECASE,
-        )
-        if question:
-            title = f'Check {question.group(1)}'
+
+    title = re.sub(
+        r'^(?:(?:ok(?:ay)?|perfect|great|cool|nice|awesome|alright|all right|thanks|thank you)[,!.;:\s]+)+',
+        '',
+        title,
+        flags=re.IGNORECASE,
+    )
+    title = re.sub(
+        r'^(?:(?:can|could|would|will) you|please|i (?:want|need) you to)\s+',
+        '',
+        title,
+        flags=re.IGNORECASE,
+    )
+    question = re.match(
+        r'^(?:is|are|was|were|do|does|did)\s+(?:the\s+|a\s+|an\s+)?(.+)$',
+        title,
+        flags=re.IGNORECASE,
+    )
+    if question:
+        title = f'Check {question.group(1)}'
+    opinion = re.match(
+        r'^(?:what do you think (?:of|about)|what(?:\'s| is) your opinion (?:of|on)|'
+        r'tell me what you think (?:of|about))\s+(.+)$',
+        title,
+        flags=re.IGNORECASE,
+    )
+    if opinion:
+        title = f'Review {opinion.group(1)}'
 
     words = title.split()
     if len(words) > 10:
@@ -244,6 +270,42 @@ def normalize_task_title(planned_title: Any, prompt: str) -> str:
     if not title:
         return 'Background task'
     return f'{title[0].upper()}{title[1:]}'
+
+
+def continuation_progress_update(answer: Any) -> str:
+    """Return an unfinished answer as progress so the agent keeps working."""
+
+    text = re.sub(r'\s+', ' ', str(answer or '')).strip()
+    if not text or len(text) > 2_000:
+        return ''
+    normalized = text.replace('’', "'")
+    if not _CONTINUATION_ANSWER_RE.search(normalized) or _COMPLETION_ANSWER_RE.search(normalized):
+        return ''
+    return text[:TATER_AGENT_PROGRESS_MAX_CHARS].rstrip()
+
+
+def background_task_result_answer(content: Any) -> str:
+    """Extract a user-facing task result from the internal completion envelope."""
+
+    text = str(content or '').strip()
+    title_match = re.search(r'^Task:\s*(.+)$', text, flags=re.MULTILINE)
+    status_match = re.search(r'^Status:\s*(.+)$', text, flags=re.MULTILINE)
+    title = title_match.group(1).strip() if title_match else 'Background task'
+    status = status_match.group(1).strip().casefold() if status_match else 'completed'
+    result = text.partition('--- RESULT ---')[2]
+    result = result.partition('--- FINAL WORKING CONTEXT ---')[0].strip()
+    if not result:
+        result = 'The task finished without a result.'
+
+    if status == 'completed':
+        heading = f'**{title} completed.**'
+    elif status == 'cancelled':
+        heading = f'**{title} was cancelled.**'
+    elif status == 'interrupted':
+        heading = f'**{title} was interrupted before it finished.**'
+    else:
+        heading = f'**{title} did not complete successfully.**'
+    return f'{heading}\n\n{result}'
 
 
 def agent_iteration_limit(value: str | int | None = None) -> int:

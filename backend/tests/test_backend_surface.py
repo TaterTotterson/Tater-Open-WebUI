@@ -15,6 +15,7 @@ CHAT_UTILS_PATH = BACKEND_ROOT / 'utils' / 'chat.py'
 DOCUMENT_PROCESSING_PATH = BACKEND_ROOT / 'utils' / 'document_processing.py'
 TATER_TASKS_PATH = BACKEND_ROOT / 'utils' / 'tater_tasks.py'
 TATER_PROJECTS_PATH = BACKEND_ROOT / 'utils' / 'tater_projects.py'
+SUBAGENTS_PATH = BACKEND_ROOT / 'utils' / 'subagents.py'
 FOLDERS_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'folders.py'
 
 
@@ -100,13 +101,19 @@ class BackendSurfaceTests(unittest.TestCase):
     def test_terminal_and_hydra_work_dispatch_to_visible_background_tasks(self):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
         task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
+        subagent_source = SUBAGENTS_PATH.read_text(encoding='utf-8')
 
         self.assertIn('start_tater_task', middleware_source)
         self.assertIn("call.get('name') == 'tater_hydra'", task_source)
         self.assertIn("'type': TATER_TASK_TYPE", task_source)
         self.assertIn('process_pending_internal_messages', task_source)
+        self.assertIn("if kind == 'tater_task':", subagent_source)
+        self.assertIn('background_task_result_answer', subagent_source)
+        self.assertIn('Posting the result to the originating chat', task_source)
+        self.assertIn("completed_context.get('execution_summary')", task_source)
         self.assertIn('tater_task_awareness', middleware_source)
         ast.parse(task_source)
+        ast.parse(subagent_source)
 
     def test_projects_are_filesystem_backed_and_inherited_by_tasks(self):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')

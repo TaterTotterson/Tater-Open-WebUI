@@ -115,6 +115,7 @@ from open_webui.utils.tater_agent import (
     TATER_AGENT_REPEAT_LIMIT,
     agent_history_char_limit,
     agent_iteration_limit,
+    continuation_progress_update,
     merge_project_context,
     normalize_agent_context,
     parse_completion_review,
@@ -1517,7 +1518,9 @@ async def chat_completion_tools_handler(
         'tool-call markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty '
         'tool_calls array '
         'only after every requested part has been completed or a concrete blocker has been established, and then put '
-        'a complete answer for the user in final_answer. On that final response, context must be a concise complete '
+        'a complete answer for the user in final_answer. Never use final_answer to announce work you still intend to '
+        'do. If you say you will inspect, run, read, change, or verify something, include that tool call now instead. '
+        'On that final response, context must be a concise complete '
         'snapshot with objective, repository_root, branch, requirements, plan, completed, files_changed, tests, '
         'blockers, cwd, and execution_summary. Keep task_title and context empty when returning the final answer. '
         'If the available results '
@@ -1833,6 +1836,37 @@ async def chat_completion_tools_handler(
         if not tool_calls:
             prepared_final_answer = plan['final_answer'] if history_records else ''
             prepared_agent_context = plan['context'] if history_records else {}
+
+            continuation_update = continuation_progress_update(prepared_final_answer)
+            if history_records and continuation_update:
+                completion_review_failures += 1
+                if continuation_update not in emitted_progress_text:
+                    await emit_progress_update(continuation_update)
+                    emitted_progress_updates.append(continuation_update)
+                    emitted_progress_text.add(continuation_update)
+                prepared_final_answer = ''
+                prepared_agent_context = {}
+                history_records.append(
+                    {
+                        'iteration': iteration,
+                        'tool': 'agent_completion_review',
+                        'status': 'failed',
+                        'result': (
+                            'The proposed answer only announced future work. It was delivered as a progress update. '
+                            'Perform that work now with the available tools, then return verified results.'
+                        ),
+                    }
+                )
+                if completion_review_failures < 3:
+                    continue
+                agent_stop_message = (
+                    'I could not complete the task because the agent repeatedly announced future work without '
+                    'performing it.'
+                )
+                append_agent_notice(agent_stop_message)
+                loop_stopped = True
+                break
+
             if history_records and (not prepared_final_answer or not prepared_agent_context):
                 completion_protocol_failures += 1
                 missing_completion_fields = []
@@ -1931,7 +1965,7 @@ async def chat_completion_tools_handler(
         context_update = dict(prepared_agent_context) if isinstance(prepared_agent_context, dict) else {}
         if not context_update.get('objective') and not persistent_agent_context.get('objective'):
             context_update['objective'] = get_last_user_message(body.get('messages', [])) or ''
-        if direct_answer and not context_update.get('execution_summary'):
+        if direct_answer:
             context_update['execution_summary'] = direct_answer
 
         for record in reversed(history_records):

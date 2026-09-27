@@ -17,6 +17,7 @@ from open_webui.tasks import create_task, has_active_tasks
 from open_webui.utils.auth import create_token
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import get_message_list
+from open_webui.utils.tater_agent import background_task_result_answer
 from sqlalchemy import select
 from starlette.datastructures import Headers
 
@@ -123,7 +124,7 @@ async def process_pending_internal_messages(
                 if first_meta.get('internal') is True and first_meta.get('type') in {'timer', 'subagent', 'tater_task'}
                 else 'subagent'
             )
-            parent_id = first.get('parentId')
+            source_parent_id = first.get('parentId')
             if kind == 'timer' and first_meta.get('timer_id'):
                 timer = await Chats.get_chat_by_id(first_meta['timer_id'])
                 run = {**run, **(((timer.meta or {}).get('run') if timer else None) or {})}
@@ -135,7 +136,7 @@ async def process_pending_internal_messages(
                     message
                     for message in pending
                     for meta in [message.get('meta') or {}]
-                    if message.get('parentId') == parent_id
+                    if message.get('parentId') == source_parent_id
                     and (message.get('model') or model_id) == model_id
                     and (
                         meta.get('internal') is True
@@ -144,6 +145,25 @@ async def process_pending_internal_messages(
                     )
                 ]
             combined_content = '\n\n'.join(message.get('content', '') for message in batch if message.get('content'))
+            direct_result_content = (
+                '\n\n---\n\n'.join(
+                    background_task_result_answer(message.get('content', ''))
+                    for message in batch
+                    if message.get('content')
+                )
+                if kind == 'tater_task'
+                else ''
+            )
+            parent_id = source_parent_id
+            if kind == 'tater_task' and first_meta.get('status') == 'pending':
+                current_id = history.get('currentId')
+                current_message = messages.get(current_id) if current_id else None
+                if (
+                    current_message
+                    and current_message.get('role') == 'assistant'
+                    and current_message.get('done') is not False
+                ):
+                    parent_id = current_id
             if kind == 'timer':
                 timer_ids = [
                     message['meta']['timer_id'] for message in batch if (message.get('meta') or {}).get('timer_id')
@@ -201,10 +221,10 @@ async def process_pending_internal_messages(
                 removed_ids = {message['id'] for message in batch}
                 for message_id in removed_ids:
                     messages.pop(message_id, None)
-                if parent_id and parent_id in messages:
-                    messages[parent_id]['childrenIds'] = [
+                if source_parent_id and source_parent_id in messages:
+                    messages[source_parent_id]['childrenIds'] = [
                         child_id
-                        for child_id in messages[parent_id].get('childrenIds', [])
+                        for child_id in messages[source_parent_id].get('childrenIds', [])
                         if child_id not in removed_ids
                     ]
 
@@ -226,8 +246,8 @@ async def process_pending_internal_messages(
                 'parentId': user_message_id,
                 'childrenIds': [],
                 'role': 'assistant',
-                'content': '',
-                'done': False,
+                'content': direct_result_content,
+                'done': kind == 'tater_task',
                 'model': model_id,
                 'timestamp': int(time.time()),
             }
@@ -262,6 +282,9 @@ async def process_pending_internal_messages(
             },
             room=f'user:{user.id}',
         )
+
+        if kind == 'tater_task':
+            return
 
         form_data = {
             'model': model_id,

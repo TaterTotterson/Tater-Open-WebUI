@@ -543,7 +543,7 @@
 	<div class="flex self-center flex-1 w-full min-w-0">
 		{#if unread}
 			<div class="shrink-0 self-center pr-2.5 flex transition-opacity duration-300">
-				<div class="size-1.5 bg-sky-500 rounded-full"></div>
+				<div class="size-1.5 bg-orange-500 rounded-full"></div>
 			</div>
 		{/if}
 		<div
@@ -793,12 +793,16 @@
 </div>
 
 {#if tasks.length > 0}
-	<div
-		class="ml-3 mt-[0.0625rem] flex flex-col border-s border-gray-100 pl-1 dark:border-gray-900"
-		aria-label={`Tasks for ${title}`}
-	>
-		{#each tasks as task (task.id)}
-			<TaskItem {task} onCancel={onCancelTask} />
+	<div class="ml-3 mt-[0.0625rem] flex flex-col" aria-label={`Tasks for ${title}`}>
+		{#each tasks as task, index (task.id)}
+			<div
+				class="relative pl-2 after:absolute after:left-0 after:top-1/2 after:w-2 after:border-t after:border-gray-200 dark:after:border-gray-800 {index <
+				tasks.length - 1
+					? 'before:absolute before:inset-y-0 before:left-0 before:border-s before:border-gray-200 dark:before:border-gray-800'
+					: 'before:absolute before:left-0 before:top-0 before:h-1/2 before:border-s before:border-gray-200 dark:before:border-gray-800'}"
+			>
+				<TaskItem {task} onCancel={onCancelTask} />
+			</div>
 		{/each}
 	</div>
 {/if}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import time
 from datetime import timedelta
 from typing import Any
@@ -26,6 +27,8 @@ TATER_TASK_TYPE = 'tater_task'
 TATER_TASK_ACTIVE_STATUSES = {'queued', 'running', 'cancelling'}
 TATER_TASK_MAX_CONCURRENT_PER_USER = 2
 TATER_TASK_RESULT_MAX_CHARS = 40_000
+
+log = logging.getLogger(__name__)
 
 
 def _build_internal_request(
@@ -204,6 +207,15 @@ async def tater_task_awareness(app, user_id: str, *, exclude_task_id: str | None
 def _message_text(message: dict | None) -> str:
     if not message:
         return ''
+    output_text = ''.join(
+        str(part.get('text') or '')
+        for item in message.get('output') or []
+        if isinstance(item, dict) and item.get('type') == 'message'
+        for part in item.get('content') or []
+        if isinstance(part, dict) and part.get('type') == 'output_text'
+    ).strip()
+    if output_text:
+        return output_text
     content = message.get('content')
     if isinstance(content, str):
         return content.strip()
@@ -233,10 +245,6 @@ async def _queue_parent_result(
     task_context = ((task_chat.chat or {}).get('taterAgentContext') if task_chat else None) or {}
     lines = [
         f'[BACKGROUND TASK FINISHED - {task_chat_id}]',
-        'A background task started from this chat has finished. Report the outcome clearly to the user.',
-        'Do not promise, announce, or imply additional work: this report cannot run tools. If more work remains, '
-        'state that plainly and wait for the user to request it.',
-        '',
         f'Task: {title}',
         f'Status: {status}',
         f'Task view: /tasks/{task_chat_id}',
@@ -461,7 +469,11 @@ async def start_tater_task(
 
             await request.app.state.CHAT_COMPLETION_HANDLER(child_request, form_data, user=user)
             message = await Chats.get_message_by_id_and_message_id(task_id, assistant_message_id)
-            summary = _message_text(message)
+            completed_task_chat = await Chats.get_chat_by_id(task_id)
+            completed_context = (
+                ((completed_task_chat.chat or {}).get('taterAgentContext') if completed_task_chat else None) or {}
+            )
+            summary = str(completed_context.get('execution_summary') or '').strip() or _message_text(message)
             message_error = (message or {}).get('error')
             if message_error:
                 error = (
@@ -496,28 +508,55 @@ async def start_tater_task(
             )
 
         async def finalize() -> None:
+            final_status = status
+            final_error = error
+            await update_tater_task(
+                task_id,
+                {'activity': 'Posting the result to the originating chat'},
+                user_id=user.id,
+            )
+
+            delivery_error = None
+            for attempt in range(3):
+                try:
+                    await _queue_parent_result(
+                        request,
+                        user=user,
+                        parent_chat_id=parent_chat_id,
+                        parent_message_id=metadata.get('assistant_message_id') or metadata.get('user_message_id'),
+                        task_chat_id=task_id,
+                        title=title,
+                        status=status,
+                        summary=summary,
+                        error=error,
+                        run=run,
+                    )
+                    delivery_error = None
+                    break
+                except Exception as exc:
+                    delivery_error = exc
+                    log.exception(
+                        'Could not post result for background task %s (attempt %s/3)',
+                        task_id,
+                        attempt + 1,
+                    )
+                    if attempt < 2:
+                        await asyncio.sleep(0.5 * (attempt + 1))
+
+            if delivery_error is not None:
+                final_status = 'failed'
+                final_error = f'The work finished, but its result could not be posted: {delivery_error}'
+
             await update_tater_task(
                 task_id,
                 {
-                    'status': status,
-                    'activity': summary[:240] if status == 'completed' else error[:240],
+                    'status': final_status,
+                    'activity': summary[:240] if final_status == 'completed' else final_error[:240],
                     'finished_at': int(time.time()),
                 },
                 user_id=user.id,
             )
-            await emit_tater_task_event(user.id, task_id, status)
-            await _queue_parent_result(
-                request,
-                user=user,
-                parent_chat_id=parent_chat_id,
-                parent_message_id=metadata.get('assistant_message_id') or metadata.get('user_message_id'),
-                task_chat_id=task_id,
-                title=title,
-                status=status,
-                summary=summary,
-                error=error,
-                run=run,
-            )
+            await emit_tater_task_event(user.id, task_id, final_status)
 
         await asyncio.shield(finalize())
         if cancelled:

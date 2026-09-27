@@ -26,8 +26,11 @@
 			: (result.delegation_ids ?? [])
 		: [];
 	$: delegationLabel =
-		(kind === 'task' ? result.task_id : result.delegation_id) ??
-		(delegationIds.length > 1 ? `${delegationIds.length} tasks` : '');
+		kind === 'task'
+			? delegationIds.length > 1
+				? `${delegationIds.length} tasks`
+				: ''
+			: (result.delegation_id ?? (delegationIds.length > 1 ? `${delegationIds.length} tasks` : ''));
 	$: summary = (() => {
 		if (kind === 'task') {
 			const taskLine = content.match(/^Task:\s*(.+)$/m)?.[1]?.trim();
@@ -53,6 +56,9 @@
 			{$i18n.t(kind === 'task' ? 'Background task finished' : 'Background sub-agent finished')}
 		</span>
 		{#if summary}
+			<span aria-hidden="true" class="shrink-0 text-[0.75rem] text-gray-300 dark:text-gray-700"
+				>—</span
+			>
 			<span class="text-[0.75rem] truncate min-w-0 flex-1">{summary}</span>
 		{/if}
 		{#if delegationLabel}
