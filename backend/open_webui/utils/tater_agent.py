@@ -9,6 +9,7 @@ DEFAULT_TATER_AGENT_MAX_ITERATIONS = 32
 MAX_TATER_AGENT_MAX_ITERATIONS = 128
 TATER_AGENT_MAX_CALLS_PER_STEP = 16
 TATER_AGENT_HISTORY_MAX_CHARS = 120_000
+TATER_AGENT_PLAN_RETRY_LIMIT = 2
 TATER_AGENT_REPEAT_LIMIT = 3
 TATER_AGENT_PROGRESS_MAX_CHARS = 600
 TATER_AGENT_FINAL_ANSWER_MAX_CHARS = 40_000
@@ -103,6 +104,15 @@ def parse_tool_plan_response(
 
 def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP) -> list[dict[str, Any]]:
     return parse_tool_plan_response(content, max_calls=max_calls)['tool_calls']
+
+
+def tool_plan_retry_instruction(error: Exception | str) -> str:
+    reason = str(error).strip()[:300] or 'invalid tool-plan response'
+    return (
+        f'Your previous response could not be used ({reason}). Retry the same planning step now. '
+        'Return exactly one valid JSON object with progress, tool_calls, and final_answer fields. '
+        'Do not include Markdown, tool-call markup, or prose outside the JSON object.'
+    )
 
 
 def parse_completion_review(content: str) -> dict[str, Any]:

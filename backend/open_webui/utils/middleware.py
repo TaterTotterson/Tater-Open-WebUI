@@ -111,11 +111,13 @@ from open_webui.utils.skills import (
 )
 from open_webui.utils.task import get_task_model_id, tools_function_calling_generation_template
 from open_webui.utils.tater_agent import (
+    TATER_AGENT_PLAN_RETRY_LIMIT,
     TATER_AGENT_REPEAT_LIMIT,
     agent_iteration_limit,
     parse_completion_review,
     parse_tool_plan_response,
     render_tool_history,
+    tool_plan_retry_instruction,
     tool_outcome_signature,
 )
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
@@ -1445,8 +1447,11 @@ async def chat_completion_tools_handler(
         'Select only the next necessary action. Calls returned together must be independent because they execute as '
         'one step. Use the execution history on later steps to inspect results, fix failures, and verify the work. '
         'Never repeat an action that already succeeded unless rerunning it is needed to verify a later change. Use '
-        'terminal for every local action; each call already returns its command output and exit status. For a useful '
-        'stage change in a multi-step task, put one short, natural user-facing update in progress; otherwise leave it '
+        'terminal for every local action; each call already returns its command output and exit status. For a '
+        'simple read-only question, use the minimum number of terminal calls (usually one). If one successful result '
+        'directly answers the request, the next response must finish with final_answer instead of exploring further. '
+        'For a useful stage change in a multi-step task, put one short, natural user-facing update in progress; '
+        'otherwise leave it '
         'empty. A progress update does not complete the task. Never put JSON, commands, tool names, or tool-call '
         'markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty tool_calls array '
         'only after every requested part has been completed or a concrete blocker has been established, and then put '
@@ -1633,18 +1638,47 @@ async def chat_completion_tools_handler(
             render_tool_history(history_records),
         )
 
-        try:
-            response = await generate_chat_completion(request, form_data=payload, user=user)
-            log.debug('response=%r', response)
-            content = await get_content_from_response(response)
-            log.debug('content=%r', content)
-            if not content:
-                raise ValueError('Tool planner returned an empty response')
-            plan = parse_tool_plan_response(content)
-            tool_calls = plan['tool_calls']
-        except Exception as e:
-            log.warning('Tool planning stopped at iteration %s: %s', iteration, e)
-            agent_stop_message = f'Tool planning stopped before completion: {e}'
+        planning_error = None
+        for planning_attempt in range(TATER_AGENT_PLAN_RETRY_LIMIT + 1):
+            attempt_payload = payload
+            if planning_attempt:
+                attempt_payload = {
+                    **payload,
+                    'messages': [
+                        *payload['messages'],
+                        {
+                            'role': 'user',
+                            'content': tool_plan_retry_instruction(planning_error or 'invalid response'),
+                        },
+                    ],
+                }
+
+            try:
+                response = await generate_chat_completion(request, form_data=attempt_payload, user=user)
+                log.debug('response=%r', response)
+                content = await get_content_from_response(response)
+                log.debug('content=%r', content)
+                if not content:
+                    raise ValueError('Tool planner returned an empty response')
+                plan = parse_tool_plan_response(content)
+                tool_calls = plan['tool_calls']
+                planning_error = None
+                break
+            except Exception as e:
+                planning_error = e
+                log.warning(
+                    'Tool planning attempt %s/%s failed at iteration %s: %s',
+                    planning_attempt + 1,
+                    TATER_AGENT_PLAN_RETRY_LIMIT + 1,
+                    iteration,
+                    e,
+                )
+
+        if planning_error is not None:
+            agent_stop_message = (
+                'Tool planning stopped before completion after '
+                f'{TATER_AGENT_PLAN_RETRY_LIMIT + 1} attempts: {planning_error}'
+            )
             append_agent_notice(agent_stop_message)
             loop_stopped = True
             break

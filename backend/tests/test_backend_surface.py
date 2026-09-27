@@ -81,6 +81,9 @@ class BackendSurfaceTests(unittest.TestCase):
 
         self.assertIn("'type': 'message'", middleware_source)
         self.assertIn('A progress update does not complete the task', middleware_source)
+        self.assertIn('simple read-only question, use the minimum number of terminal calls', middleware_source)
+        self.assertIn('TATER_AGENT_PLAN_RETRY_LIMIT + 1', middleware_source)
+        self.assertIn('tool_plan_retry_instruction', middleware_source)
         self.assertIn('The task cannot be marked complete without final_answer', middleware_source)
         self.assertIn('You are the completion gate for a computer-using agent', middleware_source)
         self.assertIn("body['_tater_agent_response']", middleware_source)

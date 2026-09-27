@@ -73,6 +73,18 @@ class TaterAgentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'too many calls'):
             tater_agent.parse_tool_plan(json.dumps(payload))
 
+    def test_retry_instruction_demands_plain_json(self):
+        instruction = tater_agent.tool_plan_retry_instruction('No tool-plan JSON object found')
+
+        self.assertIn('Retry the same planning step', instruction)
+        self.assertIn('progress, tool_calls, and final_answer', instruction)
+        self.assertIn('Do not include Markdown', instruction)
+
+    def test_retry_instruction_limits_error_length(self):
+        instruction = tater_agent.tool_plan_retry_instruction('x' * 500)
+
+        self.assertLess(len(instruction), 600)
+
     def test_clamps_iteration_limit(self):
         self.assertEqual(tater_agent.agent_iteration_limit('0'), 1)
         self.assertEqual(tater_agent.agent_iteration_limit('999'), 128)
