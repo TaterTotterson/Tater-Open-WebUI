@@ -58,6 +58,8 @@
 	import { generateTitle } from '$lib/apis';
 	import { createMessagesList } from '$lib/utils';
 	import { getOutputText } from '$lib/components/chat/Messages/structuredOutput';
+	import type { TaterTask } from '$lib/apis/tater';
+	import TaskItem from './TaskItem.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -79,6 +81,8 @@
 	export let ownerName: string | null = null;
 	export let ownerUserId: string | null = null;
 	export let onReadStateChange: (data: Record<string, unknown>) => void = () => {};
+	export let tasks: TaterTask[] = [];
+	export let onCancelTask: (task: TaterTask) => void | Promise<void> = () => {};
 
 	export let onDragEnd = () => {};
 
@@ -787,3 +791,14 @@
 		</div>
 	{/if}
 </div>
+
+{#if tasks.length > 0}
+	<div
+		class="ml-3 mt-[0.0625rem] flex flex-col border-s border-gray-100 pl-1 dark:border-gray-900"
+		aria-label={`Tasks for ${title}`}
+	>
+		{#each tasks as task (task.id)}
+			<TaskItem {task} onCancel={onCancelTask} />
+		{/each}
+	</div>
+{/if}

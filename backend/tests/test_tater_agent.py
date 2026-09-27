@@ -109,9 +109,35 @@ class TaterAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(plan['progress'], 'I’ll inspect the project first.')
+        self.assertEqual(plan['task_title'], '')
         self.assertEqual(plan['tool_calls'], [])
         self.assertEqual(plan['final_answer'], 'Done.')
         self.assertEqual(plan['context'], {})
+
+    def test_parses_concise_task_title(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"task_title":"Inspect Face ID Code","progress":"I’ll locate the implementation.",'
+            '"tool_calls":[{"name":"terminal","parameters":{"command":"find . -iname \'*face*\'"}}],'
+            '"final_answer":"","context":{}}'
+        )
+
+        self.assertEqual(plan['task_title'], 'Inspect Face ID Code')
+
+    def test_normalizes_planner_task_title(self):
+        self.assertEqual(
+            tater_agent.normalize_task_title('  inspect   Face ID implementation  ', 'ignored'),
+            'Inspect Face ID implementation',
+        )
+
+    def test_task_title_fallback_cleans_request_language(self):
+        self.assertEqual(
+            tater_agent.normalize_task_title('', 'Can you inspect the login implementation?'),
+            'Inspect the login implementation',
+        )
+        self.assertEqual(
+            tater_agent.normalize_task_title('', 'Is the Tater clone in the home folder?'),
+            'Check Tater clone in the home folder',
+        )
 
     def test_parses_persistent_context_with_final_answer(self):
         plan = tater_agent.parse_tool_plan_response(
@@ -174,7 +200,7 @@ class TaterAgentTests(unittest.TestCase):
         instruction = tater_agent.tool_plan_retry_instruction('No tool-plan JSON object found')
 
         self.assertIn('Retry the same planning step', instruction)
-        self.assertIn('progress, tool_calls, final_answer, and context', instruction)
+        self.assertIn('task_title, progress, tool_calls, final_answer, and context', instruction)
         self.assertIn('Do not include Markdown', instruction)
 
     def test_retry_instruction_limits_error_length(self):

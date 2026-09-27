@@ -20,7 +20,7 @@ from open_webui.models.users import UserModel
 from open_webui.tasks import create_task, has_active_tasks, list_tasks
 from open_webui.utils.auth import create_token
 from open_webui.utils.misc import get_last_user_message
-from open_webui.utils.tater_agent import merge_task_context
+from open_webui.utils.tater_agent import merge_task_context, normalize_task_title
 
 TATER_TASK_TYPE = 'tater_task'
 TATER_TASK_ACTIVE_STATUSES = {'queued', 'running', 'cancelling'}
@@ -351,14 +351,14 @@ async def start_tater_task(
     if len(active) >= TATER_TASK_MAX_CONCURRENT_PER_USER:
         raise RuntimeError(
             f'At most {TATER_TASK_MAX_CONCURRENT_PER_USER} background tasks can run at once. '
-            'Wait for one to finish or cancel one from the Tasks section.'
+            'Wait for one to finish or cancel one beneath its originating chat.'
         )
 
     task_id = str(uuid4())
     user_message_id = str(uuid4())
     assistant_message_id = str(uuid4())
     prompt = task_prompt.strip() or get_last_user_message(body.get('messages', [])) or 'Background task'
-    title = ' '.join(prompt.split())[:80] or 'Background task'
+    title = normalize_task_title(initial_plan.get('task_title'), prompt)
     initial_tool_calls = initial_plan.get('tool_calls') or []
     capabilities = sorted(
         {

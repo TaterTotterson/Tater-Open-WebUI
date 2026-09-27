@@ -14,6 +14,7 @@ TATER_AGENT_HISTORY_MAX_CHARS = 120_000
 TATER_AGENT_PLAN_RETRY_LIMIT = 2
 TATER_AGENT_REPEAT_LIMIT = 3
 TATER_AGENT_PROGRESS_MAX_CHARS = 600
+TATER_AGENT_TASK_TITLE_MAX_CHARS = 80
 TATER_AGENT_FINAL_ANSWER_MAX_CHARS = 40_000
 TATER_AGENT_REVIEW_REASON_MAX_CHARS = 2_000
 TATER_AGENT_CONTEXT_STRING_MAX_CHARS = 4_000
@@ -216,6 +217,35 @@ def tool_activity_status(
     return {'description': description, 'detail': ''}
 
 
+def normalize_task_title(planned_title: Any, prompt: str) -> str:
+    """Return a short action label, preferring the planner's semantic title."""
+
+    title = re.sub(r'\s+', ' ', str(planned_title or '')).strip(' \t\r\n"\'`.,!?')
+    if not title:
+        title = re.sub(r'\s+', ' ', str(prompt or '')).strip(' \t\r\n"\'`.,!?')
+        title = re.sub(
+            r'^(?:(?:can|could|would|will) you|please|i (?:want|need) you to)\s+',
+            '',
+            title,
+            flags=re.IGNORECASE,
+        )
+        question = re.match(
+            r'^(?:is|are|was|were|do|does|did)\s+(?:the\s+|a\s+|an\s+)?(.+)$',
+            title,
+            flags=re.IGNORECASE,
+        )
+        if question:
+            title = f'Check {question.group(1)}'
+
+    words = title.split()
+    if len(words) > 10:
+        title = ' '.join(words[:10])
+    title = title[:TATER_AGENT_TASK_TITLE_MAX_CHARS].rstrip(' .,:;-')
+    if not title:
+        return 'Background task'
+    return f'{title[0].upper()}{title[1:]}'
+
+
 def agent_iteration_limit(value: str | int | None = None) -> int:
     raw = value if value is not None else os.getenv('TATER_AGENT_MAX_ITERATIONS', '')
     try:
@@ -385,19 +415,25 @@ def parse_tool_plan_response(
             raise ValueError(f'Tool parameters for {name} must be an object')
         calls.append({'name': name, 'parameters': parameters})
     progress = payload.get('progress', '')
+    task_title = payload.get('task_title', '')
     final_answer = payload.get('final_answer', '')
     context = payload.get('context', {})
     if not isinstance(progress, str):
         raise ValueError('progress must be a string')
+    if not isinstance(task_title, str):
+        raise ValueError('task_title must be a string')
     if not isinstance(final_answer, str):
         raise ValueError('final_answer must be a string')
     if not isinstance(context, dict):
         raise ValueError('context must be an object')
 
     progress = progress.strip()[:TATER_AGENT_PROGRESS_MAX_CHARS]
+    task_title = re.sub(r'\s+', ' ', task_title).strip(' \t\r\n"\'`')[:TATER_AGENT_TASK_TITLE_MAX_CHARS]
     final_answer = final_answer.strip()[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS]
     if '<|tool_call' in progress.lower():
         raise ValueError('progress must not contain tool-call markup')
+    if '<|tool_call' in task_title.lower():
+        raise ValueError('task_title must not contain tool-call markup')
     if '<|tool_call' in final_answer.lower():
         raise ValueError('final_answer must not contain tool-call markup')
     if calls and final_answer:
@@ -407,6 +443,7 @@ def parse_tool_plan_response(
 
     return {
         'progress': progress,
+        'task_title': task_title,
         'tool_calls': calls,
         'final_answer': final_answer,
         'context': context,
@@ -421,7 +458,7 @@ def tool_plan_retry_instruction(error: Exception | str) -> str:
     reason = str(error).strip()[:300] or 'invalid tool-plan response'
     return (
         f'Your previous response could not be used ({reason}). Retry the same planning step now. '
-        'Return exactly one valid JSON object with progress, tool_calls, final_answer, and context fields. '
+        'Return exactly one valid JSON object with task_title, progress, tool_calls, final_answer, and context fields. '
         'Do not include Markdown, tool-call markup, or prose outside the JSON object.'
     )
 

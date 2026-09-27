@@ -48,6 +48,10 @@
 	export let folders;
 	export let folderId;
 	export let shiftKey = false;
+	/** @type {import('$lib/apis/tater').TaterTask[]} */
+	export let taterTasks = [];
+	/** @type {(task: import('$lib/apis/tater').TaterTask) => void | Promise<void>} */
+	export let onCancelTask = () => {};
 
 	export let className = '';
 
@@ -810,6 +814,8 @@
 								{folders}
 								folderId={childFolder.id}
 								{shiftKey}
+								{taterTasks}
+								{onCancelTask}
 								parentDragged={dragged}
 								{onItemMove}
 								{onFolderUnreadCounts}
@@ -852,6 +858,8 @@
 							updatedAt={chat.updated_at}
 							lastReadAt={chat.last_read_at}
 							active={chat.active ?? false}
+							tasks={taterTasks.filter((task) => task.parent_chat_id === chat.id)}
+							{onCancelTask}
 							ownerName={folders[folderId]?.shared ? (chat.owner_name ?? null) : null}
 							ownerUserId={folders[folderId]?.shared && chat.owner_name ? chat.user_id : null}
 							readonly={chat.user_id !== $user?.id}

@@ -3,7 +3,6 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
 	import {
 		user,
 		chats,
@@ -72,7 +71,6 @@
 	import CheckIcon from '../icons/Check.svelte';
 	import MoreHorizontalIcon from './Sidebar/icons/MoreHorizontal.svelte';
 	import MobileSwipePanel from '../common/MobileSwipePanel.svelte';
-	import TaskItem from './Sidebar/TaskItem.svelte';
 
 	const BREAKPOINT = 768;
 	let scrollTop = 0;
@@ -101,7 +99,6 @@
 	let showFolders = false;
 	let showSharedFolders = false;
 	let showChatsMenu = false;
-	let showTasks = true;
 	let taterTasks: TaterTask[] = [];
 	let taskRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -1036,25 +1033,6 @@
 						</div>
 					</div>
 
-					{#if taterTasks.length > 0}
-						<SidebarSection
-							id="sidebar-tasks"
-							bind:open={showTasks}
-							name={$i18n.t('Tasks')}
-							dragAndDrop={false}
-						>
-							<div class="flex flex-col gap-0.5">
-								{#each taterTasks as task (task.id)}
-									<TaskItem
-										{task}
-										selected={$page.url.pathname === `/tasks/${task.id}`}
-										onCancel={cancelTask}
-									/>
-								{/each}
-							</div>
-						</SidebarSection>
-					{/if}
-
 					{#if $visiblePinnedModels.length > 0}
 						<SidebarSection
 							id="sidebar-models"
@@ -1081,6 +1059,8 @@
 								bind:folderRegistry
 								{folders}
 								{shiftKey}
+								{taterTasks}
+								onCancelTask={cancelTask}
 								onFolderUnreadCounts={applyFolderUnreadCounts}
 								on:update={() => {
 									initChatList();
@@ -1256,6 +1236,8 @@
 													updatedAt={chat.updated_at}
 													lastReadAt={chat.last_read_at}
 													active={chat.active ?? false}
+													tasks={taterTasks.filter((task) => task.parent_chat_id === chat.id)}
+													onCancelTask={cancelTask}
 													{shiftKey}
 													selected={selectedChatId === chat.id}
 													on:select={() => {
@@ -1321,6 +1303,8 @@
 											updatedAt={chat.updated_at}
 											lastReadAt={chat.last_read_at}
 											active={chat.active ?? false}
+											tasks={taterTasks.filter((task) => task.parent_chat_id === chat.id)}
+											onCancelTask={cancelTask}
 											{shiftKey}
 											selected={selectedChatId === chat.id}
 											on:select={() => {

@@ -4,11 +4,14 @@
 	const dispatch = createEventDispatcher();
 
 	import RecursiveFolder from './RecursiveFolder.svelte';
+	import type { TaterTask } from '$lib/apis/tater';
 
 	export let folderRegistry = {};
 
 	export let folders = {};
 	export let shiftKey = false;
+	export let taterTasks: TaterTask[] = [];
+	export let onCancelTask: (task: TaterTask) => void | Promise<void> = () => {};
 
 	export let onFolderUnreadCounts = () => {};
 
@@ -50,6 +53,8 @@
 		{folders}
 		{folderId}
 		{shiftKey}
+		{taterTasks}
+		{onCancelTask}
 		{onItemMove}
 		{onFolderUnreadCounts}
 		on:import={(e) => {
@@ -75,6 +80,8 @@
 			{folders}
 			{folderId}
 			{shiftKey}
+			{taterTasks}
+			{onCancelTask}
 			{onItemMove}
 			{onFolderUnreadCounts}
 			on:import={(e) => {

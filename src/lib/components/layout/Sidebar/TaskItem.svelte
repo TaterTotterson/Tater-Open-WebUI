@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import type { TaterTask } from '$lib/apis/tater';
 	import { mobile, showSidebar } from '$lib/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -13,6 +14,7 @@
 	export let onCancel: (task: TaterTask) => void | Promise<void> = () => {};
 
 	let cancelling = false;
+	$: isSelected = selected || $page.url.pathname === `/tasks/${task.id}`;
 
 	const openTask = async () => {
 		await goto(`/tasks/${task.id}`);
@@ -33,7 +35,7 @@
 </script>
 
 <div
-	class="group flex min-w-0 items-center rounded-xl px-2 py-1.5 transition {selected
+	class="group flex min-w-0 items-center rounded-xl px-2 py-1.5 transition {isSelected
 		? 'bg-black/[0.035] dark:bg-white/[0.045]'
 		: 'hover:bg-gray-100 dark:hover:bg-gray-900'}"
 >

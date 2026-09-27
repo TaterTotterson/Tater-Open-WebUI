@@ -1492,7 +1492,8 @@ async def chat_completion_tools_handler(
     tools_function_calling_prompt = (
         f'{tools_function_calling_prompt}\n\n'
         'This is an iterative agent loop. Every response must be exactly one JSON object with this shape:\n'
-        '{"progress":"","tool_calls":[{"name":"terminal","parameters":{"command":"..."}}],'
+        '{"task_title":"","progress":"","tool_calls":'
+        '[{"name":"terminal","parameters":{"command":"..."}}],'
         '"final_answer":"","context":{}}\n'
         f'The configured model context window is {configured_context_window} tokens. Keep commands and returned '
         'content focused so the task stays within that budget. '
@@ -1510,13 +1511,16 @@ async def chat_completion_tools_handler(
         'root, branch, and git status in one terminal call. Use the terminal cwd parameter to enter the repository. '
         'Whenever tool_calls is nonempty, put one short, natural user-facing explanation in progress describing '
         'what you are about to inspect, change, or verify and why. Make it specific to this step and do not repeat '
-        'an earlier update. A progress update does not complete the task. Never put JSON, commands, tool names, or '
+        'an earlier update. Also set task_title to a concise, action-oriented 3-8 word label for the overall request. '
+        'Describe the work rather than quoting the user, and never begin it with "I", "You", or "Task". '
+        'A progress update does not complete the task. Never put JSON, commands, tool names, or '
         'tool-call markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty '
         'tool_calls array '
         'only after every requested part has been completed or a concrete blocker has been established, and then put '
         'a complete answer for the user in final_answer. On that final response, context must be a concise complete '
         'snapshot with objective, repository_root, branch, requirements, plan, completed, files_changed, tests, '
-        'blockers, cwd, and execution_summary. Keep context empty while requesting tools. If the available results '
+        'blockers, cwd, and execution_summary. Keep task_title and context empty when returning the final answer. '
+        'If the available results '
         'are not enough to write the answer or context snapshot, continue with another tool call instead.'
     )
     operating_message = get_system_message(body.get('messages', []))
