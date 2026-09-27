@@ -28,8 +28,8 @@
 			description: $i18n.t('search for tags')
 		},
 		{
-			name: 'folder:',
-			description: $i18n.t('search for folders')
+			name: 'project:',
+			description: $i18n.t('search for projects')
 		},
 		{
 			name: 'pinned:',
@@ -94,10 +94,10 @@
 						type: 'tag'
 					};
 				});
-		} else if (lastWord.startsWith('folder:')) {
+		} else if (lastWord.startsWith('project:')) {
 			filteredItems = [...$folders]
 				.filter((folder) => {
-					const folderName = lastWord.slice(7);
+					const folderName = lastWord.slice(8);
 					if (folderName) {
 						const id = folder.name.replaceAll(' ', '_').toLowerCase();
 						const folderId = folderName.replaceAll(' ', '_').toLowerCase();
@@ -115,7 +115,7 @@
 					return {
 						id: folder.name.replaceAll(' ', '_').toLowerCase(),
 						name: folder.name,
-						type: 'folder'
+						type: 'project'
 					};
 				});
 		} else if (lastWord.startsWith('pinned:')) {

@@ -9,7 +9,7 @@ services:
     container_name: tater-open-webui
     volumes:
       - tater-open-webui:/app/backend/data
-      - '${TATER_WEBUI_HOST_WORKSPACE-.}:/workspace'
+      - '${TATER_WEBUI_HOST_PROJECTS-./projects}:/projects'
     ports:
       - ${TATER_WEBUI_PORT-3000}:8080
     environment:
@@ -20,7 +20,8 @@ services:
       - 'TATER_CONTEXT_WINDOW=${TATER_CONTEXT_WINDOW-32768}'
       - 'TATER_HYDRA_TIMEOUT_SECONDS=${TATER_HYDRA_TIMEOUT_SECONDS-600}'
       - 'TATER_AGENT_MAX_ITERATIONS=${TATER_AGENT_MAX_ITERATIONS-32}'
-      - 'TATER_WEBUI_WORKSPACE=/workspace'
+      - 'TATER_PROJECTS_ROOT=/projects'
+      - 'TATER_WEBUI_WORKSPACE=/projects'
       - 'WEBUI_NAME=Tater Open WebUI'
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}'
     extra_hosts:

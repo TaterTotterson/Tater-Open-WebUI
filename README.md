@@ -43,8 +43,22 @@ docker compose up --build
 Open [http://localhost:3000](http://localhost:3000). The first account created
 becomes the administrator.
 
-The Compose setup mounts `TATER_WEBUI_HOST_WORKSPACE` at `/workspace`. Files
-outside mounted paths are not visible from inside Docker.
+The Compose setup mounts `TATER_WEBUI_HOST_PROJECTS` at `/projects`. Every
+direct child directory becomes a Project in the sidebar, and files remain on
+the host when the container is replaced.
+
+## Projects
+
+Projects replace the old chat-folder behavior. Each visible direct child of
+`/projects` is discovered automatically, while creating or renaming a Project
+in the UI creates or renames its real directory. A Project owns its chat list,
+custom prompt, and shared working context. Individual chats retain their own
+more specific context, and background terminal or Hydra tasks inherit the
+Project that started them.
+
+The selected Project is the terminal's default working directory. The agent
+can still inspect and edit sibling directories under `/projects`, so one task
+can coordinate changes across repositories when requested.
 
 ## Published image and Unraid
 
@@ -70,7 +84,9 @@ variables on a new data directory.
 | `TATER_CONTEXT_WINDOW`        | `32768`                    | Configured model context tokens   |
 | `TATER_HYDRA_TIMEOUT_SECONDS` | `600`                      | Hydra request timeout             |
 | `TATER_AGENT_MAX_ITERATIONS`  | `32`                       | Maximum planning/tool rounds      |
-| `TATER_WEBUI_WORKSPACE`       | process directory          | Initial terminal directory        |
+| `TATER_PROJECTS_ROOT`         | `/projects`                | Persistent project directory      |
+| `TATER_WEBUI_WORKSPACE`       | `/projects`                | Terminal fallback directory       |
+| `TATER_WEBUI_HOST_PROJECTS`   | `./projects`               | Host path mounted at `/projects`  |
 
 The API URL must point to the `/v1` prefix, not directly to
 `/chat/completions`. Saving the Tater profile keeps the API key server-side,
@@ -85,7 +101,9 @@ Tater capability call.
 
 ## Terminal behavior
 
-Each user/chat pair has an independent working directory. Commands inherit the
+Each user/chat pair has an independent working directory. A chat inside a
+Project starts at that project's directory under `/projects`; it can still
+inspect or edit sibling projects when requested. Commands inherit the
 backend process environment, may use absolute paths, and return output plus
 exit status in the same tool result. The model uses ordinary shell commands for
 files, Git, packages, builds, tests, and process management.

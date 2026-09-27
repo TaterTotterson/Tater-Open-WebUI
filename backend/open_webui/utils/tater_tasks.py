@@ -402,7 +402,7 @@ async def start_tater_task(
     chat = await Chats.insert_new_chat(
         task_id,
         user.id,
-        ChatForm(chat=chat_data),
+        ChatForm(chat=chat_data, folder_id=parent_chat.folder_id),
         internal_meta={
             'internal': True,
             'type': TATER_TASK_TYPE,

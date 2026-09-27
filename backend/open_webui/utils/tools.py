@@ -38,6 +38,7 @@ from open_webui.models.access_grants import AccessGrants
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
 from open_webui.models.groups import Groups
+from open_webui.models.folders import Folders
 from open_webui.models.tools import Tools
 from open_webui.models.users import UserModel
 from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID, local_terminal_runtime
@@ -51,6 +52,7 @@ from open_webui.utils.headers import (
 )
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import is_string_allowed
+from open_webui.utils.tater_projects import folder_project_path
 from open_webui.utils.plugin import get_tool_contents_cache, get_tools_cache, load_tool_module_by_id
 from open_webui.utils.terminals import (
     TERMINAL_CONTEXT_HEADER,
@@ -968,11 +970,19 @@ async def get_terminal_tools(
             chat = await Chats.get_chat_by_id_and_user_id(chat_id, user.id)
             agent_context = (chat.chat or {}).get('taterAgentContext') if chat else None
             saved_cwd = str((agent_context or {}).get('cwd') or '').strip()
+            project_path = None
+            if chat and chat.folder_id:
+                project = await Folders.get_folder_by_id(chat.folder_id)
+                project_path = folder_project_path(project)
             if saved_cwd:
                 try:
                     local_terminal_runtime.set_cwd(user.id, chat_id, saved_cwd)
                 except ValueError:
                     log.info('Saved terminal cwd no longer exists for chat %s: %s', chat_id, saved_cwd)
+                    if project_path and project_path.is_dir():
+                        local_terminal_runtime.set_cwd(user.id, chat_id, str(project_path))
+            elif project_path and project_path.is_dir():
+                local_terminal_runtime.set_cwd(user.id, chat_id, str(project_path))
         return get_local_terminal_tools(user.id, chat_id)
 
     connections = await Config.get('terminal_server.connections', []) or []

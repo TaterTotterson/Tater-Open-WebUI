@@ -14,12 +14,9 @@
 	import { chatId, mobile, selectedFolder, showSidebar, user } from '$lib/stores';
 
 	import {
-		deleteFolderById,
 		updateFolderIsExpandedById,
 		updateFolderById,
-		updateFolderParentIdById,
 		getFolderById,
-		createNewFolder,
 		getSharedFolderChats,
 		markFolderChatsReadById
 	} from '$lib/apis/folders';
@@ -42,7 +39,6 @@
 	import ChatItem from './ChatItem.svelte';
 	import FolderMenu from './Folders/FolderMenu.svelte';
 	import FolderShareModal from './Folders/FolderShareModal.svelte';
-	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import FolderModal from './Folders/FolderModal.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 
@@ -55,11 +51,8 @@
 
 	export let className = '';
 
-	export let deleteFolderContents = true;
-
 	export let parentDragged = false;
 
-	export let onDelete = () => {};
 	export let onItemMove = () => {};
 	export let onFolderUnreadCounts = () => {};
 
@@ -68,9 +61,6 @@
 	let showFolderModal = false;
 	let showShareModal = false;
 	let edit = false;
-
-	let showCreateSubFolderModal = false;
-	let createSubFolderParentId = null;
 
 	let draggedOver = false;
 	let dragged = false;
@@ -221,21 +211,7 @@
 							const { type, id, item } = data;
 
 							if (type === 'folder') {
-								open = true;
-								if (id === folderId) {
-									return;
-								}
-								// Move the folder
-								const res = await updateFolderParentIdById(localStorage.token, id, folderId).catch(
-									(error) => {
-										toast.error(`${error}`);
-										return null;
-									}
-								);
-
-								if (res) {
-									dispatch('update');
-								}
+								toast.error($i18n.t('Projects cannot be nested'));
 							} else if (type === 'chat') {
 								open = true;
 
@@ -441,25 +417,9 @@
 		}
 	});
 
-	let showDeleteConfirm = false;
-
-	const deleteHandler = async () => {
-		const res = await deleteFolderById(localStorage.token, folderId, deleteFolderContents).catch(
-			(error) => {
-				toast.error(`${error}`);
-				return null;
-			}
-		);
-
-		if (res) {
-			toast.success($i18n.t('Folder deleted successfully'));
-			onDelete(folderId);
-		}
-	};
-
 	const updateHandler = async ({ name, meta, data }) => {
 		if (name === '') {
-			toast.error($i18n.t('Folder name cannot be empty.'));
+			toast.error($i18n.t('Project name cannot be empty.'));
 			return;
 		}
 
@@ -482,11 +442,11 @@
 		if (res) {
 			folders[folderId].name = name;
 			if (data) {
-				folders[folderId].data = data;
+				folders[folderId].data = { ...(folders[folderId].data ?? {}), ...data };
 			}
 
 			// toast.success($i18n.t('Folder name updated successfully'));
-			toast.success($i18n.t('Folder updated successfully'));
+			toast.success($i18n.t('Project updated successfully'));
 
 			if ($selectedFolder?.id === folderId) {
 				const folder = await getFolderById(localStorage.token, folderId).catch((error) => {
@@ -607,7 +567,7 @@
 			await selectedFolder.set({ ...folders[folderId], ...folder });
 		}
 
-		await goto(`/folders/${folderId}`);
+		await goto(`/projects/${folderId}`);
 
 		if ($mobile) {
 			showSidebar.set(!$showSidebar);
@@ -648,67 +608,11 @@
 			type: 'application/json'
 		});
 
-		saveAs(blob, `folder-${folders[folderId].name}-export-${Date.now()}.json`);
-	};
-
-	const createSubFolderHandler = async ({ name, meta, data, parent_id }) => {
-		if (name === '') {
-			toast.error($i18n.t('Folder name cannot be empty.'));
-			return;
-		}
-
-		name = name.trim();
-
-		const res = await createNewFolder(localStorage.token, {
-			name,
-			data,
-			meta,
-			parent_id
-		}).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			toast.success($i18n.t('Folder created successfully'));
-			dispatch('update');
-		}
+		saveAs(blob, `project-${folders[folderId].name}-export-${Date.now()}.json`);
 	};
 </script>
 
-<DeleteConfirmDialog
-	bind:show={showDeleteConfirm}
-	title={$i18n.t('Delete folder?')}
-	on:confirm={() => {
-		deleteHandler();
-	}}
->
-	<div class=" text-sm text-gray-700 dark:text-gray-300 flex-1 line-clamp-3 mb-2">
-		<!-- {$i18n.t('This will delete <strong>{{NAME}}</strong> and <strong>all its contents</strong>.', {
-				NAME: folders[folderId].name
-			})} -->
-
-		{$i18n.t(`Are you sure you want to delete "{{NAME}}"?`, {
-			NAME: folders[folderId].name
-		})}
-	</div>
-
-	<div class="flex items-center gap-1.5">
-		<input type="checkbox" bind:checked={deleteFolderContents} />
-
-		<div class="text-xs text-gray-500">
-			{$i18n.t('Delete all contents inside this folder')}
-		</div>
-	</div>
-</DeleteConfirmDialog>
-
 <FolderModal bind:show={showFolderModal} edit={true} {folderId} onSubmit={updateHandler} />
-
-<FolderModal
-	bind:show={showCreateSubFolderModal}
-	parentId={createSubFolderParentId}
-	onSubmit={createSubFolderHandler}
-/>
 
 <FolderShareModal bind:show={showShareModal} folder={folders[folderId]} />
 
@@ -725,7 +629,7 @@
 	</DragGhost>
 {/if}
 
-<div bind:this={folderElement} class="relative {className}" draggable={!folders[folderId]?.shared}>
+<div bind:this={folderElement} class="relative {className}" draggable={false}>
 	{#if draggedOver}
 		<div
 			class="absolute top-0 left-0 w-full h-full rounded-xs bg-gray-100/50 dark:bg-gray-700/20 bg-opacity-50 dark:bg-opacity-10 z-50 pointer-events-none touch-none"
@@ -869,15 +773,8 @@
 							onShare={() => {
 								showShareModal = true;
 							}}
-							onDelete={() => {
-								showDeleteConfirm = true;
-							}}
 							onExport={() => {
 								exportHandler();
-							}}
-							onCreateSubFolder={() => {
-								createSubFolderParentId = folderId;
-								showCreateSubFolderModal = true;
 							}}
 							onMarkAllRead={markAllReadHandler}
 						>
@@ -915,7 +812,6 @@
 								{shiftKey}
 								parentDragged={dragged}
 								{onItemMove}
-								{onDelete}
 								{onFolderUnreadCounts}
 								on:import={(e) => {
 									dispatch('import', e.detail);

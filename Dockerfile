@@ -68,8 +68,8 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.10,source=/uv,target=/bin/uv \
         --index-url https://download.pytorch.org/whl/cpu --no-cache-dir && \
     uv pip install --system -r requirements.txt --no-cache-dir && \
     python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])" && \
-    mkdir -p /app/backend/data && \
-    chown -R "$UID:$GID" /app/backend/data && \
+    mkdir -p /app/backend/data /projects && \
+    chown -R "$UID:$GID" /app/backend/data /projects && \
     if [ -d /app/backend/data/cache ]; then chmod -R a+rX /app/backend/data/cache; fi
 
 COPY --chown=$UID:$GID --from=frontend /app/build /app/build

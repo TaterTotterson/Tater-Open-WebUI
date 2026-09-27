@@ -132,11 +132,6 @@
 					onUpdate={async () => {
 						await Promise.all([refreshChatList(localStorage.token), refreshFolderChatLists(null)]);
 					}}
-					onDelete={async () => {
-						await Promise.all([refreshChatList(localStorage.token), refreshFolderChatLists(null)]);
-
-						selectedFolder.set(null);
-					}}
 				/>
 			{:else}
 				<div class="flex flex-row justify-center gap-2.5 @sm:gap-3 w-fit px-5 max-w-xl">

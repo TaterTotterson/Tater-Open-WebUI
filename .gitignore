@@ -35,3 +35,5 @@ uploads/
 .DS_Store
 .idea/
 .vscode/
+# Default host-backed project directory used by Docker Compose.
+/projects/

@@ -29,6 +29,7 @@
 	let data = {
 		system_prompt: ''
 	};
+	let projectPath = '';
 
 	let loading = false;
 
@@ -57,6 +58,7 @@
 				background_image_url: null
 			};
 			data = { system_prompt: folder.data?.system_prompt ?? '' };
+			projectPath = folder.data?.project_path ?? '';
 		}
 
 		focusInput();
@@ -91,9 +93,9 @@
 		<div class=" flex justify-between dark:text-gray-300 px-4 pt-3 pb-1">
 			<div class=" text-sm self-center">
 				{#if edit}
-					{$i18n.t('Edit Folder')}
+					{$i18n.t('Edit Project')}
 				{:else}
-					{$i18n.t('Create Folder')}
+					{$i18n.t('Create Project')}
 				{/if}
 			</div>
 			<button
@@ -116,7 +118,7 @@
 					}}
 				>
 					<div class="flex flex-col w-full mt-1">
-						<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Folder Name')}</div>
+						<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Project Name')}</div>
 
 						<div class="flex-1">
 							<input
@@ -124,11 +126,23 @@
 								class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
 								type="text"
 								bind:value={name}
-								placeholder={$i18n.t('Enter folder name')}
+								placeholder={$i18n.t('Enter project name')}
 								autocomplete="off"
 							/>
 						</div>
 					</div>
+
+					{#if edit && projectPath}
+						<div class="mt-2 text-xs text-gray-500">
+							<div>{$i18n.t('Project Directory')}</div>
+							<div
+								class="mt-1 truncate font-mono text-gray-700 dark:text-gray-300"
+								title={projectPath}
+							>
+								{projectPath}
+							</div>
+						</div>
+					{/if}
 
 					<input
 						id="folder-background-image-input"
@@ -162,7 +176,7 @@
 					/>
 
 					<div class="flex justify-between w-full mt-1 items-center">
-						<div class="text-xs text-gray-500">{$i18n.t('Folder Background Image')}</div>
+						<div class="text-xs text-gray-500">{$i18n.t('Project Background Image')}</div>
 
 						<div class="">
 							<button

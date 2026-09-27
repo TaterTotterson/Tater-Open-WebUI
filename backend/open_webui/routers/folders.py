@@ -32,6 +32,13 @@ from open_webui.utils.access_control import (
 )
 from open_webui.utils.access_control.files import can_read_all_folder_files, get_accessible_folder_files
 from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.tater_projects import (
+    configured_projects_root,
+    folder_project_path,
+    project_directory_name,
+    project_path_for_name,
+    sync_user_projects,
+)
 from open_webui.tasks import has_active_tasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,7 +103,7 @@ async def get_folders(
 ):
     await check_folders_permission(request, user, db=db)
 
-    folders = await Folders.get_folders_by_user_id(user.id, db=db)
+    folders = await sync_user_projects(user.id, db=db)
     parent_by_id = {folder.id: folder.parent_id for folder in folders}
 
     def is_in_parent_cycle(folder_id):
@@ -152,55 +159,32 @@ async def create_folder(
     db: AsyncSession = Depends(get_async_session),
 ):
     await check_folders_permission(request, user, db=db)
-    folder = await Folders.get_folder_by_parent_id_and_user_id_and_name(
-        form_data.parent_id, user.id, form_data.name, db=db
-    )
-
-    if folder:
+    if form_data.parent_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT('Folder already exists'),
+            detail=ERROR_MESSAGES.DEFAULT('Projects cannot be nested'),
         )
 
-    # Check if creating a subfolder in a shared folder
-    if form_data.parent_id:
-        parent = await Folders.get_folder_by_id(form_data.parent_id, db=db)
-        if parent and parent.user_id != user.id:
-            # Creating subfolder in someone else's shared folder
-            if user.role != 'admin' and not await _has_folder_access(user.id, parent, 'write', db):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-                )
-            if form_data.data and 'files' in form_data.data:
-                owner = await Users.get_user_by_id(parent.user_id, db=db)
-                if not owner:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=ERROR_MESSAGES.NOT_FOUND,
-                    )
-                if not await can_read_all_folder_files(form_data.data['files'], owner, db=db):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-                    )
-            # Create as the folder owner's subfolder (keep tree consistent)
-            try:
-                folder = await Folders.insert_new_folder(parent.user_id, form_data, form_data.parent_id, db=db)
-                await publish_event(
-                    request,
-                    EVENTS.FOLDER_CREATED,
-                    actor=user,
-                    subject_id=folder.id,
-                    data={'name': folder.name, 'parent_id': folder.parent_id, 'owner_id': folder.user_id},
-                )
-                return folder
-            except Exception as e:
-                log.exception(e)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.DEFAULT('Error creating folder'),
-                )
+    try:
+        project_name = project_directory_name(form_data.name)
+        path = project_path_for_name(project_name, configured_projects_root())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT(str(exc))
+        ) from exc
+    existing = await Folders.get_folder_by_parent_id_and_user_id_and_name(
+        None, user.id, project_name, db=db
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT('Project already exists'),
+        )
+    if path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT('Project directory already exists'),
+        )
 
     if (
         form_data.data
@@ -213,7 +197,21 @@ async def create_folder(
         )
 
     try:
-        folder = await Folders.insert_new_folder(user.id, form_data, form_data.parent_id, db=db)
+        path.mkdir(parents=False)
+        project_form = FolderForm(
+            name=project_name,
+            parent_id=None,
+            meta={**(form_data.meta or {}), 'project': True},
+            data={
+                **(form_data.data or {}),
+                'project_path': str(path),
+                'taterAgentContext': {},
+            },
+        )
+        folder = await Folders.insert_new_folder(user.id, project_form, None, db=db)
+        if not folder:
+            path.rmdir()
+            raise RuntimeError('Project record could not be created')
         await publish_event(
             request,
             EVENTS.FOLDER_CREATED,
@@ -224,10 +222,10 @@ async def create_folder(
         return folder
     except Exception as e:
         log.exception(e)
-        log.error('Error creating folder')
+        log.error('Error creating project')
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT('Error creating folder'),
+            detail=ERROR_MESSAGES.DEFAULT('Error creating project'),
         )
 
 
@@ -347,16 +345,48 @@ async def update_folder_name_by_id(
             )
 
     if folder:
+        original_project_path = folder_project_path(folder)
+        renamed_project_path = original_project_path
+        normalized_project_name = None
         if form_data.name is not None:
-            # Check if folder with same name exists
+            try:
+                normalized_project_name = project_directory_name(form_data.name)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ERROR_MESSAGES.DEFAULT(str(exc)),
+                ) from exc
+            # Check if project with same name exists
             existing_folder = await Folders.get_folder_by_parent_id_and_user_id_and_name(
-                folder.parent_id, folder.user_id, form_data.name, db=db
+                None, folder.user_id, normalized_project_name, db=db
             )
             if existing_folder and existing_folder.id != id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.DEFAULT('Folder already exists'),
+                    detail=ERROR_MESSAGES.DEFAULT('Project already exists'),
                 )
+
+            if folder.user_id == user.id and original_project_path is not None:
+                try:
+                    renamed_project_path = project_path_for_name(
+                        normalized_project_name, configured_projects_root()
+                    )
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=ERROR_MESSAGES.DEFAULT(str(exc)),
+                    ) from exc
+                if renamed_project_path != original_project_path:
+                    if renamed_project_path.exists():
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=ERROR_MESSAGES.DEFAULT('Project directory already exists'),
+                        )
+                    if not original_project_path.is_dir():
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=ERROR_MESSAGES.DEFAULT('Project directory is missing'),
+                        )
 
         if form_data.data and 'files' in form_data.data:
             owner = user if folder.user_id == user.id else await Users.get_user_by_id(folder.user_id, db=db)
@@ -371,8 +401,33 @@ async def update_folder_name_by_id(
                     detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
                 )
 
+        project_record_updated = False
         try:
-            folder = await Folders.update_folder_by_id_and_user_id(id, folder.user_id, form_data, db=db)
+            if (
+                original_project_path is not None
+                and renamed_project_path is not None
+                and renamed_project_path != original_project_path
+            ):
+                original_project_path.rename(renamed_project_path)
+            safe_data = dict(form_data.data or {})
+            safe_data.pop('project_path', None)
+            safe_data.pop('taterAgentContext', None)
+            if renamed_project_path is not None:
+                safe_data['project_path'] = str(renamed_project_path)
+                safe_data['taterAgentContext'] = (folder.data or {}).get(
+                    'taterAgentContext', {}
+                )
+            safe_payload = form_data.model_dump(exclude={'data'}, exclude_unset=True)
+            if normalized_project_name is not None:
+                safe_payload['name'] = normalized_project_name
+            safe_form = FolderUpdateForm(
+                **safe_payload,
+                **({'data': safe_data} if safe_data or renamed_project_path is not None else {}),
+            )
+            folder = await Folders.update_folder_by_id_and_user_id(id, folder.user_id, safe_form, db=db)
+            if not folder:
+                raise RuntimeError('Project record could not be updated')
+            project_record_updated = True
             await publish_event(
                 request,
                 EVENTS.FOLDER_UPDATED,
@@ -382,11 +437,20 @@ async def update_folder_name_by_id(
             )
             return folder
         except Exception as e:
+            if (
+                original_project_path is not None
+                and renamed_project_path is not None
+                and renamed_project_path != original_project_path
+                and renamed_project_path.is_dir()
+                and not original_project_path.exists()
+                and not project_record_updated
+            ):
+                renamed_project_path.rename(original_project_path)
             log.exception(e)
-            log.error(f'Error updating folder: {id}')
+            log.error(f'Error updating project: {id}')
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT('Error updating folder'),
+                detail=ERROR_MESSAGES.DEFAULT('Error updating project'),
             )
 
 
@@ -410,22 +474,10 @@ async def update_folder_parent_id_by_id(
     await check_folders_permission(request, user, db=db)
     folder = await Folders.get_folder_by_id_and_user_id(id, user.id, db=db)
     if folder:
-        existing_folder = await Folders.get_folder_by_parent_id_and_user_id_and_name(
-            form_data.parent_id, user.id, folder.name, db=db
-        )
-
-        if existing_folder and existing_folder.id != id:
+        if form_data.parent_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT('Folder already exists'),
-            )
-
-        if form_data.parent_id and form_data.parent_id in await Folders.get_folder_ids_by_id_and_user_id_in_subtree(
-            id, user.id, db=db
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT('Cannot move a folder into itself or one of its subfolders'),
+                detail=ERROR_MESSAGES.DEFAULT('Projects cannot be nested'),
             )
 
         try:

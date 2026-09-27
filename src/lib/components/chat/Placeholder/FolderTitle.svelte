@@ -11,12 +11,7 @@
 
 	import { selectedFolder } from '$lib/stores';
 
-	import {
-		deleteFolderById,
-		getFolderById,
-		updateFolderById,
-		createNewFolder
-	} from '$lib/apis/folders';
+	import { getFolderById, updateFolderById } from '$lib/apis/folders';
 	import { getChatsByFolderId } from '$lib/apis/chats';
 
 	import FolderModal from '$lib/components/layout/Sidebar/Folders/FolderModal.svelte';
@@ -26,7 +21,6 @@
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import FolderMenu from '$lib/components/layout/Sidebar/Folders/FolderMenu.svelte';
 	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
-	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import EmojiPicker from '$lib/components/common/EmojiPicker.svelte';
 
@@ -34,17 +28,13 @@
 	export let readOnly: boolean = false;
 
 	export let onUpdate: Function = (folderId) => {};
-	export let onDelete: Function = (folderId) => {};
 
 	let showFolderModal = false;
-	let showCreateSubFolderModal = false;
 	let showShareModal = false;
-	let showDeleteConfirm = false;
-	let deleteFolderContents = true;
 
 	const updateHandler = async ({ name, meta, data }) => {
 		if (name === '') {
-			toast.error($i18n.t('Folder name cannot be empty.'));
+			toast.error($i18n.t('Project name cannot be empty.'));
 			return;
 		}
 
@@ -67,10 +57,10 @@
 		if (res) {
 			folder.name = name;
 			if (data) {
-				folder.data = data;
+				folder.data = { ...(folder.data ?? {}), ...data };
 			}
 
-			toast.success($i18n.t('Folder updated successfully'));
+			toast.success($i18n.t('Project updated successfully'));
 
 			const _folder = await getFolderById(localStorage.token, folder.id).catch((error) => {
 				toast.error(`${error}`);
@@ -96,7 +86,7 @@
 		if (res) {
 			folder.meta = { ...folder.meta, icon: iconName ?? '' };
 
-			toast.success($i18n.t('Folder updated successfully'));
+			toast.success($i18n.t('Project updated successfully'));
 
 			const _folder = await getFolderById(localStorage.token, folder.id).catch((error) => {
 				toast.error(`${error}`);
@@ -106,20 +96,6 @@
 			const updatedFolder = { ...folder, ..._folder };
 			await selectedFolder.set(updatedFolder);
 			onUpdate(updatedFolder);
-		}
-	};
-
-	const deleteHandler = async () => {
-		const res = await deleteFolderById(localStorage.token, folder.id, deleteFolderContents).catch(
-			(error) => {
-				toast.error(`${error}`);
-				return null;
-			}
-		);
-
-		if (res) {
-			toast.success($i18n.t('Folder deleted successfully'));
-			onDelete(folder);
 		}
 	};
 
@@ -136,31 +112,7 @@
 			type: 'application/json'
 		});
 
-		saveAs(blob, `folder-${folder.name}-export-${Date.now()}.json`);
-	};
-
-	const createSubFolderHandler = async ({ name, meta, data, parent_id }) => {
-		if (name === '') {
-			toast.error($i18n.t('Folder name cannot be empty.'));
-			return;
-		}
-
-		name = name.trim();
-
-		const res = await createNewFolder(localStorage.token, {
-			name,
-			data,
-			meta,
-			parent_id
-		}).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			toast.success($i18n.t('Folder created successfully'));
-			onUpdate();
-		}
+		saveAs(blob, `project-${folder.name}-export-${Date.now()}.json`);
 	};
 </script>
 
@@ -172,39 +124,7 @@
 		onSubmit={updateHandler}
 	/>
 
-	<FolderModal
-		bind:show={showCreateSubFolderModal}
-		parentId={folder.id}
-		onSubmit={createSubFolderHandler}
-	/>
-
 	<FolderShareModal bind:show={showShareModal} {folder} />
-
-	<DeleteConfirmDialog
-		bind:show={showDeleteConfirm}
-		title={$i18n.t('Delete folder?')}
-		on:confirm={() => {
-			deleteHandler();
-		}}
-	>
-		<div class=" text-sm text-gray-700 dark:text-gray-300 flex-1 line-clamp-3 mb-2">
-			<!-- {$i18n.t('This will delete <strong>{{NAME}}</strong> and <strong>all its contents</strong>.', {
-				NAME: folder.name
-			})} -->
-
-			{$i18n.t(`Are you sure you want to delete "{{NAME}}"?`, {
-				NAME: folder.name
-			})}
-		</div>
-
-		<div class="flex items-center gap-1.5">
-			<input type="checkbox" bind:checked={deleteFolderContents} />
-
-			<div class="text-xs text-gray-500">
-				{$i18n.t('Delete all contents inside this folder')}
-			</div>
-		</div>
-	</DeleteConfirmDialog>
 
 	<div class="mb-3 px-6 @md:max-w-3xl justify-between w-full flex relative group items-center">
 		<div class="text-center flex gap-3.5 items-center">
@@ -228,7 +148,7 @@
 					}}
 				>
 					<button
-						aria-label={$i18n.t('Change folder icon')}
+						aria-label={$i18n.t('Change project icon')}
 						class="rounded-full bg-gray-50 dark:bg-gray-800 size-11 flex justify-center items-center outline-hidden focus:outline-hidden"
 					>
 						{#if folder?.meta?.icon}
@@ -255,19 +175,13 @@
 					onShare={() => {
 						showShareModal = true;
 					}}
-					onDelete={() => {
-						showDeleteConfirm = true;
-					}}
 					onExport={() => {
 						exportHandler();
-					}}
-					onCreateSubFolder={() => {
-						showCreateSubFolderModal = true;
 					}}
 				>
 					<button
 						class="p-1.5 dark:hover:bg-gray-850 rounded-full touch-auto"
-						aria-label={$i18n.t('Folder options')}
+						aria-label={$i18n.t('Project options')}
 						on:click={(e) => {}}
 					>
 						<EllipsisHorizontal className="size-4" strokeWidth="2.5" />

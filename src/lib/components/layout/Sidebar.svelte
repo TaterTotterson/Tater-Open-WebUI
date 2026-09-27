@@ -47,12 +47,7 @@
 		getChatListBySearchText,
 		markChatsRead
 	} from '$lib/apis/chats';
-	import {
-		createNewFolder,
-		getFolders,
-		getSharedFolders,
-		updateFolderParentIdById
-	} from '$lib/apis/folders';
+	import { createNewFolder, getFolders, getSharedFolders } from '$lib/apis/folders';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 	import { cancelTaterTask, getTaterTasks, type TaterTask } from '$lib/apis/tater';
 
@@ -207,7 +202,7 @@
 	const createFolder = async ({ name, data, meta, parent_id }) => {
 		name = name?.trim();
 		if (!name) {
-			toast.error($i18n.t('Folder name cannot be empty.'));
+			toast.error($i18n.t('Project name cannot be empty.'));
 			return;
 		}
 
@@ -902,7 +897,6 @@
 		</div>
 	{/if}
 
-	<!-- {$i18n.t('New Folder')} -->
 	<!-- {$i18n.t('Pinned')} -->
 
 	{#if visible || !$mobile}
@@ -1076,41 +1070,18 @@
 						<SidebarSection
 							id="sidebar-folders"
 							bind:open={showFolders}
-							name={$i18n.t('Folders')}
+							name={$i18n.t('Projects')}
+							dragAndDrop={false}
 							onAdd={() => {
 								showCreateFolderModal = true;
 							}}
-							onAddLabel={$i18n.t('New Folder')}
-							on:drop={async (e) => {
-								const { type, id, item } = e.detail;
-
-								if (type === 'folder') {
-									if (folders[id].parent_id === null) {
-										return;
-									}
-
-									const res = await updateFolderParentIdById(localStorage.token, id, null).catch(
-										(error) => {
-											toast.error(`${error}`);
-											return null;
-										}
-									);
-
-									if (res) {
-										await initFolders();
-									}
-								}
-							}}
+							onAddLabel={$i18n.t('New Project')}
 						>
 							<Folders
 								bind:folderRegistry
 								{folders}
 								{shiftKey}
 								onFolderUnreadCounts={applyFolderUnreadCounts}
-								onDelete={(folderId) => {
-									selectedFolder.set(null);
-									initChatList();
-								}}
 								on:update={() => {
 									initChatList();
 								}}
@@ -1183,21 +1154,6 @@
 									}
 
 									initChatList();
-								}
-							} else if (type === 'folder') {
-								if (folders[id].parent_id === null) {
-									return;
-								}
-
-								const res = await updateFolderParentIdById(localStorage.token, id, null).catch(
-									(error) => {
-										toast.error(`${error}`);
-										return null;
-									}
-								);
-
-								if (res) {
-									await initFolders();
 								}
 							}
 						}}

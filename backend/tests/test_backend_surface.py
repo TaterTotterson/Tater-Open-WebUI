@@ -14,6 +14,9 @@ OPENAI_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'openai.py'
 CHAT_UTILS_PATH = BACKEND_ROOT / 'utils' / 'chat.py'
 DOCUMENT_PROCESSING_PATH = BACKEND_ROOT / 'utils' / 'document_processing.py'
 TATER_TASKS_PATH = BACKEND_ROOT / 'utils' / 'tater_tasks.py'
+TATER_PROJECTS_PATH = BACKEND_ROOT / 'utils' / 'tater_projects.py'
+FOLDERS_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'folders.py'
+COMPOSE_PATH = BACKEND_ROOT.parents[1] / 'docker-compose.yaml'
 
 
 class BackendSurfaceTests(unittest.TestCase):
@@ -105,6 +108,21 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('process_pending_internal_messages', task_source)
         self.assertIn('tater_task_awareness', middleware_source)
         ast.parse(task_source)
+
+    def test_projects_are_filesystem_backed_and_inherited_by_tasks(self):
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+        tools_source = TOOLS_PATH.read_text(encoding='utf-8')
+        task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
+        folder_source = FOLDERS_ROUTER_PATH.read_text(encoding='utf-8')
+        project_source = TATER_PROJECTS_PATH.read_text(encoding='utf-8')
+        compose_source = COMPOSE_PATH.read_text(encoding='utf-8')
+
+        self.assertIn('sync_user_projects', folder_source)
+        self.assertIn("or '/projects'", project_source)
+        self.assertIn('Shared project working context', middleware_source)
+        self.assertIn('local_terminal_runtime.set_cwd', tools_source)
+        self.assertIn('folder_id=parent_chat.folder_id', task_source)
+        self.assertIn(':/projects', compose_source)
 
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))

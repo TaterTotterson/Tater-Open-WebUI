@@ -40,7 +40,7 @@ from open_webui.models.access_grants import AccessGrants
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
 from open_webui.models.files import Files
-from open_webui.models.folders import Folders
+from open_webui.models.folders import FolderUpdateForm, Folders
 from open_webui.models.notes import Notes
 from open_webui.models.users import UserModel
 from open_webui.routers.images import (
@@ -115,6 +115,7 @@ from open_webui.utils.tater_agent import (
     TATER_AGENT_REPEAT_LIMIT,
     agent_history_char_limit,
     agent_iteration_limit,
+    merge_project_context,
     normalize_agent_context,
     parse_completion_review,
     parse_tool_plan_response,
@@ -128,6 +129,7 @@ from open_webui.utils.tater_agent import (
     tool_outcome_signature,
 )
 from open_webui.utils.tater_profile import DEFAULT_TATER_CONTEXT_WINDOW, normalize_tater_context_window
+from open_webui.utils.tater_projects import folder_project_path, project_prompt
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
 from open_webui.utils.tools import (
     get_terminal_tools,
@@ -1370,7 +1372,8 @@ async def chat_completion_tools_handler(
 
         prompt = f'History:\n{chat_history}\nQuery: {user_message}' if chat_history else f'Query: {user_message}'
         prompt = (
-            f'{prompt}\n\nPersistent working context from this chat:\n{persistent_agent_context_text}\n\n'
+            f'{prompt}\n\nShared working context from this project:\n{project_agent_context_text}\n\n'
+            f'Persistent working context from this chat:\n{persistent_agent_context_text}\n\n'
             'Treat this record as fallible memory. The filesystem, current terminal output, and Git state are '
             'authoritative. Reinspect relevant files before relying on an old summary.'
         )
@@ -1433,6 +1436,8 @@ async def chat_completion_tools_handler(
     metadata = extra_params['__metadata__']
 
     persistent_agent_context = {}
+    project_agent_context = {}
+    project_folder = None
     can_persist_agent_context = False
     chat_id = metadata.get('chat_id')
     if is_saved_chat_id(chat_id):
@@ -1440,7 +1445,14 @@ async def chat_completion_tools_handler(
         if chat:
             can_persist_agent_context = True
             persistent_agent_context = normalize_agent_context((chat.chat or {}).get('taterAgentContext'))
+            if chat.folder_id:
+                project_folder = await Folders.get_folder_by_id(chat.folder_id)
+                if project_folder and isinstance(project_folder.data, dict):
+                    project_agent_context = normalize_agent_context(
+                        project_folder.data.get('taterAgentContext')
+                    )
     persistent_agent_context_text = render_agent_context(persistent_agent_context)
+    project_agent_context_text = render_agent_context(project_agent_context)
 
     # One batched SELECT instead of several sequential round trips.
     task_config = await Config.get_many(
@@ -1949,6 +1961,20 @@ async def chat_completion_tools_handler(
                 log.warning('Could not persist Tater agent context for chat %s', chat_id)
         except Exception:
             log.exception('Could not persist Tater agent context for chat %s', chat_id)
+
+        if project_folder:
+            saved_project_context = merge_project_context(project_agent_context, saved_agent_context)
+            project_path = folder_project_path(project_folder)
+            if project_path:
+                saved_project_context['repository_root'] = str(project_path)
+            try:
+                await Folders.update_folder_by_id_and_user_id(
+                    project_folder.id,
+                    project_folder.user_id,
+                    FolderUpdateForm(data={'taterAgentContext': saved_project_context}),
+                )
+            except Exception:
+                log.exception('Could not persist Tater project context for project %s', project_folder.id)
 
     if history_records and direct_answer:
         body['_tater_agent_response'] = {
@@ -2649,8 +2675,25 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         if folder and user.role != 'admin' and not await has_folder_access(user.id, folder, 'read', db=None):
             folder = None
 
+        if folder:
+            authoritative_project_prompt = project_prompt(folder)
+            if authoritative_project_prompt:
+                if isinstance(folder.data, dict) and folder.data.get('taterAgentContext'):
+                    authoritative_project_prompt = (
+                        f'{authoritative_project_prompt}\n\n'
+                        'Shared project working context (fallible memory; files and Git are authoritative):\n'
+                        f'{render_agent_context(folder.data.get("taterAgentContext"))}'
+                    )
+                metadata['project_id'] = folder.id
+                metadata['project_path'] = str(folder_project_path(folder))
+                form_data['messages'] = add_or_update_system_message(
+                    authoritative_project_prompt,
+                    form_data['messages'],
+                    append=True,
+                )
+
         if folder and folder.data:
-            if 'system_prompt' in folder.data:
+            if folder.data.get('system_prompt'):
                 form_data = await apply_system_prompt_to_body(folder.data['system_prompt'], form_data, metadata, user)
             if 'files' in folder.data:
                 folder_files = [

@@ -281,7 +281,7 @@
 	let messagesContainerElement: HTMLElement | null = null;
 	const messagesContainerId = 'chat-preview';
 
-	const searchFilterPrefixes = ['tag:', 'folder:', 'pinned:', 'archived:', 'shared:'];
+	const searchFilterPrefixes = ['tag:', 'project:', 'folder:', 'pinned:', 'archived:', 'shared:'];
 
 	const getSnippetQuery = (query: string) => {
 		return query

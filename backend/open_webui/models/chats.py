@@ -44,7 +44,7 @@ from sqlalchemy.sql.expression import bindparam
 
 log = logging.getLogger(__name__)
 ACTIVE_CHAT_GAP_SECONDS = 30 * 60
-CHAT_SEARCH_FILTER_PREFIXES = ('tag:', 'folder:', 'pinned:', 'archived:', 'shared:')
+CHAT_SEARCH_FILTER_PREFIXES = ('tag:', 'project:', 'folder:', 'pinned:', 'archived:', 'shared:')
 
 
 def chat_search_content_query(text: str) -> str:
@@ -1999,7 +1999,11 @@ class ChatTable:
         ]
 
         # Extract folder names
-        folder_names = [word.replace('folder:', '') for word in search_text_words if word.startswith('folder:')]
+        folder_names = [
+            word.split(':', 1)[1]
+            for word in search_text_words
+            if word.startswith(('project:', 'folder:'))
+        ]
         folders = await Folders.search_folders_by_names(user_id, folder_names)
         folder_ids = [folder.id for folder in folders]
 

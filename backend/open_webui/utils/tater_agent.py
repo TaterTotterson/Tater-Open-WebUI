@@ -323,6 +323,23 @@ def merge_task_context(parent: Any, task: Any) -> dict[str, Any]:
     return normalize_agent_context(merged)
 
 
+def merge_project_context(project: Any, chat: Any) -> dict[str, Any]:
+    """Fold verified chat work into memory shared by every chat in a project."""
+
+    project_context = normalize_agent_context(project)
+    chat_context = normalize_agent_context(chat)
+    merged = dict(project_context)
+
+    for field in TATER_AGENT_CONTEXT_STRING_FIELDS:
+        if chat_context.get(field):
+            merged[field] = chat_context[field]
+    for field in TATER_AGENT_CONTEXT_LIST_FIELDS:
+        merged[field] = list(
+            dict.fromkeys([*(project_context.get(field) or []), *(chat_context.get(field) or [])])
+        )[-TATER_AGENT_CONTEXT_LIST_MAX_ITEMS:]
+    return normalize_agent_context(merged)
+
+
 def parse_tool_plan_response(
     content: str,
     max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP,
