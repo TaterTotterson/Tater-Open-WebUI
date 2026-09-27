@@ -84,6 +84,11 @@ variables on a new data directory.
 | `TATER_CONTEXT_WINDOW`        | `32768`                    | Configured model context tokens   |
 | `TATER_HYDRA_TIMEOUT_SECONDS` | `600`                      | Hydra request timeout             |
 | `TATER_AGENT_MAX_ITERATIONS`  | `32`                       | Maximum planning/tool rounds      |
+| `ENABLE_TATER_FILE_LOG`       | `true`                     | Persist rotating application logs |
+| `ENABLE_TATER_RUN_LEDGER`     | `true`                     | Persist structured agent events   |
+| `TATER_RUN_LEDGER_MAX_BYTES`  | `52428800`                 | Bytes per run-ledger file         |
+| `TATER_RUN_LEDGER_BACKUP_COUNT` | `10`                     | Rotated run-ledger files retained |
+| `TATER_RUN_LEDGER_MAX_FIELD_CHARS` | `200000`               | Maximum stored size per text field |
 | `TATER_PROJECTS_ROOT`         | `/projects`                | Persistent project directory      |
 | `TATER_WEBUI_WORKSPACE`       | `/projects`                | Terminal fallback directory       |
 | `TATER_WEBUI_HOST_PROJECTS`   | `./projects`               | Host path mounted at `/projects`  |
@@ -125,6 +130,26 @@ active terminal process. When a task finishes or is cancelled, its outcome and
 updated working context are returned to the chat that started it. Normal chat
 also receives authoritative awareness of every currently running task. Up to
 two background tasks may run for one user at a time.
+
+## Persistent logs
+
+The Docker data volume keeps two rotating diagnostic logs under
+`/app/backend/data/logs`:
+
+- `tater-open-webui.log` contains application messages, errors, and stack traces.
+- `tater-agent-runs.jsonl` contains the complete agent event ledger, including
+  planning attempts, progress, terminal or Hydra activity, sanitized results,
+  timings, completion checks, context updates, and parent-chat delivery.
+
+Every ledger line is JSON and includes a `run_id`; background work also includes
+its `task_id` and originating `chat_id`. In both persistent logs,
+credential-shaped keys, bearer tokens, command-line secrets, and URL passwords
+are redacted. Very large fields and log files are bounded by the settings above
+so command output cannot grow forever.
+
+The ledger intentionally contains prompts, file excerpts, and command output.
+Treat the data volume as sensitive; automatic redaction is a safety layer, not a
+guarantee that arbitrary user-provided secrets can always be recognized.
 
 ## Development
 

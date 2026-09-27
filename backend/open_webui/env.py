@@ -249,6 +249,29 @@ if FROM_INIT_PY:
 
     DATA_DIR = Path(os.getenv('DATA_DIR', OPEN_WEBUI_DIR / 'data'))
 
+TATER_LOG_DIR = Path(os.getenv('TATER_LOG_DIR', DATA_DIR / 'logs')).resolve()
+ENABLE_TATER_FILE_LOG = os.getenv('ENABLE_TATER_FILE_LOG', 'True').lower() == 'true'
+TATER_FILE_LOG_PATH = os.getenv('TATER_FILE_LOG_PATH', str(TATER_LOG_DIR / 'tater-open-webui.log'))
+TATER_FILE_LOG_ROTATION_SIZE = os.getenv('TATER_FILE_LOG_ROTATION_SIZE', '25MB')
+TATER_FILE_LOG_RETENTION = os.getenv('TATER_FILE_LOG_RETENTION', '10')
+ENABLE_TATER_RUN_LEDGER = os.getenv('ENABLE_TATER_RUN_LEDGER', 'True').lower() == 'true'
+TATER_RUN_LEDGER_PATH = os.getenv('TATER_RUN_LEDGER_PATH', str(TATER_LOG_DIR / 'tater-agent-runs.jsonl'))
+try:
+    TATER_RUN_LEDGER_MAX_BYTES = max(1_000_000, int(os.getenv('TATER_RUN_LEDGER_MAX_BYTES', '52428800')))
+except ValueError:
+    TATER_RUN_LEDGER_MAX_BYTES = 52_428_800
+try:
+    TATER_RUN_LEDGER_BACKUP_COUNT = max(1, int(os.getenv('TATER_RUN_LEDGER_BACKUP_COUNT', '10')))
+except ValueError:
+    TATER_RUN_LEDGER_BACKUP_COUNT = 10
+try:
+    TATER_RUN_LEDGER_MAX_FIELD_CHARS = max(
+        4_000,
+        int(os.getenv('TATER_RUN_LEDGER_MAX_FIELD_CHARS', '200000')),
+    )
+except ValueError:
+    TATER_RUN_LEDGER_MAX_FIELD_CHARS = 200_000
+
 STATIC_DIR = Path(os.getenv('STATIC_DIR', OPEN_WEBUI_DIR / 'static'))
 
 FRONTEND_BUILD_DIR = Path(os.getenv('FRONTEND_BUILD_DIR', BASE_DIR / 'build')).resolve()

@@ -14,6 +14,7 @@ OPENAI_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'openai.py'
 CHAT_UTILS_PATH = BACKEND_ROOT / 'utils' / 'chat.py'
 DOCUMENT_PROCESSING_PATH = BACKEND_ROOT / 'utils' / 'document_processing.py'
 TATER_TASKS_PATH = BACKEND_ROOT / 'utils' / 'tater_tasks.py'
+TATER_RUN_LEDGER_PATH = BACKEND_ROOT / 'utils' / 'tater_run_ledger.py'
 TATER_PROJECTS_PATH = BACKEND_ROOT / 'utils' / 'tater_projects.py'
 SUBAGENTS_PATH = BACKEND_ROOT / 'utils' / 'subagents.py'
 FOLDERS_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'folders.py'
@@ -119,6 +120,20 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('tater_task_awareness', middleware_source)
         ast.parse(task_source)
         ast.parse(subagent_source)
+
+    def test_agent_runs_have_a_persistent_structured_ledger(self):
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+        task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
+        ledger_source = TATER_RUN_LEDGER_PATH.read_text(encoding='utf-8')
+
+        self.assertIn("'agent_run_started'", middleware_source)
+        self.assertIn("'planner_attempt_finished'", middleware_source)
+        self.assertIn("'tool_finished'", middleware_source)
+        self.assertIn("'completion_review_finished'", middleware_source)
+        self.assertIn("'parent_delivery_finished'", task_source)
+        self.assertIn("'task_finished'", task_source)
+        self.assertIn('TATER_RUN_LEDGER_PATH', ledger_source)
+        self.assertIn('[redacted]', ledger_source)
 
     def test_projects_are_filesystem_backed_and_inherited_by_tasks(self):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')

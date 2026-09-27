@@ -1,5 +1,6 @@
 import json
 import logging
+from pathlib import Path
 import sys
 import traceback
 from typing import TYPE_CHECKING
@@ -13,13 +14,18 @@ from open_webui.env import (
     AUDIT_UVICORN_LOGGER_NAMES,
     ENABLE_AUDIT_LOGS_FILE,
     ENABLE_AUDIT_STDOUT,
+    ENABLE_TATER_FILE_LOG,
     ENABLE_OTEL,
     ENABLE_OTEL_LOGS,
     GLOBAL_LOG_LEVEL,
     LOG_FORMAT,
     LOGURU_DIAGNOSE,
+    TATER_FILE_LOG_PATH,
+    TATER_FILE_LOG_RETENTION,
+    TATER_FILE_LOG_ROTATION_SIZE,
 )
 from open_webui.utils.json_codec import JSONCodec
+from open_webui.utils.tater_run_ledger import redact_ledger_text, sanitize_ledger_value
 
 if TYPE_CHECKING:
     from loguru import Message, Record
@@ -165,6 +171,38 @@ def file_format(record: 'Record'):
     return '{extra[file_extra]}\n'
 
 
+def application_file_format(record: 'Record') -> str:
+    """Write concise JSON lines that remain useful after the container restarts."""
+
+    log_entry = {
+        'ts': record['time'].isoformat(timespec='milliseconds'),
+        'level': _LEVEL_MAP.get(record['level'].name, record['level'].name.lower()),
+        'msg': redact_ledger_text(record['message']),
+        'caller': f'{record["name"]}:{record["function"]}:{record["line"]}',
+    }
+    if record['extra']:
+        log_entry['extra'] = sanitize_ledger_value(
+            {
+                key: value
+                for key, value in record['extra'].items()
+                if key not in {'application_file_json', 'file_extra'}
+            }
+        )
+    exception = record['exception']
+    if exception is not None:
+        log_entry['error'] = {
+            'type': exception.type.__name__ if exception.type else None,
+            'message': redact_ledger_text(exception.value) if exception.value else None,
+            'stacktrace': redact_ledger_text(
+                ''.join(
+                    traceback.format_exception(exception.type, exception.value, exception.traceback)
+                ).rstrip()
+            ),
+        }
+    record['extra']['application_file_json'] = json.dumps(log_entry, ensure_ascii=False, default=str)
+    return '{extra[application_file_json]}\n'
+
+
 def start_logger():
     """
     Initializes and configures Loguru's logger with distinct handlers:
@@ -194,6 +232,22 @@ def start_logger():
             filter=audit_filter,
             diagnose=LOGURU_DIAGNOSE,
         )
+    if ENABLE_TATER_FILE_LOG:
+        try:
+            Path(TATER_FILE_LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
+            logger.add(
+                TATER_FILE_LOG_PATH,
+                level=GLOBAL_LOG_LEVEL,
+                rotation=TATER_FILE_LOG_ROTATION_SIZE,
+                retention=int(TATER_FILE_LOG_RETENTION),
+                compression='zip',
+                format=application_file_format,
+                filter=lambda record: 'auditable' not in record['extra'],
+                diagnose=LOGURU_DIAGNOSE,
+                enqueue=True,
+            )
+        except Exception as e:
+            logger.error(f'Failed to initialize persistent application log: {str(e)}')
     if AUDIT_LOG_LEVEL != 'NONE' and ENABLE_AUDIT_LOGS_FILE:
         try:
             logger.add(

@@ -132,6 +132,7 @@ from open_webui.utils.tater_agent import (
 )
 from open_webui.utils.tater_profile import DEFAULT_TATER_CONTEXT_WINDOW, normalize_tater_context_window
 from open_webui.utils.tater_projects import folder_project_path, project_prompt
+from open_webui.utils.tater_run_ledger import record_tater_run_event
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
 from open_webui.utils.tools import (
     get_terminal_tools,
@@ -1436,6 +1437,27 @@ async def chat_completion_tools_handler(
     event_caller = extra_params['__event_call__']
     event_emitter = extra_params['__event_emitter__']
     metadata = extra_params['__metadata__']
+    agent_run_id = str(
+        background_task_id
+        or metadata.get('assistant_message_id')
+        or metadata.get('message_id')
+        or uuid4()
+    )
+    agent_chat_id = str(
+        getattr(request.state, 'tater_parent_chat_id', None)
+        or metadata.get('chat_id')
+        or ''
+    ) or None
+
+    def ledger_event(event: str, **data: Any) -> None:
+        record_tater_run_event(
+            event,
+            run_id=agent_run_id,
+            task_id=str(background_task_id) if background_task_id else None,
+            chat_id=agent_chat_id,
+            user_id=str(user.id),
+            data=data,
+        )
 
     persistent_agent_context = {}
     project_agent_context = {}
@@ -1477,6 +1499,16 @@ async def chat_completion_tools_handler(
         configured_context_window = DEFAULT_TATER_CONTEXT_WINDOW
     planner_tool_history_max_chars = agent_history_char_limit(configured_context_window)
     planner_recent_history_max_chars = recent_history_char_limit(configured_context_window)
+
+    ledger_event(
+        'agent_run_started',
+        model=body.get('model'),
+        task_model=task_model_id,
+        query=dispatch_request or get_last_user_message(body.get('messages', [])),
+        background=bool(background_task_id),
+        context_window=configured_context_window,
+        initial_plan=initial_task_plan,
+    )
 
     skip_files = False
     sources = []
@@ -1593,6 +1625,8 @@ async def chat_completion_tools_handler(
             log.debug('Could not emit tool status for %s: %s', tool_name, e)
 
     async def emit_progress_update(message: str):
+        if message:
+            ledger_event('progress_update', message=message.strip())
         if background_task_id and message:
             try:
                 from open_webui.utils.tater_tasks import update_tater_task
@@ -1626,6 +1660,15 @@ async def chat_completion_tools_handler(
         if tool_function_name not in tools:
             log.warning('Tool "%s" not found', tool_function_name)
             tool_result = {'error': f'Tool "{tool_function_name}" is not available'}
+            ledger_event(
+                'tool_finished',
+                iteration=iteration,
+                tool=tool_function_name,
+                parameters=tool_function_params,
+                status='failed',
+                duration_ms=0,
+                result=tool_result,
+            )
             return {
                 'iteration': iteration,
                 'tool': tool_function_name,
@@ -1642,6 +1685,14 @@ async def chat_completion_tools_handler(
         tool_function_params = {k: v for k, v in tool_function_params.items() if k in allowed_params}
 
         tool_status_id = f'tater-tool-{iteration}-{uuid4()}'
+        tool_started_at = time.monotonic()
+        ledger_event(
+            'tool_started',
+            iteration=iteration,
+            status_id=tool_status_id,
+            tool=tool_function_name,
+            parameters=tool_function_params,
+        )
         await emit_tool_status(
             tool_function_name,
             tool_function_params,
@@ -1713,6 +1764,18 @@ async def chat_completion_tools_handler(
             done=True,
             failed=failed,
         )
+        ledger_event(
+            'tool_finished',
+            iteration=iteration,
+            status_id=tool_status_id,
+            tool=tool_function_name,
+            parameters=tool_function_params,
+            status='failed' if failed else 'completed',
+            duration_ms=round((time.monotonic() - tool_started_at) * 1000, 2),
+            result=tool_result,
+            files=tool_result_files,
+            embeds=tool_result_embeds,
+        )
 
         if tool_result:
             tool_id = tool.get('tool_id', '')
@@ -1754,6 +1817,11 @@ async def chat_completion_tools_handler(
         if iteration == 1 and not history_records and isinstance(initial_task_plan, dict):
             plan = copy.deepcopy(initial_task_plan)
             tool_calls = plan.get('tool_calls') or []
+            ledger_event(
+                'planner_response_reused',
+                iteration=iteration,
+                plan=plan,
+            )
         else:
             payload = get_tools_function_calling_payload(
                 body['messages'],
@@ -1776,6 +1844,17 @@ async def chat_completion_tools_handler(
                         ],
                     }
 
+                planner_started_at = time.monotonic()
+                content = ''
+                ledger_event(
+                    'planner_attempt_started',
+                    iteration=iteration,
+                    attempt=planning_attempt + 1,
+                    max_attempts=TATER_AGENT_PLAN_RETRY_LIMIT + 1,
+                    history_records=len(history_records),
+                    model=attempt_payload.get('model'),
+                    request_messages=attempt_payload.get('messages'),
+                )
                 try:
                     response = await generate_chat_completion(request, form_data=attempt_payload, user=user)
                     log.debug('response=%r', response)
@@ -1788,10 +1867,28 @@ async def chat_completion_tools_handler(
                         allow_plain_final_answer=bool(history_records),
                     )
                     tool_calls = plan['tool_calls']
+                    ledger_event(
+                        'planner_attempt_finished',
+                        iteration=iteration,
+                        attempt=planning_attempt + 1,
+                        status='completed',
+                        duration_ms=round((time.monotonic() - planner_started_at) * 1000, 2),
+                        raw_response=content,
+                        plan=plan,
+                    )
                     planning_error = None
                     break
                 except Exception as e:
                     planning_error = e
+                    ledger_event(
+                        'planner_attempt_finished',
+                        iteration=iteration,
+                        attempt=planning_attempt + 1,
+                        status='failed',
+                        duration_ms=round((time.monotonic() - planner_started_at) * 1000, 2),
+                        raw_response=content,
+                        error=repr(e),
+                    )
                     log.warning(
                         'Tool planning attempt %s/%s failed at iteration %s: %s',
                         planning_attempt + 1,
@@ -1806,6 +1903,12 @@ async def chat_completion_tools_handler(
                 f'{TATER_AGENT_PLAN_RETRY_LIMIT + 1} attempts: {planning_error}'
             )
             append_agent_notice(agent_stop_message)
+            ledger_event(
+                'agent_loop_stopped',
+                iteration=iteration,
+                reason=agent_stop_message,
+                error=repr(planning_error),
+            )
             loop_stopped = True
             break
 
@@ -1825,17 +1928,32 @@ async def chat_completion_tools_handler(
                     ),
                     initial_plan=plan,
                 )
+                ledger_event(
+                    'background_task_dispatched',
+                    task=task,
+                    plan=plan,
+                )
                 task_message = (
                     f'I started **{task["title"]}** as a background task. You can keep chatting while it runs; '
                     'I will post the verified outcome here when it finishes.'
                 )
             except Exception as e:
+                ledger_event(
+                    'background_task_dispatch_failed',
+                    plan=plan,
+                    error=repr(e),
+                )
                 task_message = f'I could not start the background task: {e}'
 
             body['_tater_agent_response'] = {
                 'content': task_message,
                 'display_content': task_message,
             }
+            ledger_event(
+                'agent_run_finished',
+                status='dispatched' if task_message.startswith('I started') else 'failed',
+                answer=task_message,
+            )
             return body, {'sources': sources}
 
         if not tool_calls:
@@ -1862,6 +1980,13 @@ async def chat_completion_tools_handler(
                         ),
                     }
                 )
+                ledger_event(
+                    'completion_rejected',
+                    iteration=iteration,
+                    reason='future_work_announcement',
+                    proposed_answer=continuation_update,
+                    failure_count=completion_review_failures,
+                )
                 if completion_review_failures < 3:
                     continue
                 agent_stop_message = (
@@ -1869,6 +1994,7 @@ async def chat_completion_tools_handler(
                     'performing it.'
                 )
                 append_agent_notice(agent_stop_message)
+                ledger_event('agent_loop_stopped', iteration=iteration, reason=agent_stop_message)
                 loop_stopped = True
                 break
 
@@ -1885,14 +2011,23 @@ async def chat_completion_tools_handler(
                         ),
                     }
                 )
+                ledger_event(
+                    'completion_protocol_failed',
+                    iteration=iteration,
+                    reason='missing_final_answer',
+                    failure_count=completion_protocol_failures,
+                )
                 if completion_protocol_failures < 3:
                     continue
                 agent_stop_message = 'Tool planning stopped because it did not provide a complete answer.'
                 append_agent_notice(agent_stop_message)
+                ledger_event('agent_loop_stopped', iteration=iteration, reason=agent_stop_message)
                 loop_stopped = True
                 break
 
             if history_records and not simple_read_only_terminal_history(history_records):
+                review_started_at = time.monotonic()
+                review_payload = {}
                 try:
                     review_payload = get_completion_review_payload(
                         body['messages'],
@@ -1904,7 +2039,18 @@ async def chat_completion_tools_handler(
                     review_content = await get_content_from_response(review_response)
                     review = parse_completion_review(review_content)
                 except Exception as e:
+                    review_content = ''
                     review = {'complete': False, 'reason': f'Completion review failed: {e}'}
+
+                ledger_event(
+                    'completion_review_finished',
+                    iteration=iteration,
+                    duration_ms=round((time.monotonic() - review_started_at) * 1000, 2),
+                    request_messages=review_payload.get('messages'),
+                    raw_response=review_content,
+                    review=review,
+                    proposed_answer=prepared_final_answer,
+                )
 
                 if not review['complete']:
                     completion_review_failures += 1
@@ -1925,7 +2071,14 @@ async def chat_completion_tools_handler(
                         f'The remaining issue was: {review["reason"]}'
                     )
                     append_agent_notice(agent_stop_message)
+                    ledger_event('agent_loop_stopped', iteration=iteration, reason=agent_stop_message)
                     loop_stopped = True
+            elif history_records:
+                ledger_event(
+                    'completion_review_skipped',
+                    iteration=iteration,
+                    reason='verified_simple_read_only_terminal_history',
+                )
             break
 
         progress = plan['progress']
@@ -1945,6 +2098,7 @@ async def chat_completion_tools_handler(
                     f'{TATER_AGENT_REPEAT_LIMIT} times. The task may be incomplete.'
                 )
                 append_agent_notice(agent_stop_message)
+                ledger_event('agent_loop_stopped', iteration=iteration, reason=agent_stop_message)
                 loop_stopped = True
                 break
 
@@ -1955,6 +2109,7 @@ async def chat_completion_tools_handler(
             f'Tool planning reached its {max_iterations}-iteration safety limit. The task may be incomplete.'
         )
         append_agent_notice(agent_stop_message)
+        ledger_event('agent_loop_stopped', iteration=max_iterations, reason=agent_stop_message)
         loop_stopped = True
 
     direct_answer = prepared_final_answer if not loop_stopped else agent_stop_message
@@ -1995,8 +2150,16 @@ async def chat_completion_tools_handler(
             )
             if saved_chat is None:
                 log.warning('Could not persist Tater agent context for chat %s', chat_id)
-        except Exception:
+                ledger_event('context_persistence_failed', context=saved_agent_context)
+            else:
+                ledger_event('context_persisted', context=saved_agent_context)
+        except Exception as exc:
             log.exception('Could not persist Tater agent context for chat %s', chat_id)
+            ledger_event(
+                'context_persistence_failed',
+                context=saved_agent_context,
+                error=repr(exc),
+            )
 
         if project_folder:
             saved_project_context = merge_project_context(project_agent_context, saved_agent_context)
@@ -2009,14 +2172,29 @@ async def chat_completion_tools_handler(
                     project_folder.user_id,
                     FolderUpdateForm(data={'taterAgentContext': saved_project_context}),
                 )
-            except Exception:
+            except Exception as exc:
                 log.exception('Could not persist Tater project context for project %s', project_folder.id)
+                ledger_event(
+                    'project_context_persistence_failed',
+                    project_id=project_folder.id,
+                    context=saved_project_context,
+                    error=repr(exc),
+                )
 
     if history_records and direct_answer:
         body['_tater_agent_response'] = {
             'content': direct_answer,
             'display_content': '\n\n'.join([*emitted_progress_updates, direct_answer]),
         }
+
+    ledger_event(
+        'agent_run_finished',
+        status='stopped' if loop_stopped else 'completed',
+        iterations=max((record.get('iteration', 0) for record in history_records), default=0),
+        answer=direct_answer,
+        progress_updates=emitted_progress_updates,
+        history=history_records,
+    )
 
     log.debug('tool_contexts: %s', sources)
 

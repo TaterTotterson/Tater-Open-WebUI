@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import time
+import traceback
 from datetime import timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -26,6 +27,7 @@ from open_webui.utils.tater_agent import (
     merge_task_context,
     normalize_task_title,
 )
+from open_webui.utils.tater_run_ledger import record_tater_run_event
 
 TATER_TASK_TYPE = 'tater_task'
 TATER_TASK_ACTIVE_STATUSES = {'queued', 'running', 'cancelling'}
@@ -39,6 +41,7 @@ def _build_internal_request(
     source: Request,
     user_id: str,
     task_id: str,
+    parent_chat_id: str,
     initial_plan: dict[str, Any],
 ) -> Request:
     scope = {
@@ -59,6 +62,7 @@ def _build_internal_request(
     request.state.enable_api_keys = False
     request.state.internal = True
     request.state.tater_task_id = task_id
+    request.state.tater_parent_chat_id = parent_chat_id
     request.state.tater_initial_plan = copy.deepcopy(initial_plan)
     return request
 
@@ -395,6 +399,17 @@ async def start_tater_task(
     assistant_message_id = str(uuid4())
     prompt = task_prompt.strip() or get_last_user_message(body.get('messages', [])) or 'Background task'
     title = normalize_task_title(initial_plan.get('task_title'), prompt)
+
+    def ledger_event(event: str, **data: Any) -> None:
+        record_tater_run_event(
+            event,
+            run_id=task_id,
+            task_id=task_id,
+            chat_id=str(parent_chat_id),
+            user_id=str(user.id),
+            data=data,
+        )
+
     initial_tool_calls = initial_plan.get('tool_calls') or []
     capabilities = sorted(
         {
@@ -453,6 +468,17 @@ async def start_tater_task(
     if not chat:
         raise RuntimeError('The background task record could not be created.')
 
+    ledger_event(
+        'task_created',
+        title=title,
+        prompt=prompt,
+        model=body.get('model'),
+        parent_chat_id=parent_chat_id,
+        parent_message_id=metadata.get('assistant_message_id') or metadata.get('user_message_id'),
+        capabilities=capabilities,
+        initial_plan=initial_plan,
+    )
+
     run = {
         'model_id': body['model'],
         'session_id': f'tater-task:{task_id}',
@@ -468,8 +494,16 @@ async def start_tater_task(
         summary = ''
         error = ''
         cancelled = False
+        task_started_at = time.monotonic()
+        ledger_event('task_execution_started', session_id=run['session_id'])
         try:
-            child_request = _build_internal_request(request, user.id, task_id, initial_plan)
+            child_request = _build_internal_request(
+                request,
+                user.id,
+                task_id,
+                parent_chat_id,
+                initial_plan,
+            )
             child_messages = copy.deepcopy(body.get('messages') or [])
             if child_messages and child_messages[-1].get('role') == 'user':
                 child_messages[-1] = {
@@ -496,6 +530,7 @@ async def start_tater_task(
                 form_data['terminal_id'] = run['terminal_id']
 
             await request.app.state.CHAT_COMPLETION_HANDLER(child_request, form_data, user=user)
+            ledger_event('task_completion_handler_finished')
             message = await Chats.get_message_by_id_and_message_id(task_id, assistant_message_id)
             completed_task_chat = await Chats.get_chat_by_id(task_id)
             completed_context = (
@@ -518,6 +553,7 @@ async def start_tater_task(
             cancelled = True
             status = 'cancelled'
             error = 'The task was cancelled.'
+            ledger_event('task_cancelled', error=error)
             await asyncio.shield(
                 Chats.upsert_message_to_chat_by_id_and_message_id(
                     task_id,
@@ -528,6 +564,12 @@ async def start_tater_task(
             )
         except Exception as exc:
             error = str(exc)
+            log.exception('Background task %s failed', task_id)
+            ledger_event(
+                'task_execution_failed',
+                error=repr(exc),
+                stacktrace=traceback.format_exc(),
+            )
             await Chats.upsert_message_to_chat_by_id_and_message_id(
                 task_id,
                 assistant_message_id,
@@ -546,6 +588,8 @@ async def start_tater_task(
 
             delivery_error = None
             for attempt in range(3):
+                delivery_started_at = time.monotonic()
+                ledger_event('parent_delivery_started', attempt=attempt + 1, status=status)
                 try:
                     await _post_parent_result(
                         user=user,
@@ -559,9 +603,22 @@ async def start_tater_task(
                         model_id=run['model_id'],
                     )
                     delivery_error = None
+                    ledger_event(
+                        'parent_delivery_finished',
+                        attempt=attempt + 1,
+                        status='completed',
+                        duration_ms=round((time.monotonic() - delivery_started_at) * 1000, 2),
+                    )
                     break
                 except Exception as exc:
                     delivery_error = exc
+                    ledger_event(
+                        'parent_delivery_finished',
+                        attempt=attempt + 1,
+                        status='failed',
+                        duration_ms=round((time.monotonic() - delivery_started_at) * 1000, 2),
+                        error=repr(exc),
+                    )
                     log.exception(
                         'Could not post result for background task %s (attempt %s/3)',
                         task_id,
@@ -584,6 +641,13 @@ async def start_tater_task(
                 user_id=user.id,
             )
             await emit_tater_task_event(user.id, task_id, final_status)
+            ledger_event(
+                'task_finished',
+                status=final_status,
+                duration_ms=round((time.monotonic() - task_started_at) * 1000, 2),
+                summary=summary,
+                error=final_error,
+            )
 
         await asyncio.shield(finalize())
         if cancelled:
@@ -592,7 +656,12 @@ async def start_tater_task(
 
     try:
         await create_task(request.app.state.redis, run_background(), id=task_id, task_id=task_id)
-    except Exception:
+    except Exception as exc:
+        ledger_event(
+            'task_scheduling_failed',
+            error=repr(exc),
+            stacktrace=traceback.format_exc(),
+        )
         await update_tater_task(
             task_id,
             {'status': 'failed', 'activity': 'The task could not be scheduled.', 'finished_at': int(time.time())},
@@ -601,4 +670,5 @@ async def start_tater_task(
         raise
 
     await emit_tater_task_event(user.id, task_id, 'running')
+    ledger_event('task_scheduled')
     return tater_task_summary(chat)
