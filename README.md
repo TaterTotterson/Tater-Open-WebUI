@@ -1,84 +1,91 @@
 # Tater WebUI
 
-Tater WebUI is a standalone, terminal-first AI chat application derived from
-[Open WebUI](https://github.com/open-webui/open-webui). It connects to Tater
-through its standard OpenAI-compatible API and gives the normal chat model full
-terminal, filesystem, process, and Git access on the machine running Tater WebUI.
+Tater WebUI is a terminal-first AI chat application derived from
+[Open WebUI](https://github.com/open-webui/open-webui). It connects to Tater's
+OpenAI-compatible API and gives the normal chat model unrestricted terminal
+access inside the environment running Tater WebUI.
 
-## How routing works
+## What it does
 
 - `tater/base` handles normal conversation and local computer work.
-- Local work uses one model tool, `terminal`, with a single `command` argument.
-  It waits for the command and returns output and exit status in the same call.
-- Terminal commands run inside Tater WebUI; they do not go through Tater or Spudex.
-- `tater_hydra` is the only other model tool. It is called only when the model needs a Tater capability, such
-  as controlling a device, using a Verba, Core, Portal, media service, or
-  automation.
-- Hydra delegation uses the same standard `POST /v1/chat/completions`
-  endpoint. There is no private Tater API.
-- Image and audio UI capabilities are intentionally retained.
+- Local work uses one model tool: `terminal({"command": "..."})`.
+- `tater/hydra` is called only for Tater-owned capabilities such as connected
+  devices, Verbas, Cores, Portals, media services, and automations.
+- Terminal work stays local to Tater WebUI; it does not use Hydra or Spudex.
+- The agent runs an inspect/edit/test loop and verifies completion before
+  returning a final answer.
+- Chat history, authentication, files, images, audio, and the terminal UI are
+  retained from the Open WebUI foundation.
 
-See [the architecture document](docs/TATER_WEBUI_ARCHITECTURE.md) for the full
-boundary between Tater WebUI, Tater, Hydra, and the local runtime.
+Both models use the standard Tater endpoint:
 
-## Quick start with Docker Compose
+```text
+POST {TATER_API_BASE_URL}/chat/completions
+```
+
+## Docker Compose
 
 Requirements:
 
-- a reachable Tater OpenAI-compatible API;
 - Docker with Compose;
-- a host directory that Tater WebUI is allowed to access.
+- a reachable Tater OpenAI-compatible API;
+- a host directory that the agent is allowed to access.
 
 ```bash
 cp .env.example .env
-```
-
-Set these values in `.env`:
-
-```dotenv
-TATER_API_BASE_URL=http://host.docker.internal:8501/v1
-TATER_API_KEY=
-TATER_WEBUI_HOST_WORKSPACE=/absolute/path/to/your/projects
-WEBUI_SECRET_KEY=replace-with-a-long-random-secret
-```
-
-Then start the app:
-
-```bash
 docker compose up --build
 ```
 
 Open [http://localhost:3000](http://localhost:3000). The first account created
 becomes the administrator.
 
-The Compose setup mounts `TATER_WEBUI_HOST_WORKSPACE` at `/workspace`.
-Tater WebUI can still access the rest of its container filesystem, but host files
+The Compose setup mounts `TATER_WEBUI_HOST_WORKSPACE` at `/workspace`. Files
 outside mounted paths are not visible from inside Docker.
 
-## GitHub image and Unraid
+## Published image and Unraid
 
-Every push to `main` builds, boots, health-checks, and publishes the public
-amd64 image to `ghcr.io/tatertotterson/tater-webui`. Use `latest` for the newest
-successful main build or a version tag such as `0.1.0` for a pinned release.
+Every successful push to `main` publishes a tested Linux amd64 image:
 
-See [the Unraid deployment guide](docs/UNRAID.md) for volume mappings, Tater
-connectivity, and a complete container command.
+```bash
+docker pull ghcr.io/tatertotterson/tater-webui:latest
+```
+
+See the [Unraid guide](docs/UNRAID.md) for the complete container setup.
 
 ## Configuration
+
+Configure the provider under **Admin settings → Tater** or with environment
+variables on a new data directory.
 
 | Variable                      | Default                    | Purpose                           |
 | ----------------------------- | -------------------------- | --------------------------------- |
 | `TATER_API_BASE_URL`          | `http://localhost:8501/v1` | Tater API prefix                  |
 | `TATER_API_KEY`               | empty                      | Server-side Tater credential      |
 | `TATER_BASE_MODEL`            | `tater/base`               | Normal chat and local agent model |
-| `TATER_HYDRA_MODEL`           | `tater/hydra`              | Tater-tool delegation model       |
+| `TATER_HYDRA_MODEL`           | `tater/hydra`              | Tater capability model            |
 | `TATER_HYDRA_TIMEOUT_SECONDS` | `600`                      | Hydra request timeout             |
 | `TATER_AGENT_MAX_ITERATIONS`  | `32`                       | Maximum planning/tool rounds      |
-| `TATER_WEBUI_WORKSPACE`       | process directory          | Initial local working directory   |
+| `TATER_WEBUI_WORKSPACE`       | process directory          | Initial terminal directory        |
 
-The same provider settings are available under **Admin settings → Tater**.
-Details are in [the provider guide](docs/TATER_PROVIDER.md) and
-[the local runtime guide](docs/LOCAL_RUNTIME.md).
+The API URL must point to the `/v1` prefix, not directly to
+`/chat/completions`. Saving the Tater profile keeps the API key server-side,
+sets the base model as the default, and reserves the Hydra model from ordinary
+model selection.
+
+Hydra receives a self-contained task rather than the entire local transcript.
+This avoids sending unrelated terminal output and local file contents to a
+Tater capability call.
+
+## Terminal behavior
+
+Each user/chat pair has an independent working directory. Commands inherit the
+backend process environment, may use absolute paths, and return output plus
+exit status in the same tool result. The model uses ordinary shell commands for
+files, Git, packages, builds, tests, and process management.
+
+The agent may show short progress updates while commands run. Once tool work
+starts, a completion review prevents the turn from ending while requested work
+is unfinished or the answer is unsupported by actual command results.
 
 ## Development
 
@@ -90,53 +97,31 @@ pip install -r backend/requirements.txt
 npm run dev
 ```
 
-In a second terminal:
+In another terminal:
 
 ```bash
 cd backend
 ./dev.sh
 ```
 
-The frontend runs on port 5173 and the backend on port 8080.
-
-Run the focused backend regression suite with:
+Run the regression suite and production build with:
 
 ```bash
-python -m unittest \
-  backend.tests.test_tater_profile \
-  backend.tests.test_tater_agent \
-  backend.tests.test_tater_hydra \
-  backend.tests.test_local_terminal_runtime \
-  backend.tests.test_local_terminal_tools \
-  backend.tests.test_backend_surface -v
+python -m unittest discover -s backend/tests -p 'test_*.py'
 npm run build
 ```
 
 ## Security
 
-Full terminal access is intentionally unrestricted. Tater WebUI can read
-credentials available to its operating-system user, edit or delete files,
-install software, control processes, and make network requests. Run it as a
-dedicated user with appropriate permissions and do not expose it directly to
-the public internet. Use a trusted VPN or authenticated reverse proxy for
-remote access.
+Terminal access is intentionally unrestricted for the operating-system user
+running Tater WebUI. In Docker, that includes the container and every mounted
+host path. Run it as a dedicated user, mount only intended directories, and put
+remote access behind a trusted VPN or authenticated reverse proxy. See the
+[security policy](docs/SECURITY.md).
 
-See [the security notes](docs/SECURITY.md).
+## License
 
-## Project status
-
-Tater WebUI is being reduced from its Open WebUI baseline in measured,
-build-tested slices. The Tater provider profile, bundled local runtime,
-conditional Hydra tool, bounded inspect/edit/verify agent loop, and local
-background-process controls are implemented. Browser-direct connections,
-generic provider model management, model arenas, RAG, knowledge bases,
-memories, web search, embeddings, rerankers, and vector databases have been
-removed. The focused Tater profile is the only chat-provider setup surface;
-ordinary file attachments and the image/audio experience remain available.
-
-## Upstream and license
-
-This project is derived from Open WebUI and retains its required notices,
-copyright attribution, and license terms. See [LICENSE](LICENSE) and
-[the recorded upstream baseline](docs/UPSTREAM_BASELINE.md). Open WebUI
-trademarks and upstream project identity belong to their respective owners.
+This project is derived from Open WebUI and retains the upstream license,
+historical license terms, notice, contributor agreement, copyright attribution,
+and required product attribution. See `LICENSE`, `LICENSE_HISTORY`,
+`LICENSE_NOTICE`, and `CONTRIBUTOR_LICENSE_AGREEMENT`.

@@ -9,9 +9,6 @@ const config = {
 	// for more information about preprocessors
 	preprocess: vitePreprocess(),
 	kit: {
-		// adapter-auto only supports some environments, see https://kit.svelte.dev/docs/adapter-auto for a list.
-		// If your environment is not supported or you settled on a specific environment, switch out the adapter.
-		// See https://kit.svelte.dev/docs/adapters for more information about adapters.
 		adapter: adapter({
 			pages: 'build',
 			assets: 'build',
@@ -20,12 +17,13 @@ const config = {
 		// poll for new version name every 60 seconds (to trigger reload mechanic in +layout.svelte)
 		version: {
 			name: (() => {
+				if (process.env.APP_BUILD_HASH && process.env.APP_BUILD_HASH !== 'dev-build') {
+					return process.env.APP_BUILD_HASH;
+				}
+
 				try {
 					return child_process.execSync('git rev-parse HEAD').toString().trim();
 				} catch {
-					if (process.env.APP_BUILD_HASH && process.env.APP_BUILD_HASH !== 'dev-build') {
-						return process.env.APP_BUILD_HASH;
-					}
 					// if git is not available, fallback to package.json version
 					// or current timestamp
 					try {

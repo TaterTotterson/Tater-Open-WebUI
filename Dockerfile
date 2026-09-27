@@ -1,179 +1,86 @@
 # syntax=docker/dockerfile:1
-# Initialize device type args
-# use build args in the docker build command with --build-arg="BUILDARG=true"
-ARG USE_CUDA=false
-ARG USE_SLIM=false
-ARG USE_PERMISSION_HARDENING=false
-# Tested with cu117 for CUDA 11 and cu121 for CUDA 12 (default)
-ARG USE_CUDA_VER=cu128
+
 ARG BUILD_HASH=dev-build
-# Override at your own risk - non-root configurations are untested
 ARG UID=0
 ARG GID=0
 
-######## WebUI frontend ########
-FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
+FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS frontend
+
 ARG BUILD_HASH
-ARG USE_SLIM
 ARG UID
 ARG GID
 
-# The production bundle exceeds Node's default ~2 GiB heap inside BuildKit.
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-
 WORKDIR /app
-
-# to store git revision in build
-RUN apk add --no-cache git
 
 COPY package.json package-lock.json ./
 RUN npm ci --force
-
 COPY . .
 ENV APP_BUILD_HASH=${BUILD_HASH}
-RUN npm run build && \
-    if [ "$USE_SLIM" = "true" ]; then find build -type f -name '*.map' -delete; fi
+RUN npm run build
 
-# Prepare backend ownership before the final copy so static assets occupy one layer.
-# Group 0 write access lets arbitrary OpenShift UIDs update these assets at startup.
+# Prepare backend permissions before copying it into the runtime image.
 RUN chown -R $UID:$GID /app/backend && \
     chgrp -R 0 /app/backend/open_webui/static && \
     chmod -R g=u /app/backend/open_webui/static
 
-######## WebUI backend ########
-FROM python:3.11-slim-bookworm AS base
+FROM python:3.11-slim-bookworm
 
-# Use args
-ARG USE_CUDA
-ARG USE_CUDA_VER
-ARG USE_SLIM
-ARG USE_PERMISSION_HARDENING
+ARG BUILD_HASH
 ARG UID
 ARG GID
 
-# Python settings
-ENV PYTHONUNBUFFERED=1
-
-## Basis ##
-ENV ENV=prod \
+ENV PYTHONUNBUFFERED=1 \
+    ENV=prod \
     PORT=8080 \
-    # pass build args to the build
-    USE_CUDA_DOCKER=${USE_CUDA} \
-    USE_SLIM_DOCKER=${USE_SLIM} \
-    USE_CUDA_DOCKER_VER=${USE_CUDA_VER}
-
-## Basis URL Config ##
-ENV OPENAI_API_BASE_URL=""
-
-## Privacy Config ##
-ENV SCARF_NO_ANALYTICS=true \
+    OPENAI_API_BASE_URL="" \
+    SCARF_NO_ANALYTICS=true \
     DO_NOT_TRACK=true \
-    ANONYMIZED_TELEMETRY=false
-
-#### Other models #########################################################
-## whisper TTS model settings ##
-ENV WHISPER_MODEL="base" \
-    WHISPER_MODEL_DIR="/app/backend/data/cache/whisper/models"
-
-## Hugging Face download cache ##
-ENV HF_HOME="/app/backend/data/cache/huggingface"
-
-## Torch Extensions ##
-# ENV TORCH_EXTENSIONS_DIR="/.cache/torch_extensions"
-
-#### Other models ##########################################################
+    ANONYMIZED_TELEMETRY=false \
+    WHISPER_MODEL=base \
+    WHISPER_MODEL_DIR=/app/backend/data/cache/whisper/models \
+    HF_HOME=/app/backend/data/cache/huggingface \
+    UV_LINK_MODE=copy \
+    HOME=/root \
+    WEBUI_BUILD_VERSION=${BUILD_HASH} \
+    DOCKER=true
 
 WORKDIR /app/backend
 
-ENV HOME=/root
-# Create user and group if not root
-RUN if [ $UID -ne 0 ]; then \
-    if [ $GID -ne 0 ]; then \
-    addgroup --gid $GID app; \
-    fi; \
-    adduser --uid $UID --gid $GID --home $HOME --disabled-password --no-create-home app; \
-    fi
+RUN if [ "$UID" -ne 0 ]; then \
+        if [ "$GID" -ne 0 ]; then addgroup --gid "$GID" app; fi; \
+        adduser --uid "$UID" --gid "$GID" --home "$HOME" --disabled-password --no-create-home app; \
+    fi && \
+    chown -R "$UID:$GID" /app "$HOME"
 
-# Make sure the user has access to the app and root directory
-RUN chown -R $UID:$GID /app $HOME
-
-# Slim cannot bundle a GPU runtime.
-RUN if [ "$USE_SLIM" = "true" ] && [ "$USE_CUDA" = "true" ]; then \
-    echo "USE_SLIM cannot be combined with USE_CUDA" >&2; exit 1; fi
-
-# Keep the slim runtime free of local document/audio processing tools.
-# Git-based tool requirements require the standard image.
+# Git and build tools are intentionally present because the local agent has a
+# real terminal. Pandoc and ffmpeg support the retained file and media UI.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    curl jq ca-certificates \
-    && if [ "$USE_SLIM" != "true" ]; then \
-    apt-get install -y --no-install-recommends \
-    git build-essential pandoc gcc libmariadb-dev ffmpeg libsm6 libxext6; \
-    fi && rm -rf /var/lib/apt/lists/*
+        build-essential ca-certificates curl ffmpeg gcc git jq \
+        libmariadb-dev libsm6 libxext6 pandoc && \
+    rm -rf /var/lib/apt/lists/*
 
-# install python dependencies
-COPY --chown=$UID:$GID ./backend/requirements*.txt ./
-
-# Set UV_LINK_MODE to copy to prevent 0-byte file corruption in QEMU arm64 cross-builds
-ENV UV_LINK_MODE=copy
+COPY --chown=$UID:$GID backend/requirements.txt ./requirements.txt
 
 RUN --mount=from=ghcr.io/astral-sh/uv:0.12.10,source=/uv,target=/bin/uv \
-    set -e; \
-    if [ "$USE_SLIM" = "true" ]; then \
-    uv pip install --system -r requirements-slim.txt --no-cache-dir; \
-    elif [ "$USE_CUDA" = "true" ]; then \
-    # If you use CUDA the Whisper model will be downloaded on first use
-    # fix: pin torch<=2.9.1 - torch 2.10.0 aarch64 wheels cause SIGILL on ARM devices (RPi 4 Cortex-A72) #21349
-    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER --no-cache-dir; \
-    uv pip install --system -r requirements.txt --no-cache-dir; \
-    python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
-    else \
-    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir; \
-    uv pip install --system -r requirements.txt --no-cache-dir; \
-    if [ "$USE_SLIM" != "true" ]; then \
-    python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
-    fi; \
-    fi; \
-    mkdir -p /app/backend/data; chown -R $UID:$GID /app/backend/data/; \
-    if [ -d /app/backend/data/cache ]; then chmod -R a+rX /app/backend/data/cache; fi; \
-    rm -rf /var/lib/apt/lists/*;
+    pip3 install 'torch<=2.9.1' torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cpu --no-cache-dir && \
+    uv pip install --system -r requirements.txt --no-cache-dir && \
+    python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])" && \
+    mkdir -p /app/backend/data && \
+    chown -R "$UID:$GID" /app/backend/data && \
+    if [ -d /app/backend/data/cache ]; then chmod -R a+rX /app/backend/data/cache; fi
 
-# Optional: PPTX parsing through unstructured may need spaCy's English model.
-# Keep this out of the default image to avoid the extra image bloat; deployments
-# with read-only site-packages can uncomment it and bake the model in.
-# RUN python -m spacy download en_core_web_sm
-
-# copy embedding weight from build
-# RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2
-# COPY --from=build /app/onnx /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2/onnx
-
-# copy built frontend files
-COPY --chown=$UID:$GID --from=build /app/build /app/build
-COPY --chown=$UID:$GID --from=build /app/CHANGELOG.md /app/CHANGELOG.md
-COPY --chown=$UID:$GID --from=build /app/package.json /app/package.json
-
-# copy backend files with the ownership and static permissions prepared above
-COPY --from=build /app/backend .
+COPY --chown=$UID:$GID --from=frontend /app/build /app/build
+COPY --chown=$UID:$GID --from=frontend /app/CHANGELOG.md /app/CHANGELOG.md
+COPY --chown=$UID:$GID --from=frontend /app/package.json /app/package.json
+COPY --from=frontend /app/backend .
 
 EXPOSE 8080
 
-HEALTHCHECK CMD curl --silent --fail http://localhost:${PORT:-8080}/health | jq -ne 'input.status == true' || exit 1
-
-# Minimal, atomic permission hardening for OpenShift (arbitrary UID):
-# - Group 0 owns /app and /root
-# - Directories are group-writable and have SGID so new files inherit GID 0
-RUN if [ "$USE_PERMISSION_HARDENING" = "true" ]; then \
-    set -eux; \
-    chgrp -R 0 /app /root || true; \
-    chmod -R g+rwX /app /root || true; \
-    find /app -type d -exec chmod g+s {} + || true; \
-    find /root -type d -exec chmod g+s {} + || true; \
-    fi
+HEALTHCHECK CMD curl --silent --fail http://localhost:${PORT:-8080}/health \
+    | jq -ne 'input.status == true' || exit 1
 
 USER $UID:$GID
-
-ARG BUILD_HASH
-ENV WEBUI_BUILD_VERSION=${BUILD_HASH}
-ENV DOCKER=true
-
-CMD [ "bash", "start.sh"]
+CMD ["bash", "start.sh"]

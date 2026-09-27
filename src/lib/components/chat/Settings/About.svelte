@@ -66,7 +66,7 @@
 								<span>{$i18n.t('Could not check for updates')}</span>
 							{:else}
 								<a
-									href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
+									href="https://github.com/TaterTotterson/Tater-WebUI/releases/tag/v{version.latest}"
 									target="_blank"
 								>
 									{updateAvailable === null
