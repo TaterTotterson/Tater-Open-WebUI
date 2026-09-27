@@ -113,13 +113,19 @@ from open_webui.utils.task import get_task_model_id, tools_function_calling_gene
 from open_webui.utils.tater_agent import (
     TATER_AGENT_PLAN_RETRY_LIMIT,
     TATER_AGENT_REPEAT_LIMIT,
+    agent_history_char_limit,
     agent_iteration_limit,
+    normalize_agent_context,
     parse_completion_review,
     parse_tool_plan_response,
+    recent_history_char_limit,
+    render_agent_context,
+    render_recent_chat_history,
     render_tool_history,
     tool_plan_retry_instruction,
     tool_outcome_signature,
 )
+from open_webui.utils.tater_profile import DEFAULT_TATER_CONTEXT_WINDOW, normalize_tater_context_window
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
 from open_webui.utils.tools import (
     get_terminal_tools,
@@ -1348,12 +1354,17 @@ async def chat_completion_tools_handler(
             # Remove the last user message to avoid duplication
             messages = messages[:-1]
 
-        recent_messages = messages[-4:] if len(messages) > 4 else messages
-        chat_history = '\n'.join(
-            f'{message["role"].upper()}: """{get_content_from_message(message)}"""' for message in recent_messages
+        chat_history = render_recent_chat_history(
+            messages,
+            max_chars=planner_recent_history_max_chars,
         )
 
         prompt = f'History:\n{chat_history}\nQuery: {user_message}' if chat_history else f'Query: {user_message}'
+        prompt = (
+            f'{prompt}\n\nPersistent working context from this chat:\n{persistent_agent_context_text}\n\n'
+            'Treat this record as fallible memory. The filesystem, current terminal output, and Git state are '
+            'authoritative. Reinspect relevant files before relying on an old summary.'
+        )
         if tool_history:
             prompt = (
                 f'{prompt}\n\nTool execution history (oldest to newest):\n{tool_history}\n\n'
@@ -1376,10 +1387,9 @@ async def chat_completion_tools_handler(
 
     def get_completion_review_payload(messages, task_model_id, tool_history, final_answer):
         user_message = get_last_user_message(messages)
-        recent_messages = messages[-6:] if len(messages) > 6 else messages
-        chat_history = '\n'.join(
-            f'{message["role"].upper()}: """{get_content_from_message(message)}"""'
-            for message in recent_messages
+        chat_history = render_recent_chat_history(
+            messages,
+            max_chars=planner_recent_history_max_chars,
         )
         return {
             'model': task_model_id,
@@ -1413,11 +1423,22 @@ async def chat_completion_tools_handler(
     event_emitter = extra_params['__event_emitter__']
     metadata = extra_params['__metadata__']
 
-    # One batched SELECT instead of four sequential round trips.
+    persistent_agent_context = {}
+    can_persist_agent_context = False
+    chat_id = metadata.get('chat_id')
+    if is_saved_chat_id(chat_id):
+        chat = await Chats.get_chat_by_id_and_user_id(chat_id, user.id)
+        if chat:
+            can_persist_agent_context = True
+            persistent_agent_context = normalize_agent_context((chat.chat or {}).get('taterAgentContext'))
+    persistent_agent_context_text = render_agent_context(persistent_agent_context)
+
+    # One batched SELECT instead of several sequential round trips.
     task_config = await Config.get_many(
         'task.model.default',
         'task.model.external',
         'task.tools.prompt_template',
+        'tater.context_window',
     )
     task_model_id = get_task_model_id(
         body['model'],
@@ -1425,6 +1446,14 @@ async def chat_completion_tools_handler(
         task_config.get('task.model.external'),
         models,
     )
+    try:
+        configured_context_window = normalize_tater_context_window(
+            task_config.get('tater.context_window') or DEFAULT_TATER_CONTEXT_WINDOW
+        )
+    except ValueError:
+        configured_context_window = DEFAULT_TATER_CONTEXT_WINDOW
+    planner_tool_history_max_chars = agent_history_char_limit(configured_context_window)
+    planner_recent_history_max_chars = recent_history_char_limit(configured_context_window)
 
     skip_files = False
     sources = []
@@ -1443,20 +1472,26 @@ async def chat_completion_tools_handler(
         f'{tools_function_calling_prompt}\n\n'
         'This is an iterative agent loop. Every response must be exactly one JSON object with this shape:\n'
         '{"progress":"","tool_calls":[{"name":"terminal","parameters":{"command":"..."}}],'
-        '"final_answer":""}\n'
+        '"final_answer":"","context":{}}\n'
+        f'The configured model context window is {configured_context_window} tokens. Keep commands and returned '
+        'content focused so the task stays within that budget. '
         'Select only the next necessary action. Calls returned together must be independent because they execute as '
         'one step. Use the execution history on later steps to inspect results, fix failures, and verify the work. '
         'Never repeat an action that already succeeded unless rerunning it is needed to verify a later change. Use '
         'terminal for every local action; each call already returns its command output and exit status. For a '
         'simple read-only question, use the minimum number of terminal calls (usually one). If one successful result '
         'directly answers the request, the next response must finish with final_answer instead of exploring further. '
+        'For repository coding work, begin a new task or resumed task by confirming the working directory, repository '
+        'root, branch, and git status in one terminal call. Use the terminal cwd parameter to enter the repository. '
         'For a useful stage change in a multi-step task, put one short, natural user-facing update in progress; '
         'otherwise leave it '
         'empty. A progress update does not complete the task. Never put JSON, commands, tool names, or tool-call '
         'markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty tool_calls array '
         'only after every requested part has been completed or a concrete blocker has been established, and then put '
-        'a complete answer for the user in final_answer. If the available results are not enough to write that answer, '
-        'continue with another tool call instead.'
+        'a complete answer for the user in final_answer. On that final response, context must be a concise complete '
+        'snapshot with objective, repository_root, branch, requirements, plan, completed, files_changed, tests, '
+        'blockers, cwd, and execution_summary. Keep context empty while requesting tools. If the available results '
+        'are not enough to write the answer or context snapshot, continue with another tool call instead.'
     )
     operating_message = get_system_message(body.get('messages', []))
     operating_instructions = get_content_from_message(operating_message) if operating_message else ''
@@ -1624,6 +1659,7 @@ async def chat_completion_tools_handler(
     max_iterations = agent_iteration_limit()
     loop_stopped = False
     prepared_final_answer = ''
+    prepared_agent_context = {}
     emitted_progress_updates = []
     emitted_progress_text: set[str] = set()
     completion_protocol_failures = 0
@@ -1635,7 +1671,7 @@ async def chat_completion_tools_handler(
             body['messages'],
             task_model_id,
             tools_function_calling_prompt,
-            render_tool_history(history_records),
+            render_tool_history(history_records, max_chars=planner_tool_history_max_chars),
         )
 
         planning_error = None
@@ -1685,22 +1721,30 @@ async def chat_completion_tools_handler(
 
         if not tool_calls:
             prepared_final_answer = plan['final_answer'] if history_records else ''
-            if history_records and not prepared_final_answer:
+            prepared_agent_context = plan['context'] if history_records else {}
+            if history_records and (not prepared_final_answer or not prepared_agent_context):
                 completion_protocol_failures += 1
+                missing_completion_fields = []
+                if not prepared_final_answer:
+                    missing_completion_fields.append('final_answer')
+                if not prepared_agent_context:
+                    missing_completion_fields.append('context')
                 history_records.append(
                     {
                         'iteration': iteration,
                         'tool': 'agent_protocol',
                         'status': 'failed',
                         'result': (
-                            'The task cannot be marked complete without final_answer. Continue working if anything '
-                            'is missing; otherwise return an empty tool_calls array and a complete final_answer.'
+                            'The task cannot be marked complete without '
+                            f'{" and ".join(missing_completion_fields)}. Continue working if anything is missing; '
+                            'otherwise return an empty tool_calls array, a complete final_answer, and the full '
+                            'persistent context snapshot.'
                         ),
                     }
                 )
                 if completion_protocol_failures < 3:
                     continue
-                agent_stop_message = 'Tool planning stopped because it did not provide a completion answer.'
+                agent_stop_message = 'Tool planning stopped because it did not provide a complete answer and context.'
                 append_agent_notice(agent_stop_message)
                 loop_stopped = True
                 break
@@ -1710,7 +1754,7 @@ async def chat_completion_tools_handler(
                     review_payload = get_completion_review_payload(
                         body['messages'],
                         task_model_id,
-                        render_tool_history(history_records),
+                        render_tool_history(history_records, max_chars=planner_tool_history_max_chars),
                         prepared_final_answer,
                     )
                     review_response = await generate_chat_completion(request, form_data=review_payload, user=user)
@@ -1722,6 +1766,7 @@ async def chat_completion_tools_handler(
                 if not review['complete']:
                     completion_review_failures += 1
                     prepared_final_answer = ''
+                    prepared_agent_context = {}
                     history_records.append(
                         {
                             'iteration': iteration,
@@ -1770,6 +1815,46 @@ async def chat_completion_tools_handler(
         loop_stopped = True
 
     direct_answer = prepared_final_answer if not loop_stopped else agent_stop_message
+
+    if history_records and can_persist_agent_context:
+        context_update = dict(prepared_agent_context) if isinstance(prepared_agent_context, dict) else {}
+        if not context_update.get('objective') and not persistent_agent_context.get('objective'):
+            context_update['objective'] = get_last_user_message(body.get('messages', [])) or ''
+        if direct_answer and not context_update.get('execution_summary'):
+            context_update['execution_summary'] = direct_answer
+
+        for record in reversed(history_records):
+            if record.get('tool') != 'terminal':
+                continue
+            result = record.get('result')
+            if isinstance(result, str) and result[:1] in {'{', '['}:
+                try:
+                    result = json.loads(result)
+                except json.JSONDecodeError:
+                    result = None
+            if isinstance(result, dict) and result.get('cwd'):
+                context_update['cwd'] = str(result['cwd'])
+                break
+
+        if loop_stopped and agent_stop_message:
+            blockers = context_update.get('blockers', persistent_agent_context.get('blockers', []))
+            blockers = [blockers] if isinstance(blockers, str) else list(blockers or [])
+            if agent_stop_message not in blockers:
+                blockers.append(agent_stop_message)
+            context_update['blockers'] = blockers
+
+        saved_agent_context = normalize_agent_context(context_update, persistent_agent_context)
+        try:
+            saved_chat = await Chats.update_chat_by_id(
+                chat_id,
+                {'taterAgentContext': saved_agent_context},
+                touch=False,
+            )
+            if saved_chat is None:
+                log.warning('Could not persist Tater agent context for chat %s', chat_id)
+        except Exception:
+            log.exception('Could not persist Tater agent context for chat %s', chat_id)
+
     if history_records and direct_answer:
         body['_tater_agent_response'] = {
             'content': direct_answer,

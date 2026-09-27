@@ -35,11 +35,12 @@ from open_webui.env import (
     REDIS_KEY_PREFIX,
 )
 from open_webui.models.access_grants import AccessGrants
+from open_webui.models.chats import Chats
 from open_webui.models.config import Config
 from open_webui.models.groups import Groups
 from open_webui.models.tools import Tools
 from open_webui.models.users import UserModel
-from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID
+from open_webui.local_terminal.runtime import LOCAL_TERMINAL_ID, local_terminal_runtime
 from open_webui.local_terminal.tools import get_local_terminal_tools
 from open_webui.utils.access_control import has_connection_access
 from open_webui.utils.headers import (
@@ -962,7 +963,17 @@ async def get_terminal_tools(
     """
     if terminal_id == LOCAL_TERMINAL_ID:
         metadata = extra_params.get('__metadata__', {})
-        return get_local_terminal_tools(user.id, metadata.get('chat_id'))
+        chat_id = metadata.get('chat_id')
+        if chat_id:
+            chat = await Chats.get_chat_by_id_and_user_id(chat_id, user.id)
+            agent_context = (chat.chat or {}).get('taterAgentContext') if chat else None
+            saved_cwd = str((agent_context or {}).get('cwd') or '').strip()
+            if saved_cwd:
+                try:
+                    local_terminal_runtime.set_cwd(user.id, chat_id, saved_cwd)
+                except ValueError:
+                    log.info('Saved terminal cwd no longer exists for chat %s: %s', chat_id, saved_cwd)
+        return get_local_terminal_tools(user.id, chat_id)
 
     connections = await Config.get('terminal_server.connections', []) or []
     connection = next(

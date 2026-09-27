@@ -6,6 +6,7 @@ export type TaterProfile = {
 	api_key_configured: boolean;
 	base_model: string;
 	hydra_model: string;
+	context_window: number;
 };
 
 export type TaterProfileInput = {
@@ -13,6 +14,7 @@ export type TaterProfileInput = {
 	api_key: string | null;
 	base_model: string;
 	hydra_model: string;
+	context_window: number;
 };
 
 export type TaterProfileVerification = {

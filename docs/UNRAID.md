@@ -41,6 +41,7 @@ docker run --detach \
   --env TATER_API_KEY= \
   --env TATER_BASE_MODEL=tater/base \
   --env TATER_HYDRA_MODEL=tater/hydra \
+  --env TATER_CONTEXT_WINDOW=32768 \
   --env WEBUI_SECRET_KEY=replace-with-a-long-random-secret \
   ghcr.io/tatertotterson/tater-open-webui:latest
 ```

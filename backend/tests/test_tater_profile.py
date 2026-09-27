@@ -28,6 +28,7 @@ class TaterProfileTests(unittest.TestCase):
             api_key=' secret ',
             base_model='tater/base',
             hydra_model='tater/hydra',
+            context_window=131072,
         )
 
         self.assertEqual(updates['openai.api_base_urls'], ['https://tater.example/v1'])
@@ -35,6 +36,18 @@ class TaterProfileTests(unittest.TestCase):
         self.assertEqual(updates['ui.default_models'], 'tater/base')
         self.assertEqual(updates['openai.api_configs']['0']['provider'], 'tater')
         self.assertEqual(updates['models.default_params']['function_calling'], 'legacy')
+        self.assertEqual(updates['tater.context_window'], 131072)
+        self.assertEqual(updates['models.default_params']['compact_token_threshold'], 104857)
+        self.assertTrue(updates['chat.context_compaction.enable'])
+        self.assertEqual(updates['chat.context_compaction.token_cap'], 104857)
+
+    def test_context_window_keeps_twenty_percent_for_output_and_tools(self):
+        self.assertEqual(tater_profile.context_compaction_threshold(32768), 26214)
+        self.assertEqual(tater_profile.context_compaction_threshold(4096), 2048)
+
+    def test_rejects_invalid_context_window(self):
+        with self.assertRaisesRegex(ValueError, 'between'):
+            tater_profile.normalize_tater_context_window(2048)
 
     def test_requires_distinct_base_and_hydra_models(self):
         with self.assertRaisesRegex(ValueError, 'must be different'):

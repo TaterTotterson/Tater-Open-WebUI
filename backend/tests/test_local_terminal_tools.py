@@ -10,7 +10,7 @@ class LocalTerminalToolTests(unittest.IsolatedAsyncioTestCase):
         tools, prompt = get_local_terminal_tools('user', 'chat')
 
         self.assertEqual(set(tools), {'terminal'})
-        self.assertEqual(set(tools['terminal']['spec']['parameters']['properties']), {'command'})
+        self.assertEqual(set(tools['terminal']['spec']['parameters']['properties']), {'command', 'cwd'})
         self.assertIn('Use terminal for every local action', prompt)
         self.assertIn('returns its output and exit status automatically', prompt)
 
@@ -18,6 +18,15 @@ class LocalTerminalToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['output'], 'terminal-result')
         self.assertEqual(result['exit_code'], 0)
         self.assertEqual(result['status'], 'done')
+
+    async def test_optional_cwd_persists_for_later_calls(self):
+        tools, _ = get_local_terminal_tools('cwd-user', 'cwd-chat')
+
+        first = await tools['terminal']['callable']('pwd', cwd='/tmp')
+        second = await tools['terminal']['callable']('pwd')
+
+        self.assertEqual(first['cwd'], '/tmp')
+        self.assertEqual(second['cwd'], '/tmp')
 
 
 if __name__ == '__main__':

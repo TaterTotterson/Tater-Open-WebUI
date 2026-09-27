@@ -25,10 +25,15 @@ LOCAL_TERMINAL_TOOL_SPECS = {
             'Type a command into the Tater Open WebUI host terminal and wait for it to finish. '
             'Use ordinary shell commands for every local action, including pwd, ls, cd, cat, rg, sed, Git, '
             'editing, builds, tests, package management, processes, and file inspection. The command result '
-            'automatically includes its output and exit status.'
+            'automatically includes its output and exit status. Set cwd when the command should run from a '
+            'specific directory; that directory becomes the current directory for later terminal calls in this chat.'
         ),
         {
             'command': {'type': 'string', 'description': 'The shell command to execute.'},
+            'cwd': {
+                'type': 'string',
+                'description': 'Optional absolute or current-directory-relative working directory.',
+            },
         },
         ['command'],
     ),
@@ -62,6 +67,7 @@ def local_terminal_system_prompt(cwd: str) -> str:
 Current working directory: {cwd}
 
 - Use terminal for every local action. Type ordinary shell commands such as pwd, ls, find, rg, sed, cat, Git, editors, builds, and tests.
+- Set the optional cwd parameter when entering a project directory. It persists as this chat's terminal directory; a shell-only `cd` does not persist after that command exits.
 - Each terminal call waits for the command and returns its output and exit status automatically. Never look for another tool to fetch results.
 - Never use tater_hydra for work on this computer. Reserve it for Tater-owned devices, Verbas, Cores, Portals, media, and automations.
 - Inspect relevant files before editing and preserve unrelated user changes.
@@ -81,11 +87,12 @@ Current working directory: {cwd}
 def get_local_terminal_tools(user_id: str, session_id: str | None) -> tuple[dict[str, dict], str]:
     runtime = local_terminal_runtime
 
-    async def terminal(command: str):
+    async def terminal(command: str, cwd: str | None = None):
         result = await runtime.run_command(
             user_id,
             session_id,
             command,
+            cwd=cwd,
             timeout_seconds=600,
             background=False,
         )

@@ -23,6 +23,7 @@
 	let apiKeyChanged = false;
 	let baseModel = 'tater/base';
 	let hydraModel = 'tater/hydra';
+	let contextWindow = 32768;
 	let saving = false;
 	let verifying = false;
 	let verification: TaterProfileVerification | null = null;
@@ -32,6 +33,7 @@
 		apiBaseUrl = profile.api_base_url;
 		baseModel = profile.base_model;
 		hydraModel = profile.hydra_model;
+		contextWindow = profile.context_window;
 		apiKey = '';
 		apiKeyChanged = false;
 	};
@@ -40,7 +42,8 @@
 		api_base_url: apiBaseUrl,
 		api_key: apiKeyChanged ? apiKey : null,
 		base_model: baseModel,
-		hydra_model: hydraModel
+		hydra_model: hydraModel,
+		context_window: Math.max(4096, Math.floor(Number(contextWindow) || 32768))
 	});
 
 	const refreshModels = async () => {
@@ -57,6 +60,7 @@
 			apiBaseUrl = profile.api_base_url;
 			baseModel = profile.base_model;
 			hydraModel = profile.hydra_model;
+			contextWindow = profile.context_window;
 			apiKey = '';
 			apiKeyChanged = false;
 			await refreshModels();
@@ -177,6 +181,23 @@
 						</span>
 					</label>
 				</div>
+
+				<label class="block">
+					<span class="text-xs text-gray-600 dark:text-gray-400">Model context window</span>
+					<input
+						class="mt-1 {inputClass}"
+						type="number"
+						min="4096"
+						max="2000000"
+						step="1024"
+						bind:value={contextWindow}
+						required
+					/>
+					<span class="mt-1 block text-[0.6875rem] text-gray-400 dark:text-gray-600">
+						Set this to the context length configured on the server. Tater Open WebUI will
+						compact at 80% and reserve the remainder for tool instructions and the answer.
+					</span>
+				</label>
 
 				{#if verification}
 					<div

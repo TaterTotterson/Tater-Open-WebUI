@@ -67,6 +67,7 @@ variables on a new data directory.
 | `TATER_API_KEY`               | empty                      | Server-side Tater credential      |
 | `TATER_BASE_MODEL`            | `tater/base`               | Normal chat and local agent model |
 | `TATER_HYDRA_MODEL`           | `tater/hydra`              | Tater capability model            |
+| `TATER_CONTEXT_WINDOW`        | `32768`                    | Configured model context tokens    |
 | `TATER_HYDRA_TIMEOUT_SECONDS` | `600`                      | Hydra request timeout             |
 | `TATER_AGENT_MAX_ITERATIONS`  | `32`                       | Maximum planning/tool rounds      |
 | `TATER_WEBUI_WORKSPACE`       | process directory          | Initial terminal directory        |
@@ -74,7 +75,9 @@ variables on a new data directory.
 The API URL must point to the `/v1` prefix, not directly to
 `/chat/completions`. Saving the Tater profile keeps the API key server-side,
 sets the base model as the default, and reserves the Hydra model from ordinary
-model selection.
+model selection. Set the context window to the maximum configured by the model
+server. Tater Open WebUI compacts at 80 percent of that value, preserving the
+remaining space for terminal instructions, tool results, and the response.
 
 Hydra receives a self-contained task rather than the entire local transcript.
 This avoids sending unrelated terminal output and local file contents to a

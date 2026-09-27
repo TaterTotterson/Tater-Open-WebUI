@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from typing import Any
 
 DEFAULT_TATER_AGENT_MAX_ITERATIONS = 32
@@ -14,6 +15,25 @@ TATER_AGENT_REPEAT_LIMIT = 3
 TATER_AGENT_PROGRESS_MAX_CHARS = 600
 TATER_AGENT_FINAL_ANSWER_MAX_CHARS = 40_000
 TATER_AGENT_REVIEW_REASON_MAX_CHARS = 2_000
+TATER_AGENT_CONTEXT_STRING_MAX_CHARS = 4_000
+TATER_AGENT_CONTEXT_LIST_MAX_ITEMS = 50
+TATER_AGENT_RECENT_MESSAGE_LIMIT = 12
+
+TATER_AGENT_CONTEXT_STRING_FIELDS = (
+    'objective',
+    'repository_root',
+    'branch',
+    'cwd',
+    'execution_summary',
+)
+TATER_AGENT_CONTEXT_LIST_FIELDS = (
+    'requirements',
+    'plan',
+    'completed',
+    'files_changed',
+    'tests',
+    'blockers',
+)
 
 _VOLATILE_RESULT_KEYS = {
     'created_at',
@@ -33,6 +53,87 @@ def agent_iteration_limit(value: str | int | None = None) -> int:
     except (TypeError, ValueError):
         limit = DEFAULT_TATER_AGENT_MAX_ITERATIONS
     return max(1, min(limit, MAX_TATER_AGENT_MAX_ITERATIONS))
+
+
+def agent_history_char_limit(context_window: int | str | None) -> int:
+    try:
+        tokens = int(context_window or 0)
+    except (TypeError, ValueError):
+        return TATER_AGENT_HISTORY_MAX_CHARS
+    if tokens <= 0:
+        return TATER_AGENT_HISTORY_MAX_CHARS
+    return min(TATER_AGENT_HISTORY_MAX_CHARS, max(4_000, tokens * 2))
+
+
+def recent_history_char_limit(context_window: int | str | None) -> int:
+    try:
+        tokens = int(context_window or 0)
+    except (TypeError, ValueError):
+        tokens = 0
+    return min(48_000, max(8_000, tokens * 2 if tokens else 24_000))
+
+
+def render_recent_chat_history(
+    messages: list[dict[str, Any]],
+    *,
+    max_messages: int = TATER_AGENT_RECENT_MESSAGE_LIMIT,
+    max_chars: int = 24_000,
+) -> str:
+    lines = []
+    for message in messages[-max(1, max_messages) :]:
+        content = message.get('content', '')
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False, default=str)
+        lines.append(f'{str(message.get("role") or "unknown").upper()}: """{content}"""')
+
+    selected = []
+    used = 0
+    for line in reversed(lines):
+        separator_size = 1 if selected else 0
+        if used + separator_size + len(line) <= max_chars:
+            selected.append(line)
+            used += separator_size + len(line)
+            continue
+        if not selected:
+            selected.append(line[-max_chars:])
+        break
+    selected.reverse()
+    if len(selected) < len(lines):
+        selected.insert(0, '...[older recent messages omitted]...')
+    return '\n'.join(selected)[-max_chars:]
+
+
+def normalize_agent_context(value: Any, previous: Any = None) -> dict[str, Any]:
+    previous = previous if isinstance(previous, dict) else {}
+    value = value if isinstance(value, dict) else {}
+    normalized: dict[str, Any] = {}
+
+    for field in TATER_AGENT_CONTEXT_STRING_FIELDS:
+        raw = value[field] if field in value else previous.get(field, '')
+        normalized[field] = str(raw or '').strip()[:TATER_AGENT_CONTEXT_STRING_MAX_CHARS]
+
+    for field in TATER_AGENT_CONTEXT_LIST_FIELDS:
+        raw = value[field] if field in value else previous.get(field, [])
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            raw = []
+        normalized[field] = [
+            str(item).strip()[:TATER_AGENT_CONTEXT_STRING_MAX_CHARS]
+            for item in raw[:TATER_AGENT_CONTEXT_LIST_MAX_ITEMS]
+            if str(item).strip()
+        ]
+
+    normalized['updated_at'] = int(time.time())
+    return normalized
+
+
+def render_agent_context(value: Any) -> str:
+    context = normalize_agent_context(value)
+    context.pop('updated_at', None)
+    if not any(context.values()):
+        return 'No persistent working context has been recorded yet.'
+    return json.dumps(context, ensure_ascii=False, separators=(',', ':'))
 
 
 def parse_tool_plan_response(
@@ -81,10 +182,13 @@ def parse_tool_plan_response(
         calls.append({'name': name, 'parameters': parameters})
     progress = payload.get('progress', '')
     final_answer = payload.get('final_answer', '')
+    context = payload.get('context', {})
     if not isinstance(progress, str):
         raise ValueError('progress must be a string')
     if not isinstance(final_answer, str):
         raise ValueError('final_answer must be a string')
+    if not isinstance(context, dict):
+        raise ValueError('context must be an object')
 
     progress = progress.strip()[:TATER_AGENT_PROGRESS_MAX_CHARS]
     final_answer = final_answer.strip()[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS]
@@ -94,11 +198,14 @@ def parse_tool_plan_response(
         raise ValueError('final_answer must not contain tool-call markup')
     if calls and final_answer:
         raise ValueError('final_answer must be empty while tool_calls are present')
+    if calls and context:
+        raise ValueError('context must be empty while tool_calls are present')
 
     return {
         'progress': progress,
         'tool_calls': calls,
         'final_answer': final_answer,
+        'context': context,
     }
 
 
@@ -110,7 +217,7 @@ def tool_plan_retry_instruction(error: Exception | str) -> str:
     reason = str(error).strip()[:300] or 'invalid tool-plan response'
     return (
         f'Your previous response could not be used ({reason}). Retry the same planning step now. '
-        'Return exactly one valid JSON object with progress, tool_calls, and final_answer fields. '
+        'Return exactly one valid JSON object with progress, tool_calls, final_answer, and context fields. '
         'Do not include Markdown, tool-call markup, or prose outside the JSON object.'
     )
 

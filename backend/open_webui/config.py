@@ -36,8 +36,10 @@ from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.tater_profile import (
     DEFAULT_TATER_API_BASE_URL,
     DEFAULT_TATER_BASE_MODEL,
+    DEFAULT_TATER_CONTEXT_WINDOW,
     DEFAULT_TATER_HYDRA_MODEL,
     normalize_tater_api_base_url,
+    normalize_tater_context_window,
 )
 
 
@@ -1943,6 +1945,13 @@ ENABLE_LDAP_GROUP_CREATION = os.getenv('ENABLE_LDAP_GROUP_CREATION', 'False').lo
 
 LDAP_ATTRIBUTE_FOR_GROUPS = os.getenv('LDAP_ATTRIBUTE_FOR_GROUPS', 'memberOf')
 
+try:
+    TATER_CONTEXT_WINDOW = normalize_tater_context_window(
+        os.getenv('TATER_CONTEXT_WINDOW', str(DEFAULT_TATER_CONTEXT_WINDOW))
+    )
+except ValueError:
+    TATER_CONTEXT_WINDOW = DEFAULT_TATER_CONTEXT_WINDOW
+
 DEFAULT_CONFIG = {
     'openai.enable': ENABLE_OPENAI_API,
     'openai.api_keys': OPENAI_API_KEYS,
@@ -1950,6 +1959,7 @@ DEFAULT_CONFIG = {
     'openai.api_configs': OPENAI_API_CONFIGS,
     'tater.base_model': DEFAULT_MODELS,
     'tater.hydra_model': os.getenv('TATER_HYDRA_MODEL', DEFAULT_TATER_HYDRA_MODEL),
+    'tater.context_window': TATER_CONTEXT_WINDOW,
     'models.base_models_cache': ENABLE_BASE_MODELS_CACHE,
     'tool_server.connections': TOOL_SERVER_CONNECTIONS,
     'oauth.client.timeout': OAUTH_CLIENT_TIMEOUT,

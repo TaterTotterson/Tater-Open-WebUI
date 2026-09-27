@@ -31,6 +31,23 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(plan['progress'], 'I’ll inspect the project first.')
         self.assertEqual(plan['tool_calls'], [])
         self.assertEqual(plan['final_answer'], 'Done.')
+        self.assertEqual(plan['context'], {})
+
+    def test_parses_persistent_context_with_final_answer(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"progress":"","tool_calls":[],"final_answer":"Done.",'
+            '"context":{"objective":"Fix login","files_changed":["auth.py"]}}'
+        )
+
+        self.assertEqual(plan['context']['objective'], 'Fix login')
+        self.assertEqual(plan['context']['files_changed'], ['auth.py'])
+
+    def test_rejects_context_while_tools_are_requested(self):
+        with self.assertRaisesRegex(ValueError, 'context must be empty'):
+            tater_agent.parse_tool_plan_response(
+                '{"progress":"","tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}],'
+                '"final_answer":"","context":{"cwd":"/workspace"}}'
+            )
 
     def test_rejects_tool_markup_in_progress(self):
         with self.assertRaisesRegex(ValueError, 'must not contain tool-call markup'):
@@ -77,13 +94,39 @@ class TaterAgentTests(unittest.TestCase):
         instruction = tater_agent.tool_plan_retry_instruction('No tool-plan JSON object found')
 
         self.assertIn('Retry the same planning step', instruction)
-        self.assertIn('progress, tool_calls, and final_answer', instruction)
+        self.assertIn('progress, tool_calls, final_answer, and context', instruction)
         self.assertIn('Do not include Markdown', instruction)
 
     def test_retry_instruction_limits_error_length(self):
         instruction = tater_agent.tool_plan_retry_instruction('x' * 500)
 
         self.assertLess(len(instruction), 600)
+
+    def test_recent_history_keeps_latest_messages_within_budget(self):
+        history = tater_agent.render_recent_chat_history(
+            [
+                {'role': 'user', 'content': 'old-' + ('a' * 80)},
+                {'role': 'assistant', 'content': 'new-' + ('b' * 80)},
+            ],
+            max_chars=110,
+        )
+
+        self.assertIn('new-', history)
+        self.assertNotIn('old-', history)
+
+    def test_agent_context_merges_prior_fields(self):
+        context = tater_agent.normalize_agent_context(
+            {'branch': 'feature'},
+            {'objective': 'Build it', 'branch': 'main', 'tests': ['unit tests pass']},
+        )
+
+        self.assertEqual(context['objective'], 'Build it')
+        self.assertEqual(context['branch'], 'feature')
+        self.assertEqual(context['tests'], ['unit tests pass'])
+
+    def test_context_window_bounds_planner_history(self):
+        self.assertEqual(tater_agent.agent_history_char_limit(4096), 8192)
+        self.assertEqual(tater_agent.agent_history_char_limit(1000000), 120000)
 
     def test_clamps_iteration_limit(self):
         self.assertEqual(tater_agent.agent_iteration_limit('0'), 1)
