@@ -680,7 +680,7 @@
 				await folderRegistry[eventData.folder_id]?.setFolderItems?.();
 			}
 		} else if (event.data?.type === 'tater:tasks') {
-			await refreshTaterTasks();
+			await Promise.all([refreshTaterTasks(), refreshChatRows()]);
 		}
 	};
 

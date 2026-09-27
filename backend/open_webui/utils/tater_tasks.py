@@ -6,7 +6,7 @@ import logging
 import time
 from datetime import timedelta
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
@@ -18,10 +18,14 @@ from open_webui.internal.db import get_async_db_context
 from open_webui.models.chat_messages import ChatMessages
 from open_webui.models.chats import Chat, ChatForm, ChatModel, Chats
 from open_webui.models.users import UserModel
-from open_webui.tasks import create_task, has_active_tasks, list_tasks
+from open_webui.tasks import create_task, list_tasks
 from open_webui.utils.auth import create_token
 from open_webui.utils.misc import get_last_user_message
-from open_webui.utils.tater_agent import merge_task_context, normalize_task_title
+from open_webui.utils.tater_agent import (
+    background_task_result_answer,
+    merge_task_context,
+    normalize_task_title,
+)
 
 TATER_TASK_TYPE = 'tater_task'
 TATER_TASK_ACTIVE_STATUSES = {'queued', 'running', 'cancelling'}
@@ -228,8 +232,7 @@ def _message_text(message: dict | None) -> str:
     return ''
 
 
-async def _queue_parent_result(
-    source_request: Request,
+async def _post_parent_result(
     *,
     user: UserModel,
     parent_chat_id: str,
@@ -239,7 +242,7 @@ async def _queue_parent_result(
     status: str,
     summary: str,
     error: str,
-    run: dict[str, Any],
+    model_id: str,
 ) -> None:
     task_chat = await Chats.get_chat_by_id(task_chat_id)
     task_context = ((task_chat.chat or {}).get('taterAgentContext') if task_chat else None) or {}
@@ -259,14 +262,15 @@ async def _queue_parent_result(
     if task_context:
         lines.extend(['', '--- FINAL WORKING CONTEXT ---', str(task_context)[:12_000]])
 
-    pending_message_id = str(uuid4())
-    pending_message = {
-        'id': pending_message_id,
+    result_message_id = str(uuid5(NAMESPACE_URL, f'tater-task-result:{task_chat_id}'))
+    result_envelope = '\n'.join(lines)
+    internal_message = {
+        'id': result_message_id,
         'parentId': None,
         'childrenIds': [],
         'role': 'user',
-        'content': '\n'.join(lines),
-        'model': run['model_id'],
+        'content': result_envelope,
+        'model': model_id,
         'meta': {
             'internal': True,
             'type': TATER_TASK_TYPE,
@@ -275,7 +279,19 @@ async def _queue_parent_result(
         },
         'timestamp': int(time.time()),
     }
+    assistant_message_id = str(uuid5(NAMESPACE_URL, f'tater-task-answer:{task_chat_id}'))
+    assistant_message = {
+        'id': assistant_message_id,
+        'parentId': result_message_id,
+        'childrenIds': [],
+        'role': 'assistant',
+        'content': background_task_result_answer(result_envelope),
+        'done': True,
+        'model': model_id,
+        'timestamp': int(time.time()),
+    }
 
+    parent_folder_id = None
     async with get_async_db_context() as db:
         statement = select(Chat).where(Chat.id == parent_chat_id, Chat.user_id == user.id)
         if db.bind.dialect.name == 'postgresql':
@@ -283,7 +299,8 @@ async def _queue_parent_result(
         result = await db.execute(statement)
         parent = result.scalar_one_or_none()
         if not parent:
-            return
+            raise RuntimeError('The originating chat no longer exists.')
+        parent_folder_id = parent.folder_id
 
         parent_data = copy.deepcopy(parent.chat or {})
         if task_context:
@@ -293,49 +310,60 @@ async def _queue_parent_result(
             )
         history = parent_data.setdefault('history', {})
         messages = history.setdefault('messages', {})
-        done_assistants = [
-            message
-            for message in messages.values()
-            if message.get('role') == 'assistant' and message.get('done') is not False
-        ]
-        result_parent_id = (
-            max(done_assistants, key=lambda message: message.get('timestamp', 0)).get('id')
-            if done_assistants
-            else parent_message_id
-        )
-        pending_message['parentId'] = result_parent_id
-        if await has_active_tasks(source_request.app.state.redis, parent_chat_id):
-            pending_message['meta']['status'] = 'pending'
-        messages[pending_message_id] = pending_message
+        existing_result = messages.get(result_message_id)
+        if existing_result:
+            result_parent_id = existing_result.get('parentId')
+        else:
+            current_id = history.get('currentId')
+            current_message = messages.get(current_id) if current_id else None
+            if current_message and current_message.get('role') == 'assistant':
+                result_parent_id = current_id
+            else:
+                assistants = [message for message in messages.values() if message.get('role') == 'assistant']
+                result_parent_id = (
+                    max(assistants, key=lambda message: message.get('timestamp', 0)).get('id')
+                    if assistants
+                    else parent_message_id
+                )
+        internal_message['parentId'] = result_parent_id
+        internal_message['childrenIds'] = [assistant_message_id]
+        messages[result_message_id] = internal_message
+        messages[assistant_message_id] = assistant_message
         if result_parent_id and result_parent_id in messages:
             children = messages[result_parent_id].setdefault('childrenIds', [])
-            if pending_message_id not in children:
-                children.append(pending_message_id)
+            if result_message_id not in children:
+                children.append(result_message_id)
         history['messages'] = messages
+        history['currentId'] = assistant_message_id
         parent.chat = {**parent_data, 'history': history}
+        parent.current_message_id = assistant_message_id
         parent.updated_at = int(time.time())
         flag_modified(parent, 'chat')
         await db.commit()
 
-    await ChatMessages.upsert_message(pending_message_id, parent_chat_id, user.id, pending_message)
+    await ChatMessages.upsert_message(result_message_id, parent_chat_id, user.id, internal_message)
+    await ChatMessages.upsert_message(assistant_message_id, parent_chat_id, user.id, assistant_message)
 
-    if pending_message['meta'].get('status') == 'pending':
-        from open_webui.socket.main import sio
+    from open_webui.socket.main import sio
 
-        await sio.emit(
-            'events',
-            {
-                'chat_id': parent_chat_id,
-                'message_id': pending_message_id,
-                'data': {'type': 'chat:reload'},
-            },
-            room=f'user:{user.id}',
-        )
-        return
-
-    from open_webui.utils.subagents import process_pending_internal_messages
-
-    await process_pending_internal_messages(source_request, parent_chat_id, user.id, run)
+    await sio.emit(
+        'events',
+        {
+            'chat_id': parent_chat_id,
+            'message_id': assistant_message_id,
+            'data': {'type': 'chat:reload'},
+        },
+        room=f'user:{user.id}',
+    )
+    await sio.emit(
+        'events',
+        {
+            'chat_id': parent_chat_id,
+            'message_id': assistant_message_id,
+            'data': {'type': 'chat:list', 'data': {'folder_id': parent_folder_id}},
+        },
+        room=f'user:{user.id}',
+    )
 
 
 async def start_tater_task(
@@ -519,8 +547,7 @@ async def start_tater_task(
             delivery_error = None
             for attempt in range(3):
                 try:
-                    await _queue_parent_result(
-                        request,
+                    await _post_parent_result(
                         user=user,
                         parent_chat_id=parent_chat_id,
                         parent_message_id=metadata.get('assistant_message_id') or metadata.get('user_message_id'),
@@ -529,7 +556,7 @@ async def start_tater_task(
                         status=status,
                         summary=summary,
                         error=error,
-                        run=run,
+                        model_id=run['model_id'],
                     )
                     delivery_error = None
                     break
