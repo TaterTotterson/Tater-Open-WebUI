@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -44,6 +45,127 @@ _VOLATILE_RESULT_KEYS = {
     'next_offset',
     'started_at',
 }
+
+_CONVERSATIONAL_CONFIRMATIONS = {
+    'ok',
+    'okay',
+    'yes',
+    'yep',
+    'yeah',
+    'sure',
+    'go ahead',
+    'proceed',
+    'continue',
+    'do it',
+}
+_CONVERSATIONAL_ONLY = _CONVERSATIONAL_CONFIRMATIONS | {
+    'k',
+    'kk',
+    'thanks',
+    'thank you',
+    'thx',
+    'got it',
+    'understood',
+    'sounds good',
+    'perfect',
+    'great',
+    'cool',
+    'nice',
+    'awesome',
+    'alright',
+    'all right',
+    'hello',
+    'hi',
+    'hey',
+}
+_TASK_STATUS_RE = re.compile(
+    r'(?:\b(?:task|job|background work|process)\b.*\b(?:status|progress|running|finished|done|complete|result|'
+    r'update|happened|cancel|stop)\b|\b(?:what happened|how is|how\'s|where is)\b.*\b(?:task|job|work)\b|'
+    r'\b(?:are you still working|is it still running|is that still running|did it finish|did that finish|'
+    r'is it done|is that done|any update)\b)',
+    re.IGNORECASE,
+)
+_EXPLICIT_WORK_RE = re.compile(
+    r'\b(?:run|running|search|searching|find|finding|inspect|inspecting|open|opening|read|reading|edit|editing|'
+    r'change|changing|write|writing|build|building|test|testing|install|installing|clone|cloning|commit|'
+    r'committing|push|pushing|pull|pulling|create|creating|delete|deleting|move|moving|copy|copying|list|'
+    r'listing|show|showing|check|checking|continue|continuing|resume|resuming|proceed|proceeding)\b',
+    re.IGNORECASE,
+)
+_PENDING_ACTION_RE = re.compile(
+    r'\b(?:i\'ll|i will|i am going to|i\'m going to|i am now|i\'m now|let me|should i|shall i|'
+    r'would you like me to|do you want me to|want me to|may i|ready for me to)\b',
+    re.IGNORECASE,
+)
+
+
+def _plain_message_text(message: dict[str, Any]) -> str:
+    content = message.get('content', '')
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        return ''.join(
+            str(item.get('text') or '')
+            for item in content
+            if isinstance(item, dict) and item.get('type') in {'text', 'input_text', 'output_text'}
+        ).strip()
+    return str(content or '').strip()
+
+
+def _normalized_conversation_text(value: str) -> str:
+    value = re.sub(r'\s+', ' ', str(value or '').replace('’', "'").strip().casefold())
+    return value.strip(' .,!?:;…👍🙏')
+
+
+def _is_task_status_query(value: str) -> bool:
+    return bool(_TASK_STATUS_RE.search(value))
+
+
+def task_dispatch_request(messages: list[dict[str, Any]]) -> str | None:
+    """Return concrete work to dispatch, or None for a chat-only turn.
+
+    A short confirmation may approve work the assistant just proposed, but it
+    inherits the earlier user request instead of becoming a task named "Ok".
+    """
+
+    user_indexes = [index for index, message in enumerate(messages) if message.get('role') == 'user']
+    if not user_indexes:
+        return None
+
+    current_index = user_indexes[-1]
+    current = _plain_message_text(messages[current_index])
+    normalized = _normalized_conversation_text(current)
+    if not normalized or _is_task_status_query(normalized):
+        return None
+    if normalized not in _CONVERSATIONAL_ONLY:
+        return current
+    if normalized not in _CONVERSATIONAL_CONFIRMATIONS:
+        return None
+
+    previous_assistant = ''
+    for message in reversed(messages[:current_index]):
+        if message.get('role') == 'assistant':
+            previous_assistant = _plain_message_text(message)
+            break
+    previous_assistant = previous_assistant.replace('’', "'")
+    if (
+        not previous_assistant
+        or not _PENDING_ACTION_RE.search(previous_assistant)
+        or not _EXPLICIT_WORK_RE.search(previous_assistant)
+    ):
+        return None
+
+    for message in reversed(messages[:current_index]):
+        if message.get('role') != 'user' or (message.get('meta') or {}).get('internal') is True:
+            continue
+        candidate = _plain_message_text(message)
+        candidate_normalized = _normalized_conversation_text(candidate)
+        if not candidate_normalized or candidate.startswith('[BACKGROUND TASK'):
+            continue
+        if candidate_normalized in _CONVERSATIONAL_ONLY or _is_task_status_query(candidate_normalized):
+            continue
+        return candidate
+    return None
 
 
 def agent_iteration_limit(value: str | int | None = None) -> int:

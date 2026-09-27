@@ -28,7 +28,12 @@ TATER_TASK_MAX_CONCURRENT_PER_USER = 2
 TATER_TASK_RESULT_MAX_CHARS = 40_000
 
 
-def _build_internal_request(source: Request, user_id: str, task_id: str) -> Request:
+def _build_internal_request(
+    source: Request,
+    user_id: str,
+    task_id: str,
+    initial_plan: dict[str, Any],
+) -> Request:
     scope = {
         'type': 'http',
         'asgi': {'version': '3.0', 'spec_version': '2.0'},
@@ -47,6 +52,7 @@ def _build_internal_request(source: Request, user_id: str, task_id: str) -> Requ
     request.state.enable_api_keys = False
     request.state.internal = True
     request.state.tater_task_id = task_id
+    request.state.tater_initial_plan = copy.deepcopy(initial_plan)
     return request
 
 
@@ -152,24 +158,46 @@ async def reconcile_user_tater_tasks(app, user_id: str) -> list[ChatModel]:
 
 async def tater_task_awareness(app, user_id: str, *, exclude_task_id: str | None = None) -> str:
     chats = await reconcile_user_tater_tasks(app, user_id)
-    running = [
-        tater_task_summary(chat)
-        for chat in chats
-        if chat.id != exclude_task_id and (chat.meta or {}).get('status') in TATER_TASK_ACTIVE_STATUSES
-    ]
-    if not running:
-        return ''
-
-    lines = [
-        'Authoritative background task state:',
-        *[
-            f'- {task["id"]}: {task["title"]} — {task["status"]}'
-            + (f' — {task["activity"]}' if task['activity'] else '')
-            for task in running
-        ],
-        'Use this state when the user asks about running work. Do not start another terminal or Hydra task merely to '
-        'check a listed task. Explain that the task will report its result into this chat when it finishes.',
-    ]
+    summaries = [tater_task_summary(chat) for chat in chats if chat.id != exclude_task_id]
+    running = [task for task in summaries if task['status'] in TATER_TASK_ACTIVE_STATUSES]
+    recent = sorted(
+        [task for task in summaries if task['status'] not in TATER_TASK_ACTIVE_STATUSES],
+        key=lambda task: task['updated_at'] or 0,
+        reverse=True,
+    )[:3]
+    lines = ['Authoritative background task state:']
+    if running:
+        lines.extend(
+            [
+                'Active:',
+                *[
+                    f'- {task["id"]}: {task["title"]} — {task["status"]}'
+                    + (f' — {task["activity"]}' if task['activity'] else '')
+                    for task in running
+                ],
+            ]
+        )
+    else:
+        lines.append('Active: none')
+    if recent:
+        lines.extend(
+            [
+                'Recently finished:',
+                *[
+                    f'- {task["id"]}: {task["title"]} — {task["status"]}'
+                    + (f' — {task["activity"]}' if task['activity'] else '')
+                    for task in recent
+                ],
+            ]
+        )
+    lines.extend(
+        [
+            'Use this state when the user asks about background work. Do not call terminal or Hydra merely to check '
+            'task status. Never say a listed task is pending when it is completed, failed, cancelled, or interrupted. '
+            'Active tasks will report their result into the originating chat when they finish. Never claim that you '
+            'are about to begin or continue tool work unless the interface actually starts a background task.',
+        ]
+    )
     return '\n'.join(lines)
 
 
@@ -206,6 +234,8 @@ async def _queue_parent_result(
     lines = [
         f'[BACKGROUND TASK FINISHED - {task_chat_id}]',
         'A background task started from this chat has finished. Report the outcome clearly to the user.',
+        'Do not promise, announce, or imply additional work: this report cannot run tools. If more work remains, '
+        'state that plainly and wait for the user to request it.',
         '',
         f'Task: {title}',
         f'Status: {status}',
@@ -306,7 +336,8 @@ async def start_tater_task(
     body: dict[str, Any],
     metadata: dict[str, Any],
     user: UserModel,
-    initial_tool_calls: list[dict[str, Any]],
+    task_prompt: str,
+    initial_plan: dict[str, Any],
 ) -> dict[str, Any]:
     parent_chat_id = metadata.get('chat_id')
     if not parent_chat_id:
@@ -326,8 +357,9 @@ async def start_tater_task(
     task_id = str(uuid4())
     user_message_id = str(uuid4())
     assistant_message_id = str(uuid4())
-    prompt = get_last_user_message(body.get('messages', [])) or 'Background task'
+    prompt = task_prompt.strip() or get_last_user_message(body.get('messages', [])) or 'Background task'
     title = ' '.join(prompt.split())[:80] or 'Background task'
+    initial_tool_calls = initial_plan.get('tool_calls') or []
     capabilities = sorted(
         {
             'hydra' if call.get('name') == 'tater_hydra' else 'terminal'
@@ -401,8 +433,15 @@ async def start_tater_task(
         error = ''
         cancelled = False
         try:
-            child_request = _build_internal_request(request, user.id, task_id)
+            child_request = _build_internal_request(request, user.id, task_id, initial_plan)
             child_messages = copy.deepcopy(body.get('messages') or [])
+            if child_messages and child_messages[-1].get('role') == 'user':
+                child_messages[-1] = {
+                    **child_messages[-1],
+                    'content': f'Perform this confirmed background task now:\n\n{prompt}',
+                }
+            else:
+                child_messages.append({'role': 'user', 'content': prompt})
             form_data = {
                 'model': body['model'],
                 'messages': child_messages,

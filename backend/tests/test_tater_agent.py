@@ -13,6 +13,59 @@ SPEC.loader.exec_module(tater_agent)
 
 
 class TaterAgentTests(unittest.TestCase):
+    def test_plain_acknowledgement_without_pending_work_stays_in_chat(self):
+        self.assertIsNone(
+            tater_agent.task_dispatch_request(
+                [
+                    {'role': 'assistant', 'content': "You're welcome."},
+                    {'role': 'user', 'content': 'Ok'},
+                ]
+            )
+        )
+
+    def test_confirmation_inherits_pending_task_request(self):
+        request = tater_agent.task_dispatch_request(
+            [
+                {'role': 'user', 'content': 'Is the Tater clone in the home folder?'},
+                {'role': 'assistant', 'content': 'I will search the home folder now.'},
+                {'role': 'user', 'content': 'Ok'},
+            ]
+        )
+
+        self.assertEqual(request, 'Is the Tater clone in the home folder?')
+
+    def test_confirmation_understands_pending_action_word_forms(self):
+        request = tater_agent.task_dispatch_request(
+            [
+                {'role': 'user', 'content': 'Is it in the home folder we cloned it somewhere?'},
+                {
+                    'role': 'assistant',
+                    'content': 'I am now proceeding with the actual task: searching the home folder.',
+                },
+                {'role': 'user', 'content': 'Ok'},
+            ]
+        )
+
+        self.assertEqual(request, 'Is it in the home folder we cloned it somewhere?')
+
+    def test_task_status_question_stays_in_chat(self):
+        self.assertIsNone(
+            tater_agent.task_dispatch_request(
+                [
+                    {'role': 'assistant', 'content': 'The search is running in the background.'},
+                    {'role': 'user', 'content': 'What happened to the task?'},
+                ]
+            )
+        )
+
+    def test_explicit_work_after_status_phrase_can_dispatch(self):
+        self.assertEqual(
+            tater_agent.task_dispatch_request(
+                [{'role': 'user', 'content': 'Find the task logs and show me the failure.'}]
+            ),
+            'Find the task logs and show me the failure.',
+        )
+
     def test_parses_fenced_tool_plan(self):
         calls = tater_agent.parse_tool_plan(
             '```json\n{"tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}]}\n```'

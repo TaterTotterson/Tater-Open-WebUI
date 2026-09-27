@@ -122,6 +122,7 @@ from open_webui.utils.tater_agent import (
     render_agent_context,
     render_recent_chat_history,
     render_tool_history,
+    task_dispatch_request,
     tool_plan_retry_instruction,
     tool_outcome_signature,
 )
@@ -1334,6 +1335,11 @@ async def chat_completion_tools_handler(
     tool_system_prompt: str = '',
 ) -> tuple[dict, dict]:
     background_task_id = getattr(request.state, 'tater_task_id', None)
+    initial_task_plan = getattr(request.state, 'tater_initial_plan', None)
+    dispatch_request = None if background_task_id else task_dispatch_request(body.get('messages', []))
+
+    if not background_task_id and dispatch_request is None:
+        return body, {'sources': []}
 
     async def get_content_from_response(response) -> Optional[str]:
         content = None
@@ -1350,7 +1356,7 @@ async def chat_completion_tools_handler(
         return content
 
     def get_tools_function_calling_payload(messages, task_model_id, content, tool_history=''):
-        user_message = get_last_user_message(messages)
+        user_message = dispatch_request or get_last_user_message(messages)
 
         if user_message and messages and messages[-1]['role'] == 'user':
             # Remove the last user message to avoid duplication
@@ -1479,6 +1485,10 @@ async def chat_completion_tools_handler(
         'content focused so the task stays within that budget. '
         'Select only the next necessary action. Calls returned together must be independent because they execute as '
         'one step. Use the execution history on later steps to inspect results, fix failures, and verify the work. '
+        'The Query is the only work being requested now. Do not start tools merely because history contains an '
+        'unfinished idea or an earlier promise. Questions about background task status must be answered from the '
+        'authoritative task state in the system message, never by terminal or Hydra. A bare acknowledgement starts '
+        'work only when the Query explicitly states the earlier task it confirms. '
         'Never repeat an action that already succeeded unless rerunning it is needed to verify a later change. Use '
         'terminal for every local action; each call already returns its command output and exit status. For a '
         'simple read-only question, use the minimum number of terminal calls (usually one). If one successful result '
@@ -1699,48 +1709,52 @@ async def chat_completion_tools_handler(
     agent_stop_message = ''
 
     for iteration in range(1, max_iterations + 1):
-        payload = get_tools_function_calling_payload(
-            body['messages'],
-            task_model_id,
-            tools_function_calling_prompt,
-            render_tool_history(history_records, max_chars=planner_tool_history_max_chars),
-        )
-
         planning_error = None
-        for planning_attempt in range(TATER_AGENT_PLAN_RETRY_LIMIT + 1):
-            attempt_payload = payload
-            if planning_attempt:
-                attempt_payload = {
-                    **payload,
-                    'messages': [
-                        *payload['messages'],
-                        {
-                            'role': 'user',
-                            'content': tool_plan_retry_instruction(planning_error or 'invalid response'),
-                        },
-                    ],
-                }
+        if iteration == 1 and not history_records and isinstance(initial_task_plan, dict):
+            plan = copy.deepcopy(initial_task_plan)
+            tool_calls = plan.get('tool_calls') or []
+        else:
+            payload = get_tools_function_calling_payload(
+                body['messages'],
+                task_model_id,
+                tools_function_calling_prompt,
+                render_tool_history(history_records, max_chars=planner_tool_history_max_chars),
+            )
 
-            try:
-                response = await generate_chat_completion(request, form_data=attempt_payload, user=user)
-                log.debug('response=%r', response)
-                content = await get_content_from_response(response)
-                log.debug('content=%r', content)
-                if not content:
-                    raise ValueError('Tool planner returned an empty response')
-                plan = parse_tool_plan_response(content)
-                tool_calls = plan['tool_calls']
-                planning_error = None
-                break
-            except Exception as e:
-                planning_error = e
-                log.warning(
-                    'Tool planning attempt %s/%s failed at iteration %s: %s',
-                    planning_attempt + 1,
-                    TATER_AGENT_PLAN_RETRY_LIMIT + 1,
-                    iteration,
-                    e,
-                )
+            for planning_attempt in range(TATER_AGENT_PLAN_RETRY_LIMIT + 1):
+                attempt_payload = payload
+                if planning_attempt:
+                    attempt_payload = {
+                        **payload,
+                        'messages': [
+                            *payload['messages'],
+                            {
+                                'role': 'user',
+                                'content': tool_plan_retry_instruction(planning_error or 'invalid response'),
+                            },
+                        ],
+                    }
+
+                try:
+                    response = await generate_chat_completion(request, form_data=attempt_payload, user=user)
+                    log.debug('response=%r', response)
+                    content = await get_content_from_response(response)
+                    log.debug('content=%r', content)
+                    if not content:
+                        raise ValueError('Tool planner returned an empty response')
+                    plan = parse_tool_plan_response(content)
+                    tool_calls = plan['tool_calls']
+                    planning_error = None
+                    break
+                except Exception as e:
+                    planning_error = e
+                    log.warning(
+                        'Tool planning attempt %s/%s failed at iteration %s: %s',
+                        planning_attempt + 1,
+                        TATER_AGENT_PLAN_RETRY_LIMIT + 1,
+                        iteration,
+                        e,
+                    )
 
         if planning_error is not None:
             agent_stop_message = (
@@ -1760,7 +1774,12 @@ async def chat_completion_tools_handler(
                     body=body,
                     metadata=metadata,
                     user=user,
-                    initial_tool_calls=tool_calls,
+                    task_prompt=(
+                        dispatch_request
+                        or get_last_user_message(body.get('messages', []))
+                        or 'Background task'
+                    ),
+                    initial_plan=plan,
                 )
                 task_message = (
                     f'I started **{task["title"]}** as a background task. You can keep chatting while it runs; '

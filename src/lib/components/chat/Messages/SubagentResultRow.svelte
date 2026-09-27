@@ -29,6 +29,10 @@
 		(kind === 'task' ? result.task_id : result.delegation_id) ??
 		(delegationIds.length > 1 ? `${delegationIds.length} tasks` : '');
 	$: summary = (() => {
+		if (kind === 'task') {
+			const taskLine = content.match(/^Task:\s*(.+)$/m)?.[1]?.trim();
+			if (taskLine) return taskLine.length > 96 ? `${taskLine.slice(0, 96)}...` : taskLine;
+		}
 		const line = content
 			.split('\n')
 			.map((value) => value.trim())
