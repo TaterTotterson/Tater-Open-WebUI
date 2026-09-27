@@ -203,6 +203,23 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(plan['context']['objective'], 'Fix login')
         self.assertEqual(plan['context']['files_changed'], ['auth.py'])
 
+    def test_accepts_plain_final_answer_after_tool_work(self):
+        plan = tater_agent.parse_tool_plan_response(
+            'The directory contains README.md and src/.',
+            allow_plain_final_answer=True,
+        )
+
+        self.assertEqual(plan['tool_calls'], [])
+        self.assertEqual(plan['final_answer'], 'The directory contains README.md and src/.')
+        self.assertEqual(plan['context'], {})
+
+    def test_plain_final_answer_fallback_rejects_malformed_plan(self):
+        with self.assertRaisesRegex(ValueError, 'No tool-plan JSON object found'):
+            tater_agent.parse_tool_plan_response(
+                '{"tool_calls": [',
+                allow_plain_final_answer=True,
+            )
+
     def test_rejects_context_while_tools_are_requested(self):
         with self.assertRaisesRegex(ValueError, 'context must be empty'):
             tater_agent.parse_tool_plan_response(
@@ -332,6 +349,39 @@ class TaterAgentTests(unittest.TestCase):
     def test_context_window_bounds_planner_history(self):
         self.assertEqual(tater_agent.agent_history_char_limit(4096), 8192)
         self.assertEqual(tater_agent.agent_history_char_limit(1000000), 120000)
+
+    def test_fast_path_accepts_small_successful_read_only_terminal_history(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'ls -la'},
+                'result': {'output': 'README.md\nsrc/\n', 'exit_code': 0},
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git log -n 5 --oneline'},
+                'result': {'output': 'abc123 latest change\n', 'exit_code': 0},
+            },
+        ]
+
+        self.assertTrue(tater_agent.simple_read_only_terminal_history(records))
+
+    def test_fast_path_rejects_failed_or_mutating_terminal_history(self):
+        def record(command, status='completed'):
+            return {
+                'tool': 'terminal',
+                'status': status,
+                'parameters': {'command': command},
+                'result': {'exit_code': 0},
+            }
+
+        self.assertFalse(tater_agent.simple_read_only_terminal_history([record('ls', 'failed')]))
+        self.assertFalse(tater_agent.simple_read_only_terminal_history([record('rm -rf build')]))
+        self.assertFalse(tater_agent.simple_read_only_terminal_history([record('git branch -D temp')]))
+        self.assertFalse(tater_agent.simple_read_only_terminal_history([record('git diff --output=patch.txt')]))
+        self.assertFalse(tater_agent.simple_read_only_terminal_history([record('ls | head')]))
 
     def test_clamps_iteration_limit(self):
         self.assertEqual(tater_agent.agent_iteration_limit('0'), 1)

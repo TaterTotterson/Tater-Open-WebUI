@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import time
 from typing import Any
 
@@ -109,6 +110,23 @@ _COMPLETION_ANSWER_RE = re.compile(
     r"the (?:result|answer|issue|cause) is)\b",
     re.IGNORECASE,
 )
+_FAST_READ_ONLY_COMMANDS = {
+    'cat',
+    'df',
+    'du',
+    'file',
+    'grep',
+    'head',
+    'ls',
+    'pwd',
+    'realpath',
+    'rg',
+    'stat',
+    'tail',
+    'tree',
+    'wc',
+}
+_FAST_READ_ONLY_GIT_COMMANDS = {'diff', 'log', 'rev-parse', 'show', 'status'}
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r'(?i)\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)\s*=\s*'
     r'("[^"]*"|\'[^\']*\'|[^\s;&|]+)'
@@ -308,6 +326,35 @@ def background_task_result_answer(content: Any) -> str:
     return f'{heading}\n\n{result}'
 
 
+def simple_read_only_terminal_history(records: Any) -> bool:
+    """Return true for a small, successful batch of obviously read-only commands."""
+
+    if not isinstance(records, list) or not 1 <= len(records) <= 2:
+        return False
+    for record in records:
+        if not isinstance(record, dict) or record.get('tool') != 'terminal' or record.get('status') != 'completed':
+            return False
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '').strip()
+        if not command or re.search(r'[\n;&|><`]|\$\(', command):
+            return False
+        try:
+            arguments = shlex.split(command)
+        except ValueError:
+            return False
+        if not arguments:
+            return False
+        if any(argument == '--output' or argument.startswith('--output=') for argument in arguments[1:]):
+            return False
+        executable = arguments[0].rsplit('/', 1)[-1]
+        if executable in _FAST_READ_ONLY_COMMANDS:
+            continue
+        if executable == 'git' and len(arguments) > 1 and arguments[1] in _FAST_READ_ONLY_GIT_COMMANDS:
+            continue
+        return False
+    return True
+
+
 def agent_iteration_limit(value: str | int | None = None) -> int:
     raw = value if value is not None else os.getenv('TATER_AGENT_MAX_ITERATIONS', '')
     try:
@@ -435,6 +482,8 @@ def merge_project_context(project: Any, chat: Any) -> dict[str, Any]:
 def parse_tool_plan_response(
     content: str,
     max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP,
+    *,
+    allow_plain_final_answer: bool = False,
 ) -> dict[str, Any]:
     content = str(content or '')
     payload = None
@@ -455,6 +504,20 @@ def parse_tool_plan_response(
             payload = candidate
             break
     if payload is None:
+        plain_answer = content.strip()
+        if (
+            allow_plain_final_answer
+            and plain_answer
+            and not plain_answer.startswith(('{', '['))
+            and '<|tool_call' not in plain_answer.lower()
+        ):
+            return {
+                'progress': '',
+                'task_title': '',
+                'tool_calls': [],
+                'final_answer': plain_answer[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS],
+                'context': {},
+            }
         raise ValueError('No tool-plan JSON object found')
 
     raw_calls = payload.get('tool_calls')

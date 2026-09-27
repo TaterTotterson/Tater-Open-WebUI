@@ -124,6 +124,7 @@ from open_webui.utils.tater_agent import (
     render_agent_context,
     render_recent_chat_history,
     render_tool_history,
+    simple_read_only_terminal_history,
     task_dispatch_request,
     tool_activity_status,
     tool_plan_retry_instruction,
@@ -1518,13 +1519,14 @@ async def chat_completion_tools_handler(
         'tool-call markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty '
         'tool_calls array '
         'only after every requested part has been completed or a concrete blocker has been established, and then put '
-        'a complete answer for the user in final_answer. Never use final_answer to announce work you still intend to '
+        'a complete answer for the user in final_answer. The context object may be empty; the server will preserve '
+        'and update working context from the verified execution history. Never use final_answer to announce work '
+        'you still intend to '
         'do. If you say you will inspect, run, read, change, or verify something, include that tool call now instead. '
-        'On that final response, context must be a concise complete '
-        'snapshot with objective, repository_root, branch, requirements, plan, completed, files_changed, tests, '
-        'blockers, cwd, and execution_summary. Keep task_title and context empty when returning the final answer. '
-        'If the available results '
-        'are not enough to write the answer or context snapshot, continue with another tool call instead.'
+        'On that final response, context may contain useful updates to objective, repository_root, branch, '
+        'requirements, plan, completed, files_changed, tests, blockers, cwd, and execution_summary, but it is not '
+        'required. Keep task_title empty when returning the final answer. If the available results are not enough '
+        'to write the answer, continue with another tool call instead.'
     )
     operating_message = get_system_message(body.get('messages', []))
     operating_instructions = get_content_from_message(operating_message) if operating_message else ''
@@ -1781,7 +1783,10 @@ async def chat_completion_tools_handler(
                     log.debug('content=%r', content)
                     if not content:
                         raise ValueError('Tool planner returned an empty response')
-                    plan = parse_tool_plan_response(content)
+                    plan = parse_tool_plan_response(
+                        content,
+                        allow_plain_final_answer=bool(history_records),
+                    )
                     tool_calls = plan['tool_calls']
                     planning_error = None
                     break
@@ -1867,34 +1872,27 @@ async def chat_completion_tools_handler(
                 loop_stopped = True
                 break
 
-            if history_records and (not prepared_final_answer or not prepared_agent_context):
+            if history_records and not prepared_final_answer:
                 completion_protocol_failures += 1
-                missing_completion_fields = []
-                if not prepared_final_answer:
-                    missing_completion_fields.append('final_answer')
-                if not prepared_agent_context:
-                    missing_completion_fields.append('context')
                 history_records.append(
                     {
                         'iteration': iteration,
                         'tool': 'agent_protocol',
                         'status': 'failed',
                         'result': (
-                            'The task cannot be marked complete without '
-                            f'{" and ".join(missing_completion_fields)}. Continue working if anything is missing; '
-                            'otherwise return an empty tool_calls array, a complete final_answer, and the full '
-                            'persistent context snapshot.'
+                            'The task cannot be marked complete without final_answer. Continue working if anything '
+                            'is missing; otherwise return an empty tool_calls array and a complete final_answer.'
                         ),
                     }
                 )
                 if completion_protocol_failures < 3:
                     continue
-                agent_stop_message = 'Tool planning stopped because it did not provide a complete answer and context.'
+                agent_stop_message = 'Tool planning stopped because it did not provide a complete answer.'
                 append_agent_notice(agent_stop_message)
                 loop_stopped = True
                 break
 
-            if history_records:
+            if history_records and not simple_read_only_terminal_history(history_records):
                 try:
                     review_payload = get_completion_review_payload(
                         body['messages'],
