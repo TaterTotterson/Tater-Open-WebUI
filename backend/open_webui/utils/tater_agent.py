@@ -136,6 +136,23 @@ def render_agent_context(value: Any) -> str:
     return json.dumps(context, ensure_ascii=False, separators=(',', ':'))
 
 
+def merge_task_context(parent: Any, task: Any) -> dict[str, Any]:
+    parent_context = normalize_agent_context(parent)
+    task_context = normalize_agent_context(task)
+    merged = dict(parent_context)
+
+    if not merged.get('objective') and task_context.get('objective'):
+        merged['objective'] = task_context['objective']
+    for field in ('repository_root', 'branch', 'cwd', 'execution_summary'):
+        if task_context.get(field):
+            merged[field] = task_context[field]
+    for field in TATER_AGENT_CONTEXT_LIST_FIELDS:
+        merged[field] = list(
+            dict.fromkeys([*(parent_context.get(field) or []), *(task_context.get(field) or [])])
+        )
+    return normalize_agent_context(merged)
+
+
 def parse_tool_plan_response(
     content: str,
     max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP,

@@ -13,6 +13,7 @@ CONFIG_PATH = BACKEND_ROOT / 'config.py'
 OPENAI_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'openai.py'
 CHAT_UTILS_PATH = BACKEND_ROOT / 'utils' / 'chat.py'
 DOCUMENT_PROCESSING_PATH = BACKEND_ROOT / 'utils' / 'document_processing.py'
+TATER_TASKS_PATH = BACKEND_ROOT / 'utils' / 'tater_tasks.py'
 
 
 class BackendSurfaceTests(unittest.TestCase):
@@ -93,6 +94,17 @@ class BackendSurfaceTests(unittest.TestCase):
 
         main_source = MAIN_PATH.read_text(encoding='utf-8')
         self.assertIn("form_data.pop('_tater_agent_response', None)", main_source)
+
+    def test_terminal_and_hydra_work_dispatch_to_visible_background_tasks(self):
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+        task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
+
+        self.assertIn('start_tater_task', middleware_source)
+        self.assertIn("call.get('name') == 'tater_hydra'", task_source)
+        self.assertIn("'type': TATER_TASK_TYPE", task_source)
+        self.assertIn('process_pending_internal_messages', task_source)
+        self.assertIn('tater_task_awareness', middleware_source)
+        ast.parse(task_source)
 
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))

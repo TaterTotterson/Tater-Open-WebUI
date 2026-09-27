@@ -1333,6 +1333,8 @@ async def chat_completion_tools_handler(
     tools,
     tool_system_prompt: str = '',
 ) -> tuple[dict, dict]:
+    background_task_id = getattr(request.state, 'tater_task_id', None)
+
     async def get_content_from_response(response) -> Optional[str]:
         content = None
         if hasattr(response, 'body_iterator'):
@@ -1515,6 +1517,25 @@ async def chat_completion_tools_handler(
         )
 
     async def emit_tool_status(tool_name: str, *, done: bool, failed: bool = False):
+        if background_task_id:
+            try:
+                from open_webui.utils.tater_tasks import update_tater_task
+
+                await update_tater_task(
+                    background_task_id,
+                    {
+                        'activity': (
+                            f'{tool_name} failed'
+                            if failed
+                            else f'Finished {tool_name}'
+                            if done
+                            else f'Using {tool_name}'
+                        )
+                    },
+                    user_id=user.id,
+                )
+            except Exception as e:
+                log.debug('Could not update background task activity: %s', e)
         if not event_emitter:
             return
         try:
@@ -1533,6 +1554,17 @@ async def chat_completion_tools_handler(
             log.debug('Could not emit tool status for %s: %s', tool_name, e)
 
     async def emit_progress_update(message: str):
+        if background_task_id and message:
+            try:
+                from open_webui.utils.tater_tasks import update_tater_task
+
+                await update_tater_task(
+                    background_task_id,
+                    {'activity': message.strip()[:240]},
+                    user_id=user.id,
+                )
+            except Exception as e:
+                log.debug('Could not update background task progress: %s', e)
         if not event_emitter or not message:
             return
         try:
@@ -1718,6 +1750,30 @@ async def chat_completion_tools_handler(
             append_agent_notice(agent_stop_message)
             loop_stopped = True
             break
+
+        if tool_calls and not background_task_id and not history_records:
+            try:
+                from open_webui.utils.tater_tasks import start_tater_task
+
+                task = await start_tater_task(
+                    request,
+                    body=body,
+                    metadata=metadata,
+                    user=user,
+                    initial_tool_calls=tool_calls,
+                )
+                task_message = (
+                    f'I started **{task["title"]}** as a background task. You can keep chatting while it runs; '
+                    'I will post the verified outcome here when it finishes.'
+                )
+            except Exception as e:
+                task_message = f'I could not start the background task: {e}'
+
+            body['_tater_agent_response'] = {
+                'content': task_message,
+                'display_content': task_message,
+            }
+            return body, {'sources': sources}
 
         if not tool_calls:
             prepared_final_answer = plan['final_answer'] if history_records else ''
@@ -2805,6 +2861,21 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     )
     form_data['metadata'] = metadata
 
+    background_task_id = getattr(request.state, 'tater_task_id', None)
+    if not background_task_id and not metadata.get('internal'):
+        try:
+            from open_webui.utils.tater_tasks import tater_task_awareness
+
+            task_context = await tater_task_awareness(request.app, user.id)
+            if task_context:
+                form_data['messages'] = add_or_update_system_message(
+                    task_context,
+                    form_data['messages'],
+                    append=True,
+                )
+        except Exception as e:
+            log.debug('Could not load background task awareness: %s', e)
+
     # When the caller provides an explicit `tools` key in the request body,
     # skip all server-side tool resolution and pass the caller's tools through
     # unchanged.  Sending `tools: []` explicitly opts out of builtin injection.
@@ -2819,7 +2890,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         legacy_tool_prompts = []
 
         configured_hydra_model = await Config.get('tater.hydra_model')
-        expose_agent_tools = not metadata.get('internal') and form_data.get('model') != configured_hydra_model
+        expose_agent_tools = bool(background_task_id or not metadata.get('internal')) and (
+            form_data.get('model') != configured_hydra_model
+        )
         if expose_agent_tools:
             try:
                 terminal_result = await get_terminal_tools(

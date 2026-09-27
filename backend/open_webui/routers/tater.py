@@ -4,7 +4,16 @@ import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request
 from open_webui.models.config import Config
 from open_webui.routers.openai import clear_openai_model_cache
-from open_webui.utils.auth import get_admin_user
+from open_webui.tasks import stop_task
+from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.tater_tasks import (
+    TATER_TASK_ACTIVE_STATUSES,
+    emit_tater_task_event,
+    get_user_tater_task,
+    reconcile_user_tater_tasks,
+    tater_task_summary,
+    update_tater_task,
+)
 from open_webui.utils.tater_profile import (
     DEFAULT_TATER_API_BASE_URL,
     DEFAULT_TATER_BASE_MODEL,
@@ -41,6 +50,49 @@ class TaterProfileVerification(BaseModel):
     base_model_available: bool
     hydra_model_available: bool
     models: list[str]
+
+
+@router.get('/tasks')
+async def list_background_tasks(request: Request, user=Depends(get_verified_user)):
+    tasks = await reconcile_user_tater_tasks(request.app, user.id)
+    return [
+        tater_task_summary(task)
+        for task in tasks
+        if (task.meta or {}).get('status') in TATER_TASK_ACTIVE_STATUSES
+    ]
+
+
+@router.get('/tasks/{task_id}')
+async def get_background_task(task_id: str, user=Depends(get_verified_user)):
+    task = await get_user_tater_task(task_id, user.id)
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    return tater_task_summary(task)
+
+
+@router.delete('/tasks/{task_id}')
+async def cancel_background_task(request: Request, task_id: str, user=Depends(get_verified_user)):
+    task = await get_user_tater_task(task_id, user.id)
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    if (task.meta or {}).get('status') not in TATER_TASK_ACTIVE_STATUSES:
+        raise HTTPException(status_code=409, detail='Task is no longer running')
+
+    await update_tater_task(
+        task_id,
+        {'status': 'cancelling', 'activity': 'Cancelling task'},
+        user_id=user.id,
+    )
+    result = await stop_task(request.app.state.redis, task_id)
+    if not result.get('status'):
+        await update_tater_task(
+            task_id,
+            {'status': 'interrupted', 'activity': result.get('message') or 'Task stopped'},
+            user_id=user.id,
+        )
+    await emit_tater_task_event(user.id, task_id, 'cancelling')
+    latest = await get_user_tater_task(task_id, user.id)
+    return tater_task_summary(latest or task)
 
 
 async def get_tater_profile() -> tuple[str, str, str, str, int]:

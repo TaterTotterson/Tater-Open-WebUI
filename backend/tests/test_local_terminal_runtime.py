@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import tempfile
@@ -94,6 +95,25 @@ class LocalTerminalRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result['timed_out'])
         self.assertEqual(result['status'], 'killed')
+
+    async def test_cancelling_foreground_wait_terminates_process(self):
+        command = asyncio.create_task(
+            self.runtime.run_command(
+                'user',
+                'cancel-chat',
+                'sleep 30',
+                timeout_seconds=60,
+            )
+        )
+        await asyncio.sleep(0.1)
+        command.cancel()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await command
+
+        processes = self.runtime.list_processes('user', 'cancel-chat')
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(processes[0]['status'], 'killed')
 
     def test_file_read_write_replace_list_and_search(self):
         written = self.runtime.write_file(

@@ -124,6 +124,29 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(context['branch'], 'feature')
         self.assertEqual(context['tests'], ['unit tests pass'])
 
+    def test_completed_task_context_merges_without_losing_parent_work(self):
+        merged = tater_agent.merge_task_context(
+            {
+                'objective': 'Keep helping in the parent chat',
+                'completed': ['Earlier work'],
+                'tests': ['Earlier test'],
+            },
+            {
+                'objective': 'Implement the background task',
+                'repository_root': '/workspace/app',
+                'branch': 'main',
+                'completed': ['Background work'],
+                'tests': ['pytest'],
+                'execution_summary': 'Background task completed.',
+            },
+        )
+
+        self.assertEqual(merged['objective'], 'Keep helping in the parent chat')
+        self.assertEqual(merged['repository_root'], '/workspace/app')
+        self.assertEqual(merged['completed'], ['Earlier work', 'Background work'])
+        self.assertEqual(merged['tests'], ['Earlier test', 'pytest'])
+        self.assertEqual(merged['execution_summary'], 'Background task completed.')
+
     def test_context_window_bounds_planner_history(self):
         self.assertEqual(tater_agent.agent_history_char_limit(4096), 8192)
         self.assertEqual(tater_agent.agent_history_char_limit(1000000), 120000)

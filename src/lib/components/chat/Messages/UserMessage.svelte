@@ -58,6 +58,9 @@
 
 	let message = structuredClone(history.messages[messageId]);
 	let timerExpanded = false;
+	$: isInternalResult =
+		message?.meta?.internal === true &&
+		['subagent', 'timer', 'tater_task'].includes(message?.meta?.type);
 	$: if (history.messages) {
 		const source = history.messages[messageId];
 		if (source) {
@@ -136,7 +139,7 @@
 	id="message-{message.id}"
 	style="scroll-margin-top: 3rem;"
 >
-	{#if !($settings?.chatBubble ?? true) && !(message?.meta?.internal === true && message?.meta?.type === 'subagent') && !(message?.meta?.internal === true && message?.meta?.type === 'timer')}
+	{#if !($settings?.chatBubble ?? true) && !isInternalResult}
 		<div class={`shrink-0 ltr:mr-2 rtl:ml-2 hidden @lg:flex mt-0.5`}>
 			<!-- LICENSE covers this Open WebUI fallback logo.
 			Do not alter, remove, obscure, or replace it except as LICENSE permits:
@@ -149,14 +152,8 @@
 			/>
 		</div>
 	{/if}
-	<div
-		class="flex-auto w-0 max-w-full {(message?.meta?.internal === true &&
-			message?.meta?.type === 'subagent') ||
-		(message?.meta?.internal === true && message?.meta?.type === 'timer')
-			? ''
-			: 'pl-1'}"
-	>
-		{#if !($settings?.chatBubble ?? true) && !(message?.meta?.internal === true && message?.meta?.type === 'subagent') && !(message?.meta?.internal === true && message?.meta?.type === 'timer')}
+	<div class="flex-auto w-0 max-w-full {isInternalResult ? '' : 'pl-1'}">
+		{#if !($settings?.chatBubble ?? true) && !isInternalResult}
 			<div>
 				<Name>
 					{#if message.user}
@@ -379,6 +376,8 @@
 				</div>
 			{:else if message?.meta?.internal === true && message?.meta?.type === 'subagent'}
 				<SubagentResultRow content={message.content} result={message.meta} />
+			{:else if message?.meta?.internal === true && message?.meta?.type === 'tater_task'}
+				<SubagentResultRow content={message.content} result={message.meta} kind="task" />
 			{:else if message.content !== ''}
 				<div class="w-full">
 					<div class="flex {($settings?.chatBubble ?? true) ? 'justify-end pb-1' : 'w-full'}">
@@ -413,7 +412,7 @@
 				</div>
 			{/if}
 
-			{#if edit !== true && !(message?.meta?.internal === true && message?.meta?.type === 'subagent') && !(message?.meta?.internal === true && message?.meta?.type === 'timer')}
+			{#if edit !== true && !isInternalResult}
 				<div
 					class=" flex {($settings?.chatBubble ?? true)
 						? 'justify-end'

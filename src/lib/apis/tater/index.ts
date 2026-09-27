@@ -24,6 +24,26 @@ export type TaterProfileVerification = {
 	models: string[];
 };
 
+export type TaterTask = {
+	id: string;
+	title: string;
+	status:
+		| 'queued'
+		| 'running'
+		| 'cancelling'
+		| 'completed'
+		| 'failed'
+		| 'cancelled'
+		| 'interrupted';
+	activity: string;
+	capabilities: ('terminal' | 'hydra')[];
+	parent_chat_id: string | null;
+	created_at: number;
+	updated_at: number;
+	started_at: number | null;
+	finished_at: number | null;
+};
+
 const request = async <T>(path: string, token: string, options: RequestInit = {}): Promise<T> => {
 	const response = await fetch(`${WEBUI_API_BASE_URL}/tater${path}`, {
 		...options,
@@ -66,3 +86,11 @@ export const verifyTaterProfile = (
 		method: 'POST',
 		body: JSON.stringify(profile)
 	});
+
+export const getTaterTasks = (token: string): Promise<TaterTask[]> => request('/tasks', token);
+
+export const getTaterTask = (token: string, taskId: string): Promise<TaterTask> =>
+	request(`/tasks/${encodeURIComponent(taskId)}`, token);
+
+export const cancelTaterTask = (token: string, taskId: string): Promise<TaterTask> =>
+	request(`/tasks/${encodeURIComponent(taskId)}`, token, { method: 'DELETE' });

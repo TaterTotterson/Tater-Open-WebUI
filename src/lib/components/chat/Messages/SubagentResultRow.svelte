@@ -9,17 +9,25 @@
 		delegation_ids?: string[];
 		subagent_chat_id?: string;
 		subagent_chat_ids?: string[];
+		task_id?: string;
+		task_ids?: string[];
 	};
 
 	const i18n = getContext<Readable<{ t: (value: string) => string }>>('i18n');
 
 	export let content: string;
 	export let result: SubagentResult;
+	export let kind: 'subagent' | 'task' = 'subagent';
 
 	let expanded = false;
-	$: delegationIds = Array.isArray(result.delegation_ids) ? result.delegation_ids : [];
+	$: delegationIds = Array.isArray(kind === 'task' ? result.task_ids : result.delegation_ids)
+		? kind === 'task'
+			? (result.task_ids ?? [])
+			: (result.delegation_ids ?? [])
+		: [];
 	$: delegationLabel =
-		result.delegation_id ?? (delegationIds.length > 1 ? `${delegationIds.length} tasks` : '');
+		(kind === 'task' ? result.task_id : result.delegation_id) ??
+		(delegationIds.length > 1 ? `${delegationIds.length} tasks` : '');
 	$: summary = (() => {
 		const line = content
 			.split('\n')
@@ -38,7 +46,7 @@
 		on:click={() => (expanded = !expanded)}
 	>
 		<span class="text-[0.75rem] font-normal shrink-0">
-			{$i18n.t('Background sub-agent finished')}
+			{$i18n.t(kind === 'task' ? 'Background task finished' : 'Background sub-agent finished')}
 		</span>
 		{#if summary}
 			<span class="text-[0.75rem] truncate min-w-0 flex-1">{summary}</span>

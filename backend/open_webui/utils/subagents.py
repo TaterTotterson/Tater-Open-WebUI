@@ -107,7 +107,7 @@ async def process_pending_internal_messages(
                 and (
                     (
                         meta.get('internal') is True
-                        and meta.get('type') == 'subagent'
+                        and meta.get('type') in {'subagent', 'tater_task'}
                         and meta.get('status') in (None, 'pending')
                     )
                     or (meta.get('internal') is True and meta.get('type') == 'timer')
@@ -118,7 +118,11 @@ async def process_pending_internal_messages(
 
             first = pending[0]
             first_meta = first.get('meta') or {}
-            kind = 'timer' if first_meta.get('internal') is True and first_meta.get('type') == 'timer' else 'subagent'
+            kind = (
+                first_meta.get('type')
+                if first_meta.get('internal') is True and first_meta.get('type') in {'timer', 'subagent', 'tater_task'}
+                else 'subagent'
+            )
             parent_id = first.get('parentId')
             if kind == 'timer' and first_meta.get('timer_id'):
                 timer = await Chats.get_chat_by_id(first_meta['timer_id'])
@@ -135,7 +139,7 @@ async def process_pending_internal_messages(
                     and (message.get('model') or model_id) == model_id
                     and (
                         meta.get('internal') is True
-                        and meta.get('type') == 'subagent'
+                        and meta.get('type') == kind
                         and meta.get('status') in (None, 'pending')
                     )
                 ]
@@ -149,7 +153,7 @@ async def process_pending_internal_messages(
                     combined_meta['timer_id'] = timer_ids[0]
                 elif timer_ids:
                     combined_meta['timer_ids'] = timer_ids
-            else:
+            elif kind == 'subagent':
                 delegation_ids = [
                     message['meta']['delegation_id']
                     for message in batch
@@ -169,6 +173,26 @@ async def process_pending_internal_messages(
                     combined_meta['subagent_chat_id'] = subagent_chat_ids[0]
                 elif subagent_chat_ids:
                     combined_meta['subagent_chat_ids'] = subagent_chat_ids
+            else:
+                task_ids = [
+                    message['meta']['task_id']
+                    for message in batch
+                    if (message.get('meta') or {}).get('task_id')
+                ]
+                task_chat_ids = [
+                    message['meta']['task_chat_id']
+                    for message in batch
+                    if (message.get('meta') or {}).get('task_chat_id')
+                ]
+                combined_meta = {'internal': True, 'type': 'tater_task'}
+                if len(task_ids) == 1:
+                    combined_meta['task_id'] = task_ids[0]
+                elif task_ids:
+                    combined_meta['task_ids'] = task_ids
+                if len(task_chat_ids) == 1:
+                    combined_meta['task_chat_id'] = task_chat_ids[0]
+                elif task_chat_ids:
+                    combined_meta['task_chat_ids'] = task_chat_ids
 
             reuse_message = len(batch) == 1 and (first.get('meta') or {}).get('status') != 'pending'
             user_message_id = first['id'] if reuse_message else str(uuid4())
@@ -263,7 +287,7 @@ async def process_pending_internal_messages(
         if run.get('terminal_id'):
             form_data['terminal_id'] = run['terminal_id']
 
-        request = _build_request(source_request, user.id, internal=False)
+        request = _build_request(source_request, user.id, internal=kind == 'tater_task')
         await source_request.app.state.CHAT_COMPLETION_HANDLER(request, form_data, user=user)
 
 

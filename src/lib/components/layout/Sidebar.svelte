@@ -3,6 +3,7 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import {
 		user,
 		chats,
@@ -53,6 +54,7 @@
 		updateFolderParentIdById
 	} from '$lib/apis/folders';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { cancelTaterTask, getTaterTasks, type TaterTask } from '$lib/apis/tater';
 
 	import UserMenu from './Sidebar/UserMenu.svelte';
 	import ChatItem from './Sidebar/ChatItem.svelte';
@@ -75,6 +77,7 @@
 	import CheckIcon from '../icons/Check.svelte';
 	import MoreHorizontalIcon from './Sidebar/icons/MoreHorizontal.svelte';
 	import MobileSwipePanel from '../common/MobileSwipePanel.svelte';
+	import TaskItem from './Sidebar/TaskItem.svelte';
 
 	const BREAKPOINT = 768;
 	let scrollTop = 0;
@@ -103,6 +106,9 @@
 	let showFolders = false;
 	let showSharedFolders = false;
 	let showChatsMenu = false;
+	let showTasks = true;
+	let taterTasks: TaterTask[] = [];
+	let taskRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	let folders = {};
 	type SelectedSidebarFolder = { id: string } | null;
@@ -269,7 +275,22 @@
 	};
 
 	const initSidebarData = async () => {
-		await initChatList();
+		await Promise.all([initChatList(), refreshTaterTasks()]);
+	};
+
+	const refreshTaterTasks = async () => {
+		taterTasks = await getTaterTasks(localStorage.token).catch((error) => {
+			console.error('Failed to load background tasks:', error);
+			return [];
+		});
+	};
+
+	const cancelTask = async (task: TaterTask) => {
+		taterTasks = taterTasks.filter((item) => item.id !== task.id);
+		await cancelTaterTask(localStorage.token, task.id).catch((error) => {
+			toast.error(`${error}`);
+		});
+		await refreshTaterTasks();
 	};
 
 	const refreshChatRows = async () => {
@@ -594,6 +615,7 @@
 
 		await tick();
 		await initSidebarData();
+		taskRefreshInterval = setInterval(refreshTaterTasks, 3000);
 
 		return () => {
 			unsubscribers.forEach((unsubscriber) => unsubscriber());
@@ -612,6 +634,7 @@
 
 			socketInstance?.off('events', chatActiveEventHandler);
 			socketInstance?.off('connect', refreshChatRows);
+			if (taskRefreshInterval) clearInterval(taskRefreshInterval);
 
 			unregisterFolderRefreshHandler();
 		};
@@ -664,6 +687,8 @@
 			if (eventData.folder_id) {
 				await folderRegistry[eventData.folder_id]?.setFolderItems?.();
 			}
+		} else if (event.data?.type === 'tater:tasks') {
+			await refreshTaterTasks();
 		}
 	};
 
@@ -1016,6 +1041,25 @@
 							</button>
 						</div>
 					</div>
+
+					{#if taterTasks.length > 0}
+						<SidebarSection
+							id="sidebar-tasks"
+							bind:open={showTasks}
+							name={$i18n.t('Tasks')}
+							dragAndDrop={false}
+						>
+							<div class="flex flex-col gap-0.5">
+								{#each taterTasks as task (task.id)}
+									<TaskItem
+										{task}
+										selected={$page.url.pathname === `/tasks/${task.id}`}
+										onCancel={cancelTask}
+									/>
+								{/each}
+							</div>
+						</SidebarSection>
+					{/if}
 
 					{#if $visiblePinnedModels.length > 0}
 						<SidebarSection

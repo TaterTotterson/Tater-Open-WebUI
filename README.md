@@ -67,7 +67,7 @@ variables on a new data directory.
 | `TATER_API_KEY`               | empty                      | Server-side Tater credential      |
 | `TATER_BASE_MODEL`            | `tater/base`               | Normal chat and local agent model |
 | `TATER_HYDRA_MODEL`           | `tater/hydra`              | Tater capability model            |
-| `TATER_CONTEXT_WINDOW`        | `32768`                    | Configured model context tokens    |
+| `TATER_CONTEXT_WINDOW`        | `32768`                    | Configured model context tokens   |
 | `TATER_HYDRA_TIMEOUT_SECONDS` | `600`                      | Hydra request timeout             |
 | `TATER_AGENT_MAX_ITERATIONS`  | `32`                       | Maximum planning/tool rounds      |
 | `TATER_WEBUI_WORKSPACE`       | process directory          | Initial terminal directory        |
@@ -90,9 +90,20 @@ backend process environment, may use absolute paths, and return output plus
 exit status in the same tool result. The model uses ordinary shell commands for
 files, Git, packages, builds, tests, and process management.
 
-The agent may show short progress updates while commands run. Once tool work
-starts, a completion review prevents the turn from ending while requested work
-is unfinished or the answer is unsupported by actual command results.
+## Background tasks
+
+When a request needs the terminal or Hydra, Tater Open WebUI moves the work into
+a background task. The original chat remains available while the task runs.
+Active tasks appear above Chats in the sidebar, and opening one shows its live,
+read-only transcript in the normal chat layout.
+
+The agent may show short progress updates while commands run. A completion
+review prevents the task from ending while requested work is unfinished or its
+answer is unsupported by actual tool results. Closing a task cancels it and its
+active terminal process. When a task finishes or is cancelled, its outcome and
+updated working context are returned to the chat that started it. Normal chat
+also receives authoritative awareness of every currently running task. Up to
+two background tasks may run for one user at a time.
 
 ## Development
 

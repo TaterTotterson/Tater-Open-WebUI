@@ -128,6 +128,7 @@
 
 	export let chatIdProp = '';
 	export let embedded = false;
+	export let taskView = false;
 	export let embeddedTitle = '';
 	export let embeddedChats = [];
 	export let embeddedDraftKey = '';
@@ -341,8 +342,8 @@
 	let chat = null;
 	let tags = [];
 
-	// Read-only when viewing someone else's chat (e.g. via shared folder access)
-	$: readOnly = chat != null && chat.user_id !== $user?.id;
+	// Task transcripts and chats owned by someone else are read-only.
+	$: readOnly = taskView || (chat != null && chat.user_id !== $user?.id);
 
 	let chatOwner = null;
 
@@ -357,7 +358,7 @@
 		});
 	};
 
-	$: if (readOnly && chat?.user_id) {
+	$: if (readOnly && !taskView && chat?.user_id) {
 		void resolveChatOwner(chat.user_id);
 	} else {
 		chatOwner = null;
@@ -4189,7 +4190,7 @@
 							{#if readOnly}
 								<div class="pb-6 z-10">
 									<div class="text-xs text-gray-400 dark:text-gray-500 text-center">
-										{$i18n.t('Read only')}
+										{taskView ? $i18n.t('Background task transcript') : $i18n.t('Read only')}
 									</div>
 								</div>
 							{:else}

@@ -255,7 +255,7 @@ class LocalTerminalRuntime:
                     await record.process.wait()
                 else:
                     await asyncio.wait_for(record.process.wait(), timeout=record.timeout_seconds)
-            except TimeoutError:
+            except (TimeoutError, asyncio.TimeoutError):
                 record.timed_out = True
                 await self._terminate_process(record)
             finally:
@@ -280,7 +280,7 @@ class LocalTerminalRuntime:
         if process is None and record.task and not record.task.done():
             try:
                 await asyncio.wait_for(record.started.wait(), timeout=3)
-            except TimeoutError:
+            except (TimeoutError, asyncio.TimeoutError):
                 record.task.cancel()
             process = record.process
         if not process or process.returncode is not None:
@@ -326,7 +326,12 @@ class LocalTerminalRuntime:
         )
         if background:
             return record.tool_result()
-        await record.done.wait()
+        try:
+            await record.done.wait()
+        except asyncio.CancelledError:
+            await asyncio.shield(self._terminate_process(record))
+            record.done.set()
+            raise
         return record.tool_result()
 
     def list_processes(self, user_id: str, session_id: str | None) -> list[dict[str, Any]]:
