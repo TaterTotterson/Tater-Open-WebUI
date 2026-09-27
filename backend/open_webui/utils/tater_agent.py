@@ -12,6 +12,7 @@ TATER_AGENT_HISTORY_MAX_CHARS = 120_000
 TATER_AGENT_REPEAT_LIMIT = 3
 TATER_AGENT_PROGRESS_MAX_CHARS = 600
 TATER_AGENT_FINAL_ANSWER_MAX_CHARS = 40_000
+TATER_AGENT_REVIEW_REASON_MAX_CHARS = 2_000
 
 _VOLATILE_RESULT_KEYS = {
     'created_at',
@@ -102,6 +103,36 @@ def parse_tool_plan_response(
 
 def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP) -> list[dict[str, Any]]:
     return parse_tool_plan_response(content, max_calls=max_calls)['tool_calls']
+
+
+def parse_completion_review(content: str) -> dict[str, Any]:
+    content = str(content or '')
+    payload = None
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(content):
+        if character != '{':
+            continue
+        try:
+            candidate, _ = decoder.raw_decode(content[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and 'complete' in candidate:
+            payload = candidate
+            break
+    if payload is None:
+        raise ValueError('No completion-review JSON object found')
+
+    complete = payload.get('complete')
+    reason = payload.get('reason', '')
+    if not isinstance(complete, bool):
+        raise ValueError('complete must be a boolean')
+    if not isinstance(reason, str):
+        raise ValueError('reason must be a string')
+
+    reason = reason.strip()[:TATER_AGENT_REVIEW_REASON_MAX_CHARS]
+    if not complete and not reason:
+        raise ValueError('An incomplete review must explain what remains')
+    return {'complete': complete, 'reason': reason}
 
 
 def render_tool_history(records: list[dict[str, Any]], max_chars: int = TATER_AGENT_HISTORY_MAX_CHARS) -> str:

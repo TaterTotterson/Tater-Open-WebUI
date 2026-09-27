@@ -82,7 +82,11 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("'type': 'message'", middleware_source)
         self.assertIn('A progress update does not complete the task', middleware_source)
         self.assertIn('The task cannot be marked complete without final_answer', middleware_source)
-        self.assertIn('<prepared_final_answer>', middleware_source)
+        self.assertIn('You are the completion gate for a computer-using agent', middleware_source)
+        self.assertIn("body['_tater_agent_response']", middleware_source)
+
+        main_source = MAIN_PATH.read_text(encoding='utf-8')
+        self.assertIn("form_data.pop('_tater_agent_response', None)", main_source)
 
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))

@@ -45,6 +45,16 @@ class TaterAgentTests(unittest.TestCase):
                 '"final_answer":"Done."}'
             )
 
+    def test_parses_completion_review(self):
+        self.assertEqual(
+            tater_agent.parse_completion_review('{"complete":false,"reason":"face_id is still uninspected"}'),
+            {'complete': False, 'reason': 'face_id is still uninspected'},
+        )
+
+    def test_incomplete_review_requires_reason(self):
+        with self.assertRaisesRegex(ValueError, 'must explain'):
+            tater_agent.parse_completion_review('{"complete":false,"reason":""}')
+
     def test_parses_first_tool_plan_without_consuming_trailing_prose(self):
         calls = tater_agent.parse_tool_plan(
             'Plan: {"tool_calls":[{"name":"terminal","parameters":{"command":"cat a.py"}}]} '

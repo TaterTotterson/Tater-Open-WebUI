@@ -1323,7 +1323,34 @@ async def chat_completion(
             if await drain_approved_tool_calls(request, form_data, user, model, metadata):
                 return {'status': True, 'chat_id': metadata.get('chat_id'), 'paused': True}
 
-            response = await chat_completion_handler(request, form_data, user)
+            tater_agent_response = form_data.pop('_tater_agent_response', None)
+            if tater_agent_response:
+                response_content = tater_agent_response['content']
+                display_content = tater_agent_response.get('display_content') or response_content
+                response = {
+                    'id': f'chatcmpl-{uuid4()}',
+                    'object': 'chat.completion',
+                    'created': int(time.time()),
+                    'model': form_data.get('model', ''),
+                    'choices': [
+                        {
+                            'index': 0,
+                            'message': {'role': 'assistant', 'content': response_content},
+                            'finish_reason': 'stop',
+                        }
+                    ],
+                    'output': [
+                        {
+                            'type': 'message',
+                            'id': f'msg-{uuid4()}',
+                            'status': 'completed',
+                            'role': 'assistant',
+                            'content': [{'type': 'output_text', 'text': display_content}],
+                        }
+                    ],
+                }
+            else:
+                response = await chat_completion_handler(request, form_data, user)
 
             # When the upstream provider returns an error (e.g. HTTP 400
             # content-filter, quota exceeded), generate_chat_completion

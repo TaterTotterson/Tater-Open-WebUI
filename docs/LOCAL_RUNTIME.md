@@ -41,7 +41,9 @@ The model performs every local action through `terminal`, using ordinary shell t
 
 For multi-step work, the planner may include a short conversational progress update with its next action. Tater WebUI appends that update to the assistant message before starting the command, so the user can see what the agent is doing while terminal work continues. Progress text is separate from executable calls and cannot contain tool-call markup.
 
-After terminal or Hydra work begins, the loop cannot stop with only an empty call list. It must either continue working or provide a complete final answer based on the returned results. That prepared answer is handed to the normal response pass so it does not mistake an unfinished explanation or raw tool token for completion.
+After terminal or Hydra work begins, the loop cannot stop with only an empty call list. It must either continue working or provide a complete final answer based on the returned results. A separate completion check rejects a proposed answer if any requested part remains unfinished or if its claims are unsupported by the command results.
+
+Once that check passes, Tater WebUI delivers the loop's answer directly. It deliberately skips a second normal-model pass, preventing a completed tool turn from being reinterpreted as another raw terminal call. Ordinary conversations that did not use a tool still follow the regular completion path.
 
 The file browser independently supports uploads, downloads, folders, moves, deletion, text search, ZIP archives, and file viewing. Those HTTP endpoints support the UI and are not part of the model's tool catalog.
 
