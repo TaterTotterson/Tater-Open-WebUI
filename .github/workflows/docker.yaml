@@ -1,4 +1,4 @@
-name: Build and publish Tater WebUI
+name: Build and publish Tater Open WebUI
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: tater-webui-image-${{ github.event_name }}-${{ github.ref }}
+  group: tater-open-webui-image-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -49,7 +49,7 @@ jobs:
           file: Dockerfile
           load: true
           platforms: linux/amd64
-          tags: tater-webui-ci:${{ github.sha }}
+          tags: tater-open-webui-ci:${{ github.sha }}
           build-args: |
             BUILD_HASH=${{ github.sha }}
           cache-from: type=gha
@@ -57,7 +57,7 @@ jobs:
 
       - name: Test backend inside image
         env:
-          IMAGE: tater-webui-ci:${{ github.sha }}
+          IMAGE: tater-open-webui-ci:${{ github.sha }}
         run: |
           docker run --rm --entrypoint python "$IMAGE" \
             -m unittest discover -s /app/backend/tests -p 'test_*.py'
@@ -66,11 +66,11 @@ jobs:
 
       - name: Smoke-test container health
         env:
-          IMAGE: tater-webui-ci:${{ github.sha }}
+          IMAGE: tater-open-webui-ci:${{ github.sha }}
         run: |
           set -euo pipefail
           container_id=$(docker run --detach --rm \
-            --name tater-webui-smoke \
+            --name tater-open-webui-smoke \
             --publish 127.0.0.1:8080:8080 \
             --env WEBUI_SECRET_KEY=ci-smoke-test-secret \
             --env TATER_API_BASE_URL=http://127.0.0.1:9/v1 \
@@ -87,13 +87,13 @@ jobs:
               exit 0
             fi
             if [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != true ]; then
-              echo 'Tater WebUI container stopped before becoming healthy.' >&2
+              echo 'Tater Open WebUI container stopped before becoming healthy.' >&2
               exit 1
             fi
             sleep 2
           done
 
-          echo 'Tater WebUI did not become healthy within 120 seconds.' >&2
+          echo 'Tater Open WebUI did not become healthy within 120 seconds.' >&2
           exit 1
 
       - name: Log in to GitHub Container Registry
@@ -118,7 +118,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
           labels: |
-            org.opencontainers.image.title=Tater WebUI
+            org.opencontainers.image.title=Tater Open WebUI
             org.opencontainers.image.description=Tater-connected terminal agent and chat interface
 
       - name: Publish image

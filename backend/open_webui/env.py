@@ -767,7 +767,7 @@ if WEBUI_AUTH and WEBUI_SECRET_KEY == '':
         'The supported start script sets or auto-generates it for you.\n'
         'If you invoke uvicorn directly, '
         'you must set WEBUI_SECRET_KEY yourself to a long random value.\n'
-        'See the Tater WebUI README for setup details.'
+        'See the Tater Open WebUI README for setup details.'
     )
 
 ENABLE_COMPRESSION_MIDDLEWARE = os.getenv('ENABLE_COMPRESSION_MIDDLEWARE', 'True').lower() == 'true'
@@ -914,8 +914,8 @@ if LICENSE_PUBLIC_KEY:
 # visual, textual, symbolic identifiers, metadata, and surrounding UI.
 # Do not alter, remove, obscure, or replace it except as LICENSE permits:
 # https://docs.openwebui.com/license.
-WEBUI_NAME = os.getenv('WEBUI_NAME', 'Tater WebUI')
-if WEBUI_NAME != 'Open WebUI':
+WEBUI_NAME = os.getenv('WEBUI_NAME', 'Tater Open WebUI')
+if 'Open WebUI' not in WEBUI_NAME:
     WEBUI_NAME += ' (Open WebUI)'
 
 # LICENSE covers this Open WebUI branding surface, including this favicon
@@ -1046,7 +1046,7 @@ else:
         CHAT_RESPONSE_STREAM_DELTA_CHUNK_SIZE = 1
 
 
-# Maximum tool-call iterations per chat response. Tater WebUI keeps native and
+# Maximum tool-call iterations per chat response. Tater Open WebUI keeps native and
 # compatibility tool loops on the same bounded default. The old environment
 # names remain accepted for existing installations.
 CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = os.getenv(

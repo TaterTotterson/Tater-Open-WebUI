@@ -1,14 +1,14 @@
-name: tater-webui
+name: tater-open-webui
 
 services:
-  tater-webui:
+  tater-open-webui:
     build:
       context: .
       dockerfile: Dockerfile
-    image: tater-webui:dev
-    container_name: tater-webui
+    image: tater-open-webui:dev
+    container_name: tater-open-webui
     volumes:
-      - tater-webui:/app/backend/data
+      - tater-open-webui:/app/backend/data
       - '${TATER_WEBUI_HOST_WORKSPACE-.}:/workspace'
     ports:
       - ${TATER_WEBUI_PORT-3000}:8080
@@ -20,11 +20,11 @@ services:
       - 'TATER_HYDRA_TIMEOUT_SECONDS=${TATER_HYDRA_TIMEOUT_SECONDS-600}'
       - 'TATER_AGENT_MAX_ITERATIONS=${TATER_AGENT_MAX_ITERATIONS-32}'
       - 'TATER_WEBUI_WORKSPACE=/workspace'
-      - 'WEBUI_NAME=Tater WebUI'
+      - 'WEBUI_NAME=Tater Open WebUI'
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
 
 volumes:
-  tater-webui: {}
+  tater-open-webui: {}

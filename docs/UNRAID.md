@@ -1,9 +1,9 @@
-# Deploy Tater WebUI on Unraid
+# Deploy Tater Open WebUI on Unraid
 
 The GitHub workflow publishes a Linux amd64 image for ordinary Unraid servers:
 
 ```text
-ghcr.io/tatertotterson/tater-webui:latest
+ghcr.io/tatertotterson/tater-open-webui:latest
 ```
 
 Version tags also publish immutable versioned images. For example, Git tag
@@ -16,8 +16,12 @@ The repository and container package are public. Pull the image directly from
 the Unraid terminal; no registry token is required:
 
 ```bash
-docker pull ghcr.io/tatertotterson/tater-webui:latest
+docker pull ghcr.io/tatertotterson/tater-open-webui:latest
 ```
+
+Existing `tater-webui` installations can keep their current container name and
+appdata path. Change only the repository/image field to the new image unless
+you intentionally want to migrate those local names and paths.
 
 ## Container configuration
 
@@ -26,11 +30,11 @@ upgrades. Adjust the Tater URL and host workspace mapping for your installation:
 
 ```bash
 docker run --detach \
-  --name tater-webui \
+  --name tater-open-webui \
   --restart unless-stopped \
   --publish 3000:8080 \
   --add-host host.docker.internal:host-gateway \
-  --volume /mnt/user/appdata/tater-webui:/app/backend/data \
+  --volume /mnt/user/appdata/tater-open-webui:/app/backend/data \
   --volume /mnt/user:/workspace \
   --env TATER_WEBUI_WORKSPACE=/workspace \
   --env TATER_API_BASE_URL=http://host.docker.internal:8501/v1 \
@@ -38,7 +42,7 @@ docker run --detach \
   --env TATER_BASE_MODEL=tater/base \
   --env TATER_HYDRA_MODEL=tater/hydra \
   --env WEBUI_SECRET_KEY=replace-with-a-long-random-secret \
-  ghcr.io/tatertotterson/tater-webui:latest
+  ghcr.io/tatertotterson/tater-open-webui:latest
 ```
 
 In the Unraid Add Container form, use the same image, port, paths, variables,
@@ -55,7 +59,7 @@ reliable than the host alias.
 The `/workspace` mapping defines what host data the local agent can access.
 Mounting `/mnt/user` grants access to all user shares; map a narrower project
 directory if that is preferable. The agent always has unrestricted access
-inside the Tater WebUI container itself.
+inside the Tater Open WebUI container itself.
 
 Open `http://<unraid-address>:3000` after the health status becomes healthy.
 The first account created becomes the administrator.
@@ -66,10 +70,10 @@ For `latest`, pull and recreate the container while preserving the appdata
 volume:
 
 ```bash
-docker pull ghcr.io/tatertotterson/tater-webui:latest
-docker stop tater-webui
-docker rm tater-webui
+docker pull ghcr.io/tatertotterson/tater-open-webui:latest
+docker stop tater-open-webui
+docker rm tater-open-webui
 ```
 
 Then recreate it with the same settings. Removing the container does not remove
-`/mnt/user/appdata/tater-webui` or the named host workspace.
+`/mnt/user/appdata/tater-open-webui` or the named host workspace.

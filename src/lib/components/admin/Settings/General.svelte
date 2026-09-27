@@ -146,7 +146,7 @@
 									>
 								{:else}
 									<a
-										href="https://github.com/TaterTotterson/Tater-WebUI/releases/tag/v{version.latest}"
+										href="https://github.com/TaterTotterson/Tater-Open-WebUI/releases/tag/v{version.latest}"
 										target="_blank"
 										class="text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
 									>

@@ -100,12 +100,20 @@
 
 <form class="flex h-full flex-col justify-between text-sm" on:submit|preventDefault={save}>
 	<div class="flex-1 min-h-0 overflow-y-auto scrollbar-hover pr-1.5">
-		<div>
-			<h2 class="text-sm font-medium text-gray-900 dark:text-white">Tater connection</h2>
-			<p class="mt-1 max-w-2xl text-xs text-gray-500 dark:text-gray-400">
-				Tater WebUI uses this single OpenAI-compatible endpoint for normal chat and Tater tool
-				delegation. Local terminal and filesystem tools run on this Tater WebUI host.
-			</p>
+		<div class="flex items-center gap-4">
+			<img
+				src="/static/tater-open-webui-logo.png"
+				alt="Tater mascot leaning on the Open WebUI logo"
+				class="size-16 object-contain"
+			/>
+			<div>
+				<h2 class="text-sm font-medium text-gray-900 dark:text-white">Tater connection</h2>
+				<p class="mt-1 max-w-2xl text-xs text-gray-500 dark:text-gray-400">
+					Tater Open WebUI uses this single OpenAI-compatible endpoint for normal chat and
+					Tater tool delegation. Local terminal and filesystem tools run on this Tater Open
+					WebUI host.
+				</p>
+			</div>
 		</div>
 
 		{#if profile === null}

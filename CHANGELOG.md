@@ -18,4 +18,4 @@
 - Retrieval, knowledge, memory, web-search, and vector-database products.
 - Notes, channels, calendar, analytics, evaluations, and automation pages.
 - Legacy Open WebUI deployment variants and contributor-maintenance files that
-  are not used by Tater WebUI.
+  are not used by Tater Open WebUI.

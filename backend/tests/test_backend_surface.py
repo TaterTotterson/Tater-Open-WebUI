@@ -66,7 +66,7 @@ class BackendSurfaceTests(unittest.TestCase):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
         self.assertNotIn('get_builtin_tools', middleware_source)
         self.assertNotIn('connect_mcp_server', middleware_source)
-        self.assertIn('Tater WebUI intentionally exposes only terminal and tater_hydra', middleware_source)
+        self.assertIn('Tater Open WebUI intentionally exposes only terminal and tater_hydra', middleware_source)
 
     def test_legacy_tool_results_are_handed_to_the_final_answer(self):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')

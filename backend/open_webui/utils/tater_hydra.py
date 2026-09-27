@@ -70,7 +70,7 @@ def build_tater_hydra_payload(
             {
                 'role': 'system',
                 'content': (
-                    'This is a delegated Tater capability request from Tater WebUI. Execute the requested Tater action '
+                    'This is a delegated Tater capability request from Tater Open WebUI. Execute the requested Tater action '
                     'using your available Tater tools, then return a concise, factual result. Do not claim success '
                     'unless the action actually completed.'
                 ),
@@ -80,7 +80,7 @@ def build_tater_hydra_payload(
         'stream': False,
         'user': user_identity,
         'metadata': {
-            'source': 'tater-webui',
+            'source': 'tater-open-webui',
             **({'chat_id': session_id} if session_id else {}),
         },
     }

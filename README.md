@@ -1,9 +1,13 @@
-# Tater WebUI
+<p align="center">
+  <img src="static/static/tater-open-webui-logo.png" alt="Tater mascot leaning on the Open WebUI logo" width="360">
+</p>
 
-Tater WebUI is a terminal-first AI chat application derived from
+# Tater Open WebUI
+
+Tater Open WebUI is a terminal-first AI chat application derived from
 [Open WebUI](https://github.com/open-webui/open-webui). It connects to Tater's
 OpenAI-compatible API and gives the normal chat model unrestricted terminal
-access inside the environment running Tater WebUI.
+access inside the environment running Tater Open WebUI.
 
 ## What it does
 
@@ -11,7 +15,7 @@ access inside the environment running Tater WebUI.
 - Local work uses one model tool: `terminal({"command": "..."})`.
 - `tater/hydra` is called only for Tater-owned capabilities such as connected
   devices, Verbas, Cores, Portals, media services, and automations.
-- Terminal work stays local to Tater WebUI; it does not use Hydra or Spudex.
+- Terminal work stays local to Tater Open WebUI; it does not use Hydra or Spudex.
 - The agent runs an inspect/edit/test loop and verifies completion before
   returning a final answer.
 - Chat history, authentication, files, images, audio, and the terminal UI are
@@ -47,7 +51,7 @@ outside mounted paths are not visible from inside Docker.
 Every successful push to `main` publishes a tested Linux amd64 image:
 
 ```bash
-docker pull ghcr.io/tatertotterson/tater-webui:latest
+docker pull ghcr.io/tatertotterson/tater-open-webui:latest
 ```
 
 See the [Unraid guide](docs/UNRAID.md) for the complete container setup.
@@ -114,14 +118,15 @@ npm run build
 ## Security
 
 Terminal access is intentionally unrestricted for the operating-system user
-running Tater WebUI. In Docker, that includes the container and every mounted
+running Tater Open WebUI. In Docker, that includes the container and every mounted
 host path. Run it as a dedicated user, mount only intended directories, and put
 remote access behind a trusted VPN or authenticated reverse proxy. See the
 [security policy](docs/SECURITY.md).
 
 ## License
 
-This project is derived from Open WebUI and retains the upstream license,
-historical license terms, notice, contributor agreement, copyright attribution,
-and required product attribution. See `LICENSE`, `LICENSE_HISTORY`,
-`LICENSE_NOTICE`, and `CONTRIBUTOR_LICENSE_AGREEMENT`.
+This project is a Tater-connected distribution of Open WebUI. It retains the
+Open WebUI name and brand identity alongside Tater branding, as well as the
+upstream license, historical license terms, notice, contributor agreement, and
+copyright attribution. See `LICENSE`, `LICENSE_HISTORY`, `LICENSE_NOTICE`, and
+`CONTRIBUTOR_LICENSE_AGREEMENT`.

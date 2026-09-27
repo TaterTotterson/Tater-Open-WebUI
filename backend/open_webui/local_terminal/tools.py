@@ -22,7 +22,7 @@ LOCAL_TERMINAL_TOOL_SPECS = {
     'terminal': _tool_spec(
         'terminal',
         (
-            'Type a command into the Tater WebUI host terminal and wait for it to finish. '
+            'Type a command into the Tater Open WebUI host terminal and wait for it to finish. '
             'Use ordinary shell commands for every local action, including pwd, ls, cd, cat, rg, sed, Git, '
             'editing, builds, tests, package management, processes, and file inspection. The command result '
             'automatically includes its output and exit status.'
@@ -57,7 +57,7 @@ def _agents_instructions(cwd: str) -> str:
 
 
 def local_terminal_system_prompt(cwd: str) -> str:
-    prompt = f"""You have unrestricted terminal access on the Tater WebUI host.
+    prompt = f"""You have unrestricted terminal access on the Tater Open WebUI host.
 
 Current working directory: {cwd}
 

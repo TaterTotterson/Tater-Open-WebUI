@@ -1467,9 +1467,9 @@ async def chat_completion_tools_handler(
     def append_agent_notice(message: str):
         sources.append(
             {
-                'source': {'name': 'tater-webui/agent-loop'},
+                'source': {'name': 'tater-open-webui/agent-loop'},
                 'document': [message],
-                'metadata': [{'source': 'tater-webui/agent-loop'}],
+                'metadata': [{'source': 'tater-open-webui/agent-loop'}],
                 'tool_result': True,
             }
         )
@@ -2447,7 +2447,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 form_data['files'] = [*folder_files, *form_data.get('files', [])]
 
     form_data.pop('variables', None)
-    # Tater WebUI owns its tool surface. Ignore caller-, filter-, and server-supplied tools.
+    # Tater Open WebUI owns its tool surface. Ignore caller-, filter-, and server-supplied tools.
     form_data.pop('tools', None)
     payload_tools = None
 
@@ -2744,7 +2744,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 )
 
         if tools_dict:
-            # Tater WebUI intentionally exposes only terminal and tater_hydra.
+            # Tater Open WebUI intentionally exposes only terminal and tater_hydra.
             metadata['tools'] = tools_dict
 
             if metadata.get('params', {}).get('function_calling') != 'legacy':

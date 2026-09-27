@@ -21,7 +21,7 @@
 			LATEST_VERSION: version.latest
 		})}
 
-		<a href="https://github.com/TaterTotterson/Tater-WebUI/releases" target="_blank" class="underline">
+		<a href="https://github.com/TaterTotterson/Tater-Open-WebUI/releases" target="_blank" class="underline">
 			{$i18n.t('Update for the latest features and improvements.')}</a
 		>
 	</div>

@@ -2268,7 +2268,7 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
         timeout = aiohttp.ClientTimeout(total=1)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
             async with session.get(
-                'https://api.github.com/repos/TaterTotterson/Tater-WebUI/releases/latest',
+                'https://api.github.com/repos/TaterTotterson/Tater-Open-WebUI/releases/latest',
                 ssl=AIOHTTP_CLIENT_SESSION_SSL,
             ) as response:
                 response.raise_for_status()
@@ -2561,19 +2561,18 @@ async def get_manifest_json():
             'display': 'standalone',
             'background_color': '#343541',
             'icons': [
-                # LICENSE covers this Open WebUI install icon.
-                # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-                # https://docs.openwebui.com/license.
+                # Co-branded Tater/Open WebUI install icon. The original Open WebUI
+                # favicon and surrounding attribution remain available in the UI.
                 {
-                    'src': '/static/logo.png',
+                    'src': '/static/tater-open-webui-logo.png',
                     'type': 'image/png',
-                    'sizes': '500x500',
+                    'sizes': '1254x1254',
                     'purpose': 'any',
                 },
                 {
-                    'src': '/static/logo.png',
+                    'src': '/static/tater-open-webui-logo.png',
                     'type': 'image/png',
-                    'sizes': '500x500',
+                    'sizes': '1254x1254',
                     'purpose': 'maskable',
                 },
             ],
