@@ -66,6 +66,71 @@ export const getFolders = async (token: string = '') => {
 	return res;
 };
 
+export type ProjectDirectory = {
+	name: string;
+	path: string;
+};
+
+export type ProjectContext = {
+	projects_root: string;
+	path: string;
+	project_id: string | null;
+	project_name: string | null;
+};
+
+export const getAvailableProjectDirectories = async (
+	token: string
+): Promise<ProjectDirectory[]> => {
+	let error: string | null = null;
+	const res = await fetch(`${WEBUI_API_BASE_URL}/folders/projects/available`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (response) => {
+			if (!response.ok) throw await response.json();
+			return response.json();
+		})
+		.catch((err) => {
+			error = err?.detail ?? err?.message ?? 'Unable to list project directories';
+			return [];
+		});
+
+	if (error) throw error;
+	return res;
+};
+
+export const getProjectContext = async (
+	token: string,
+	chatId?: string | null
+): Promise<ProjectContext> => {
+	let error: string | null = null;
+	const searchParams = new URLSearchParams();
+	if (chatId) searchParams.set('chat_id', chatId);
+	const query = searchParams.size ? `?${searchParams.toString()}` : '';
+	const res = await fetch(`${WEBUI_API_BASE_URL}/folders/project/context${query}`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (response) => {
+			if (!response.ok) throw await response.json();
+			return response.json();
+		})
+		.catch((err) => {
+			error = err?.detail ?? err?.message ?? 'Unable to resolve project context';
+			return null;
+		});
+
+	if (error) throw error;
+	if (!res) throw 'Unable to resolve project context';
+	return res;
+};
+
 export const getFolderById = async (token: string, id: string) => {
 	let error = null;
 
@@ -201,11 +266,17 @@ export const updateFolderParentIdById = async (token: string, id: string, parent
 	return res;
 };
 
-export const deleteFolderById = async (token: string, id: string, deleteContents: boolean) => {
+export const deleteFolderById = async (
+	token: string,
+	id: string,
+	deleteContents: boolean,
+	deleteProjectDirectory = false
+) => {
 	let error = null;
 
 	const searchParams = new URLSearchParams();
 	searchParams.append('delete_contents', deleteContents ? 'true' : 'false');
+	searchParams.append('delete_project_directory', deleteProjectDirectory ? 'true' : 'false');
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/folders/${id}?${searchParams.toString()}`, {
 		method: 'DELETE',

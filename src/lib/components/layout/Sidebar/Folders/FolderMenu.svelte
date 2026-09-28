@@ -11,12 +11,15 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Download from '../icons/Download.svelte';
 	import CheckIcon from '$lib/components/icons/Check.svelte';
+	import TrashIcon from '../icons/Trash.svelte';
 
 	export let align: 'start' | 'end' = 'start';
 	export let onEdit = () => {};
 	export let onExport = () => {};
 	export let onShare = () => {};
 	export let onMarkAllRead = () => {};
+	export let onDelete = () => {};
+	export let canDelete = true;
 
 	let show = false;
 </script>
@@ -85,6 +88,21 @@
 				<ShareIcon className="size-3.5" />
 				<div class="flex items-center">{$i18n.t('Share')}</div>
 			</button>
+
+			{#if canDelete}
+				<hr class="border-gray-50/30 dark:border-gray-800/30 mx-1 my-0.5" />
+
+				<button
+					class="flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] text-red-600 select-none cursor-pointer hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+					on:click={() => {
+						show = false;
+						onDelete();
+					}}
+				>
+					<TrashIcon className="size-3.5" />
+					<div class="flex items-center">{$i18n.t('Remove Project')}</div>
+				</button>
+			{/if}
 		</DropdownMenu>
 	</div>
 </Dropdown>

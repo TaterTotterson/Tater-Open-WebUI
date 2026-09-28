@@ -18,7 +18,8 @@
 		updateFolderById,
 		getFolderById,
 		getSharedFolderChats,
-		markFolderChatsReadById
+		markFolderChatsReadById,
+		deleteFolderById
 	} from '$lib/apis/folders';
 	import {
 		getChatById,
@@ -41,6 +42,7 @@
 	import FolderShareModal from './Folders/FolderShareModal.svelte';
 	import FolderModal from './Folders/FolderModal.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
 	export let folderRegistry = {};
 	export let open = false;
@@ -64,6 +66,7 @@
 
 	let showFolderModal = false;
 	let showShareModal = false;
+	let showDeleteProjectConfirm = false;
 	let edit = false;
 
 	let draggedOver = false;
@@ -466,6 +469,33 @@
 		}
 	};
 
+	/** @param {string} choice */
+	const deleteProjectHandler = async (choice) => {
+		const deleteProjectDirectory = choice === 'delete-directory';
+		const res = await deleteFolderById(
+			localStorage.token,
+			folderId,
+			false,
+			deleteProjectDirectory
+		).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (!res) return;
+
+		await selectedFolder.set(null);
+		if (!$chatId) {
+			await goto('/');
+		}
+		toast.success(
+			deleteProjectDirectory
+				? $i18n.t('Project and its folder were deleted.')
+				: $i18n.t('Project removed. Its folder was kept in /projects.')
+		);
+		dispatch('change');
+	};
+
 	const isExpandedUpdateHandler = async () => {
 		const res = await updateFolderIsExpandedById(localStorage.token, folderId, open).catch(
 			(error) => {
@@ -620,6 +650,30 @@
 
 <FolderShareModal bind:show={showShareModal} folder={folders[folderId]} />
 
+<ConfirmDialog
+	bind:show={showDeleteProjectConfirm}
+	title={$i18n.t('Remove project?')}
+	confirmLabel={$i18n.t('Continue')}
+	input={true}
+	inputType="select"
+	inputValue="keep-directory"
+	inputPlaceholder={$i18n.t('Choose what happens to the project folder')}
+	inputOptions={[
+		{
+			label: $i18n.t('Keep folder in /projects (recommended)'),
+			value: 'keep-directory'
+		},
+		{ label: $i18n.t('Permanently delete project folder'), value: 'delete-directory' }
+	]}
+	on:confirm={(event) => deleteProjectHandler(event.detail)}
+>
+	<div class="text-sm text-gray-500">
+		{$i18n.t(
+			'The project will be removed from the sidebar. Its chats will become regular chats. Choose whether to keep its files for later or permanently delete the project folder.'
+		)}
+	</div>
+</ConfirmDialog>
+
 {#if dragged && x && y}
 	<DragGhost {x} {y}>
 		<div class=" bg-black/80 backdrop-blur-2xl px-2 py-1 rounded-lg w-fit max-w-40">
@@ -771,6 +825,7 @@
 						class="absolute z-10 right-2 hover-reveal self-center flex items-center dark:text-gray-300"
 					>
 						<FolderMenu
+							canDelete={!folders[folderId]?.shared}
 							onEdit={() => {
 								showFolderModal = true;
 							}}
@@ -781,6 +836,9 @@
 								exportHandler();
 							}}
 							onMarkAllRead={markAllReadHandler}
+							onDelete={() => {
+								showDeleteProjectConfirm = true;
+							}}
 						>
 							<div
 								class="flex size-5 items-center justify-center self-center dark:hover:text-white transition m-0 touch-auto"

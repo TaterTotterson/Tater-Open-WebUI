@@ -11,7 +11,11 @@
 	import { user } from '$lib/stores';
 
 	import Textarea from '$lib/components/common/Textarea.svelte';
-	import { getFolderById } from '$lib/apis/folders';
+	import {
+		getAvailableProjectDirectories,
+		getFolderById,
+		type ProjectDirectory
+	} from '$lib/apis/folders';
 	const i18n = getContext('i18n');
 
 	export let show = false;
@@ -30,6 +34,10 @@
 		system_prompt: ''
 	};
 	let projectPath = '';
+	let creationMode: 'new' | 'existing' = 'new';
+	let availableProjects: ProjectDirectory[] = [];
+	let selectedExistingProject = '';
+	let loadingAvailableProjects = false;
 
 	let loading = false;
 
@@ -39,7 +47,12 @@
 		await onSubmit({
 			name,
 			meta,
-			data,
+			data: {
+				...data,
+				...(creationMode === 'existing' && !edit
+					? { existing_project_name: selectedExistingProject }
+					: {})
+			},
 			parent_id: edit ? undefined : parentId
 		});
 		show = false;
@@ -59,6 +72,15 @@
 			};
 			data = { system_prompt: folder.data?.system_prompt ?? '' };
 			projectPath = folder.data?.project_path ?? '';
+		} else {
+			loadingAvailableProjects = true;
+			availableProjects = await getAvailableProjectDirectories(localStorage.token).catch(
+				(error) => {
+					toast.error(`${error}`);
+					return [];
+				}
+			);
+			loadingAvailableProjects = false;
 		}
 
 		focusInput();
@@ -79,6 +101,9 @@
 
 	$: if (!show && !edit) {
 		name = '';
+		creationMode = 'new';
+		selectedExistingProject = '';
+		availableProjects = [];
 		meta = {
 			background_image_url: null
 		};
@@ -117,18 +142,78 @@
 						submitHandler();
 					}}
 				>
+					{#if !edit}
+						<div
+							class="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-gray-100/70 p-1 dark:bg-gray-800/50"
+						>
+							<button
+								type="button"
+								class="rounded-lg px-3 py-1.5 text-xs transition {creationMode === 'new'
+									? 'bg-white text-gray-800 shadow-sm dark:bg-gray-700 dark:text-gray-100'
+									: 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}"
+								on:click={() => {
+									creationMode = 'new';
+									selectedExistingProject = '';
+									name = '';
+								}}
+							>
+								{$i18n.t('New Folder')}
+							</button>
+							<button
+								type="button"
+								class="rounded-lg px-3 py-1.5 text-xs transition {creationMode === 'existing'
+									? 'bg-white text-gray-800 shadow-sm dark:bg-gray-700 dark:text-gray-100'
+									: 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}"
+								on:click={() => {
+									creationMode = 'existing';
+									name = selectedExistingProject;
+								}}
+							>
+								{$i18n.t('Existing Folder')}
+							</button>
+						</div>
+					{/if}
+
 					<div class="flex flex-col w-full mt-1">
-						<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Project Name')}</div>
+						<div class=" mb-1 text-xs text-gray-500">
+							{creationMode === 'existing' && !edit
+								? $i18n.t('Project Folder')
+								: $i18n.t('Project Name')}
+						</div>
 
 						<div class="flex-1">
-							<input
-								id="folder-name"
-								class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
-								type="text"
-								bind:value={name}
-								placeholder={$i18n.t('Enter project name')}
-								autocomplete="off"
-							/>
+							{#if creationMode === 'existing' && !edit}
+								<select
+									id="folder-name"
+									class="w-full rounded-lg border border-gray-200 bg-transparent px-2.5 py-2 text-sm outline-none dark:border-gray-700"
+									bind:value={selectedExistingProject}
+									disabled={loadingAvailableProjects}
+									on:change={() => (name = selectedExistingProject)}
+								>
+									<option value="" disabled>
+										{loadingAvailableProjects
+											? $i18n.t('Looking for project folders…')
+											: $i18n.t('Select a folder in /projects')}
+									</option>
+									{#each availableProjects as project (project.path)}
+										<option value={project.name}>{project.name}</option>
+									{/each}
+								</select>
+								{#if !loadingAvailableProjects && availableProjects.length === 0}
+									<div class="mt-2 text-xs text-gray-500">
+										{$i18n.t('Every folder in /projects is already linked to a project.')}
+									</div>
+								{/if}
+							{:else}
+								<input
+									id="folder-name"
+									class="w-full text-sm bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-700 outline-hidden"
+									type="text"
+									bind:value={name}
+									placeholder={$i18n.t('Enter project name')}
+									autocomplete="off"
+								/>
+							{/if}
 						</div>
 					</div>
 
@@ -227,7 +312,7 @@
 								? ' cursor-not-allowed'
 								: ''}"
 							type="submit"
-							disabled={loading}
+							disabled={loading || (creationMode === 'existing' && !selectedExistingProject)}
 						>
 							{$i18n.t('Save')}
 

@@ -16,8 +16,10 @@
 		settings,
 		showFileNavPath,
 		showFileNavDir,
-		selectedTerminalId
+		selectedTerminalId,
+		selectedFolder
 	} from '$lib/stores';
+	import { getProjectContext } from '$lib/apis/folders';
 	import {
 		getCwd,
 		getTerminalConfig,
@@ -386,14 +388,23 @@
 	// The `mounted` flag prevents the initial run from racing with onMount.
 	let prevTerminalUrl = '';
 	let prevChatId = chatId;
+	let prevProjectHint = '';
 	let mounted = false;
 	$: {
-		($selectedTerminalId, $terminalServers, $settings);
+		($selectedTerminalId, $terminalServers, $settings, $selectedFolder);
 		const terminal = getTerminal();
 		selectedTerminal = terminal;
+		const selectedProject = $selectedFolder as {
+			data?: { project_path?: string };
+		} | null;
+		const projectHint =
+			!chatId && typeof selectedProject?.data?.project_path === 'string'
+				? selectedProject.data.project_path
+				: '';
+		const projectHintChanged = projectHint !== prevProjectHint;
+		if (projectHintChanged) prevProjectHint = projectHint;
 
 		const chatChanged = chatId !== prevChatId;
-		const oldChatId = prevChatId;
 		if (chatChanged) prevChatId = chatId;
 
 		const terminalChanged = terminal && terminal.url !== prevTerminalUrl;
@@ -402,25 +413,20 @@
 		if (chatChanged || terminalChanged || !terminal) comparePaths = null;
 
 		if (mounted && terminal) {
-			if (chatChanged && chatId && !oldChatId) {
-				// Chat just got created (null → real ID): persist the current
-				// browsed path as the new session's cwd — don't re-fetch.
-				setCwd(terminal.url, terminal.key, savedPath, chatId);
-			} else if (terminalChanged || chatChanged) {
-				// Terminal switched, new chat started, or switched between
-				// existing chats — re-fetch the session cwd.
+			if (terminalChanged || chatChanged || projectHintChanged) {
+				// Every chat owns a project context. Enter its project root when
+				// navigation changes; ordinary chats intentionally enter /projects.
 				loading = true;
 				error = null;
 				entries = [];
 				resetTreeState();
-				(async () => {
+				void (async () => {
 					if (terminalChanged) {
 						const config = await getTerminalConfig(terminal.url, terminal.key);
 						terminalEnabled = config?.features?.terminal !== false;
 					}
 
-					savedPath = applyCwd(await getCwd(terminal.url, terminal.key, chatId ?? undefined));
-					loadDir(savedPath);
+					await syncFileBrowserToProject(terminal, chatId);
 				})();
 			}
 		}
@@ -648,6 +654,38 @@
 		setFileRoot(rootFromCwd(cwd));
 		const path = cwdPath ?? fileRoot?.path ?? '/';
 		return clampToFileRoot(path);
+	};
+
+	let projectContextGeneration = 0;
+	const syncFileBrowserToProject = async (
+		terminal: { url: string; key: string },
+		targetChatId: string | null,
+		options: { restoreTree?: boolean } = {}
+	) => {
+		const generation = ++projectContextGeneration;
+		const selectedProject = $selectedFolder as {
+			data?: { project_path?: string };
+		} | null;
+		const selectedProjectPath =
+			!targetChatId && typeof selectedProject?.data?.project_path === 'string'
+				? selectedProject.data.project_path
+				: null;
+		const context = selectedProjectPath
+			? { path: selectedProjectPath }
+			: await getProjectContext(
+					localStorage.token,
+					isSavedChatId(targetChatId) ? targetChatId : null
+				).catch(() => null);
+		if (generation !== projectContextGeneration) return;
+
+		if (context?.path) {
+			await setCwd(terminal.url, terminal.key, context.path, targetChatId ?? undefined);
+		}
+		const cwd = await getCwd(terminal.url, terminal.key, targetChatId ?? undefined);
+		if (generation !== projectContextGeneration) return;
+
+		savedPath = applyCwd(cwd ?? (context?.path ? ({ cwd: context.path } as TerminalCwd) : null));
+		await loadDir(savedPath, { restoreTree: options.restoreTree });
 	};
 
 	const buildBreadcrumbs = (path: string) => {
@@ -1469,15 +1507,7 @@
 				const config = await getTerminalConfig(terminal.url, terminal.key);
 				terminalEnabled = config?.features?.terminal !== false;
 
-				const serverCwd = await getCwd(terminal.url, terminal.key, chatId ?? undefined);
-				const useServerPath = !!chatId || savedPath === '/';
-				const serverPath = applyCwd(serverCwd);
-				if (useServerPath) {
-					// Fetch session-specific cwd from the server (or global default for new chats)
-					savedPath = serverPath;
-				}
-				savedPath = clampToFileRoot(savedPath);
-				loadDir(savedPath, { restoreTree: true });
+				await syncFileBrowserToProject(terminal, chatId, { restoreTree: true });
 			})();
 		}
 

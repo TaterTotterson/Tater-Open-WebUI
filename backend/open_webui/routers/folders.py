@@ -34,6 +34,7 @@ from open_webui.utils.access_control.files import can_read_all_folder_files, get
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.tater_projects import (
     configured_projects_root,
+    discover_project_directories,
     folder_project_path,
     project_directory_name,
     project_path_for_name,
@@ -88,6 +89,71 @@ async def check_folders_permission(request: Request, user, db=None):
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
+
+
+############################
+# Project Filesystem Context
+############################
+
+
+@router.get('/project/context')
+async def get_project_context(
+    request: Request,
+    chat_id: Optional[str] = None,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Return the directory the Files panel should show for a chat."""
+
+    await check_folders_permission(request, user, db=db)
+    root = configured_projects_root()
+    project_path = root
+    project_id = None
+    project_name = None
+
+    if chat_id:
+        chat = await Chats.get_chat_by_id_for_user(chat_id, user, db=db)
+        if not chat:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ERROR_MESSAGES.NOT_FOUND,
+            )
+        if chat.folder_id:
+            folder = await Folders.get_folder_by_id(chat.folder_id, db=db)
+            path = folder_project_path(folder)
+            if path is not None and path.is_dir():
+                project_path = path
+                project_id = folder.id
+                project_name = folder.name
+
+    return {
+        'projects_root': str(root),
+        'path': str(project_path),
+        'project_id': project_id,
+        'project_name': project_name,
+    }
+
+
+@router.get('/projects/available')
+async def get_available_project_directories(
+    request: Request,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """List direct project directories that are not linked to this user's projects."""
+
+    await check_folders_permission(request, user, db=db)
+    folders = await sync_user_projects(user.id, db=db)
+    claimed_paths = {
+        path
+        for folder in folders
+        if (path := folder_project_path(folder)) is not None
+    }
+    return [
+        {'name': path.name, 'path': str(path)}
+        for path in discover_project_directories(configured_projects_root())
+        if path not in claimed_paths
+    ]
 
 
 ############################
@@ -165,8 +231,14 @@ async def create_folder(
             detail=ERROR_MESSAGES.DEFAULT('Projects cannot be nested'),
         )
 
+    form_data_values = dict(form_data.data or {})
+    existing_project_name = str(form_data_values.pop('existing_project_name', '') or '').strip()
+    linking_existing = bool(existing_project_name)
+
     try:
-        project_name = project_directory_name(form_data.name)
+        project_name = project_directory_name(
+            existing_project_name if linking_existing else form_data.name
+        )
         path = project_path_for_name(project_name, configured_projects_root())
     except ValueError as exc:
         raise HTTPException(
@@ -180,7 +252,18 @@ async def create_folder(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT('Project already exists'),
         )
-    if path.exists():
+    linked_projects = await sync_user_projects(user.id, db=db)
+    if any(folder_project_path(folder) == path for folder in linked_projects):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT('Project directory is already linked'),
+        )
+    if linking_existing and (not path.is_dir() or path.is_symlink()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT('Selected project directory is not available'),
+        )
+    if not linking_existing and path.exists():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT('Project directory already exists'),
@@ -197,20 +280,22 @@ async def create_folder(
         )
 
     try:
-        path.mkdir(parents=False)
+        if not linking_existing:
+            path.mkdir(parents=False)
         project_form = FolderForm(
             name=project_name,
             parent_id=None,
             meta={**(form_data.meta or {}), 'project': True},
             data={
-                **(form_data.data or {}),
+                **form_data_values,
                 'project_path': str(path),
                 'taterAgentContext': {},
             },
         )
         folder = await Folders.insert_new_folder(user.id, project_form, None, db=db)
         if not folder:
-            path.rmdir()
+            if not linking_existing:
+                path.rmdir()
             raise RuntimeError('Project record could not be created')
         await publish_event(
             request,
@@ -725,6 +810,7 @@ async def delete_folder_by_id(
     request: Request,
     id: str,
     delete_contents: Optional[bool] = True,
+    delete_project_directory: Optional[bool] = False,
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
@@ -746,6 +832,7 @@ async def delete_folder_by_id(
             )
 
     folder_owner_id = folder.user_id
+    project_path = folder_project_path(folder)
 
     folder_ids = await Folders.get_folder_ids_by_id_and_user_id_in_subtree(id, folder_owner_id, db=db)
     if delete_contents and await Chats.count_chats_by_folder_ids_and_user_id(folder_ids, folder_owner_id, db=db):
@@ -782,8 +869,16 @@ async def delete_folder_by_id(
                     EVENTS.FOLDER_DELETED,
                     actor=user,
                     subject_id=id,
-                    data={'folder_ids': folder_ids, 'delete_contents': delete_contents},
+                    data={
+                        'folder_ids': folder_ids,
+                        'delete_contents': delete_contents,
+                        'delete_project_directory': delete_project_directory,
+                    },
                 )
+                if delete_project_directory and project_path is not None and project_path.exists():
+                    if project_path.is_symlink() or project_path.parent != configured_projects_root():
+                        raise ValueError('Project directory is outside the configured projects root')
+                    shutil.rmtree(project_path)
                 return True
             except Exception as e:
                 log.exception(e)

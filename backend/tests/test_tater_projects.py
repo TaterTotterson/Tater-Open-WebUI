@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import sys
@@ -69,6 +70,40 @@ class TaterProjectsTests(unittest.TestCase):
                 self.assertEqual(tater_projects.configured_projects_root(), root.resolve())
                 self.assertTrue(root.is_dir())
             finally:
+                if previous is None:
+                    os.environ.pop('TATER_PROJECTS_ROOT', None)
+                else:
+                    os.environ['TATER_PROJECTS_ROOT'] = previous
+
+    def test_unlinked_directories_wait_for_explicit_project_selection(self):
+        class FakeFolders:
+            inserted = False
+
+            async def get_folders_by_user_id(self, user_id, db=None):
+                return []
+
+            async def insert_new_folder(self, *args, **kwargs):
+                self.inserted = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'projects'
+            root.mkdir()
+            (root / 'existing-repository').mkdir()
+            previous = os.environ.get('TATER_PROJECTS_ROOT')
+            original_folders = tater_projects.Folders
+            fake_folders = FakeFolders()
+            os.environ['TATER_PROJECTS_ROOT'] = str(root)
+            tater_projects.Folders = fake_folders
+            try:
+                projects = asyncio.run(tater_projects.sync_user_projects('user-1'))
+                self.assertEqual(projects, [])
+                self.assertFalse(fake_folders.inserted)
+                self.assertEqual(
+                    [path.name for path in tater_projects.discover_project_directories(root)],
+                    ['existing-repository'],
+                )
+            finally:
+                tater_projects.Folders = original_folders
                 if previous is None:
                     os.environ.pop('TATER_PROJECTS_ROOT', None)
                 else:

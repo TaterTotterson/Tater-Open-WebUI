@@ -89,11 +89,13 @@ def _project_data(path: Path, existing: Any = None) -> dict[str, Any]:
 
 
 async def sync_user_projects(user_id: str, *, db=None) -> list[FolderModel]:
-    """Mirror direct project directories into the existing chat-container records.
+    """Keep existing project records aligned with their filesystem directories.
 
     The database keeps chat membership and project settings; the filesystem is
-    authoritative for which coding projects exist. Legacy logical folders are
-    migrated to direct project directories so existing chats are preserved.
+    authoritative for project contents. Legacy logical folders are migrated to
+    direct project directories so existing chats are preserved. New directories
+    are linked explicitly from the Create Project dialog, which also lets a
+    project be removed from Tater without deleting its files.
     """
 
     root = configured_projects_root()
@@ -140,28 +142,6 @@ async def sync_user_projects(user_id: str, *, db=None) -> list[FolderModel]:
         )
         if folder.parent_id is not None:
             await Folders.update_folder_parent_id_by_id_and_user_id(folder.id, user_id, None, db=db)
-
-    folders = await Folders.get_folders_by_user_id(user_id, db=db)
-    known_paths = {
-        path: folder
-        for folder in folders
-        if (path := folder_project_path(folder)) is not None
-    }
-
-    for path in discover_project_directories(root):
-        if path in known_paths:
-            continue
-        await Folders.insert_new_folder(
-            user_id,
-            FolderForm(
-                name=path.name,
-                data=_project_data(path),
-                meta={'project': True},
-                parent_id=None,
-            ),
-            None,
-            db=db,
-        )
 
     folders = await Folders.get_folders_by_user_id(user_id, db=db)
     return [

@@ -49,10 +49,17 @@
 
 	// Tab state for Controls+Files panel
 	let activeTab = savedTab;
-	// svelte-ignore reactive_declaration_module_script_dependency
-	$: {
-		savedTab = activeTab;
-	}
+	let preferredTab = savedTab;
+	const isPanelTab = (value: string | null): value is 'controls' | 'files' | 'history' =>
+		value === 'controls' || value === 'files' || value === 'history';
+	const selectTab = (tab: 'controls' | 'files' | 'history') => {
+		activeTab = tab;
+		preferredTab = tab;
+		savedTab = tab;
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('tater-right-panel-tab', tab);
+		}
+	};
 
 	$: showControlsTab = $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true);
 	const chatContext = (terminal: any) => terminal?.contexts?.chat ?? {};
@@ -74,14 +81,20 @@
 	);
 	$: showFilesTab = terminalFilesAvailable;
 	$: showHistoryTab = !!chatId;
+	$: savedTabAvailable =
+		(preferredTab === 'controls' && showControlsTab) ||
+		(preferredTab === 'files' && showFilesTab) ||
+		(preferredTab === 'history' && showHistoryTab);
 
-	// Tab fallback: if active tab becomes hidden, switch to next available
+	// Availability fallbacks are temporary. Keep the user's preferred tab so it
+	// can be restored as soon as that tab is available in the next chat.
 	$: if (!showHistoryTab && activeTab === 'history') activeTab = 'controls';
 	$: if (!showFilesTab && activeTab === 'files') activeTab = 'controls';
 	$: if (!showControlsTab && activeTab === 'controls') {
 		if (showFilesTab) activeTab = 'files';
 		else if (showHistoryTab) activeTab = 'history';
 	}
+	$: if (savedTabAvailable && activeTab !== preferredTab) activeTab = preferredTab;
 
 	// Auto-close if there are no visible tabs
 	$: if (!showControlsTab && !showFilesTab && !showHistoryTab) {
@@ -90,13 +103,8 @@
 
 	// Auto-switch to Files tab when display_file is triggered
 	$: if ($showFileNavPath && terminalFilesAvailable) {
-		activeTab = 'files';
+		selectTab('files');
 		showControls.set(true);
-	}
-
-	// Keep Files selected when a terminal is active; opening the panel is handled by selection UI.
-	$: if ($selectedTerminalId && terminalFilesAvailable) {
-		activeTab = 'files';
 	}
 
 	// Clear selected direct terminal if user lost permission
@@ -135,6 +143,13 @@
 	};
 
 	onMount(() => {
+		const storedTab = localStorage.getItem('tater-right-panel-tab');
+		if (isPanelTab(storedTab)) {
+			savedTab = storedTab;
+			preferredTab = storedTab;
+			activeTab = storedTab;
+		}
+
 		const mediaQuery = window.matchMedia('(min-width: 1024px)');
 		mediaQuery.addEventListener('change', handleMediaQuery);
 		handleMediaQuery(mediaQuery);
@@ -220,7 +235,7 @@
 										'controls'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'controls')}
+										on:click={() => selectTab('controls')}
 									>
 										{$i18n.t('Controls')}
 									</button>
@@ -231,7 +246,7 @@
 										'files'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'files')}
+										on:click={() => selectTab('files')}
 									>
 										{$i18n.t('Files')}
 									</button>
@@ -242,7 +257,7 @@
 										'history'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'history')}
+										on:click={() => selectTab('history')}
 									>
 										{$i18n.t('Task History')}
 									</button>
@@ -334,7 +349,7 @@
 										'controls'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'controls')}
+										on:click={() => selectTab('controls')}
 									>
 										{$i18n.t('Controls')}
 									</button>
@@ -345,7 +360,7 @@
 										'files'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'files')}
+										on:click={() => selectTab('files')}
 									>
 										{$i18n.t('Files')}
 									</button>
@@ -356,7 +371,7 @@
 										'history'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'history')}
+										on:click={() => selectTab('history')}
 									>
 										{$i18n.t('Task History')}
 									</button>
