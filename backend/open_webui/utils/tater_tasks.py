@@ -35,6 +35,7 @@ TATER_TASK_MAX_CONCURRENT_PER_USER = 2
 TATER_TASK_RESULT_MAX_CHARS = 40_000
 TATER_TASK_PROMPT_MAX_CHARS = 12_000
 TATER_TASK_HISTORY_LIMIT_MAX = 200
+TATER_TASK_HISTORY_PREVIEW_MAX_CHARS = 600
 
 log = logging.getLogger(__name__)
 
@@ -131,14 +132,29 @@ def _task_output(chat: ChatModel) -> str:
     return str((chat.meta or {}).get('activity') or '').strip()[:TATER_TASK_RESULT_MAX_CHARS]
 
 
-async def get_user_tater_task_history(user_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+def tater_task_detail(chat: ChatModel) -> dict[str, Any]:
+    return {
+        **tater_task_summary(chat),
+        'prompt': _task_prompt(chat),
+        'output': _task_output(chat),
+    }
+
+
+async def get_user_tater_task_history(
+    user_id: str,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), TATER_TASK_HISTORY_LIMIT_MAX))
+    offset = max(0, int(offset))
     chats = await get_user_tater_task_chats(user_id)
-    completed = [
+    completed_tasks = [
         chat
         for chat in chats
         if str((chat.meta or {}).get('status') or '') not in TATER_TASK_ACTIVE_STATUSES
-    ][:limit]
+    ]
+    completed = completed_tasks[offset : offset + limit]
 
     parent_ids = {
         str((chat.meta or {}).get('parent_chat_id'))
@@ -155,14 +171,15 @@ async def get_user_tater_task_history(user_id: str, *, limit: int = 100) -> list
 
     history = []
     for chat in completed:
+        detail = tater_task_detail(chat)
         summary = tater_task_summary(chat)
         parent_chat_id = str(summary.get('parent_chat_id') or '')
         history.append(
             {
                 **summary,
                 'parent_chat_title': parent_titles.get(parent_chat_id),
-                'prompt': _task_prompt(chat),
-                'output': _task_output(chat),
+                'prompt_preview': detail['prompt'][:TATER_TASK_HISTORY_PREVIEW_MAX_CHARS],
+                'output_preview': detail['output'][:TATER_TASK_HISTORY_PREVIEW_MAX_CHARS],
             }
         )
     return history

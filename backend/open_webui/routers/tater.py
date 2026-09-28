@@ -12,6 +12,7 @@ from open_webui.utils.tater_tasks import (
     get_user_tater_task,
     get_user_tater_task_history,
     reconcile_user_tater_tasks,
+    tater_task_detail,
     tater_task_summary,
     update_tater_task,
 )
@@ -66,11 +67,12 @@ async def list_background_tasks(request: Request, user=Depends(get_verified_user
 @router.get('/tasks/history')
 async def list_background_task_history(
     request: Request,
-    limit: int = 100,
+    limit: int = 50,
+    offset: int = 0,
     user=Depends(get_verified_user),
 ):
     await reconcile_user_tater_tasks(request.app, user.id)
-    return await get_user_tater_task_history(user.id, limit=limit)
+    return await get_user_tater_task_history(user.id, limit=limit, offset=offset)
 
 
 @router.get('/tasks/{task_id}')
@@ -78,7 +80,7 @@ async def get_background_task(task_id: str, user=Depends(get_verified_user)):
     task = await get_user_tater_task(task_id, user.id)
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
-    return tater_task_summary(task)
+    return tater_task_detail(task)
 
 
 @router.delete('/tasks/{task_id}')

@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { getTaterTaskHistory, type TaterTaskHistoryItem } from '$lib/apis/tater';
+	import {
+		getTaterTask,
+		getTaterTaskHistory,
+		type TaterTaskDetail,
+		type TaterTaskHistoryItem
+	} from '$lib/apis/tater';
 	import { mobile, showControls, socket } from '$lib/stores';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -13,12 +18,17 @@
 	let error = '';
 	let query = '';
 	let expandedTaskId: string | null = null;
+	let taskDetails: Record<string, TaterTaskDetail> = {};
+	let detailLoadingTaskId: string | null = null;
+	let hasMore = false;
+	let loadingMore = false;
 	let socketInstance: any = null;
+	const PAGE_SIZE = 50;
 
 	$: normalizedQuery = query.trim().toLocaleLowerCase();
 	$: filteredTasks = normalizedQuery
 		? tasks.filter((task) =>
-				[task.title, task.parent_chat_title, task.prompt, task.output, task.status]
+				[task.title, task.parent_chat_title, task.prompt_preview, task.output_preview, task.status]
 					.filter(Boolean)
 					.some((value) => String(value).toLocaleLowerCase().includes(normalizedQuery))
 			)
@@ -28,11 +38,47 @@
 		if (!quiet) loading = true;
 		error = '';
 		try {
-			tasks = await getTaterTaskHistory(localStorage.token, 100);
+			tasks = await getTaterTaskHistory(localStorage.token, PAGE_SIZE, 0);
+			hasMore = tasks.length === PAGE_SIZE;
 		} catch (loadError) {
 			error = `${loadError}`;
 		} finally {
 			loading = false;
+		}
+	};
+
+	const loadMore = async () => {
+		if (loadingMore || !hasMore) return;
+		loadingMore = true;
+		try {
+			const nextTasks = await getTaterTaskHistory(localStorage.token, PAGE_SIZE, tasks.length);
+			tasks = [...tasks, ...nextTasks.filter((task) => !tasks.some((item) => item.id === task.id))];
+			hasMore = nextTasks.length === PAGE_SIZE;
+		} catch (loadError) {
+			error = `${loadError}`;
+		} finally {
+			loadingMore = false;
+		}
+	};
+
+	const toggleTask = async (task: TaterTaskHistoryItem) => {
+		if (expandedTaskId === task.id) {
+			expandedTaskId = null;
+			return;
+		}
+
+		expandedTaskId = task.id;
+		if (taskDetails[task.id]) return;
+		detailLoadingTaskId = task.id;
+		try {
+			taskDetails = {
+				...taskDetails,
+				[task.id]: await getTaterTask(localStorage.token, task.id)
+			};
+		} catch (loadError) {
+			error = `${loadError}`;
+		} finally {
+			detailLoadingTaskId = null;
 		}
 	};
 
@@ -201,6 +247,7 @@
 				{#each filteredTasks as task (task.id)}
 					{@const expanded = expandedTaskId === task.id}
 					{@const elapsed = duration(task)}
+					{@const detail = taskDetails[task.id]}
 					<div
 						class="overflow-hidden rounded-2xl border transition {task.parent_chat_id === chatId
 							? 'border-amber-200 bg-amber-50/20 dark:border-amber-900/60 dark:bg-amber-950/10'
@@ -243,7 +290,7 @@
 							<button
 								type="button"
 								class="min-w-0 flex-1 text-left"
-								on:click={() => (expandedTaskId = expanded ? null : task.id)}
+								on:click={() => toggleTask(task)}
 								aria-expanded={expanded}
 							>
 								<span
@@ -266,10 +313,10 @@
 									>
 									{#if elapsed}<span aria-hidden="true">·</span><span>{elapsed}</span>{/if}
 								</span>
-								{#if !expanded && task.output}
+								{#if !expanded && task.output_preview}
 									<span
 										class="mt-2 line-clamp-2 block text-xs leading-5 text-gray-500 dark:text-gray-400"
-										>{task.output}</span
+										>{task.output_preview}</span
 									>
 								{/if}
 							</button>
@@ -277,7 +324,7 @@
 							<button
 								type="button"
 								class="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 dark:hover:bg-gray-800"
-								on:click={() => (expandedTaskId = expanded ? null : task.id)}
+								on:click={() => toggleTask(task)}
 								aria-label={expanded ? 'Collapse task' : 'Expand task'}
 							>
 								<svg
@@ -301,7 +348,7 @@
 										>{/if}
 								</div>
 
-								{#if task.prompt}
+								{#if detail?.prompt || task.prompt_preview}
 									<div class="mt-3">
 										<p
 											class="text-[0.6875rem] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500"
@@ -311,7 +358,7 @@
 										<p
 											class="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-gray-700 dark:text-gray-300"
 										>
-											{task.prompt}
+											{detail?.prompt ?? task.prompt_preview}
 										</p>
 									</div>
 								{/if}
@@ -322,13 +369,17 @@
 									>
 										Result
 									</p>
-									{#if task.output}
+									{#if detailLoadingTaskId === task.id}
+										<p class="mt-1 animate-pulse text-xs text-gray-500 dark:text-gray-400">
+											Loading saved output…
+										</p>
+									{:else if detail?.output}
 										<div
 											class="mt-1 break-words text-xs leading-5 text-gray-700 dark:text-gray-300"
 										>
 											<Markdown
 												id={`task-history-${task.id}`}
-												content={task.output}
+												content={detail.output}
 												compactPreview={true}
 												editCodeBlock={false}
 											/>
@@ -362,6 +413,16 @@
 						{/if}
 					</div>
 				{/each}
+				{#if hasMore && !normalizedQuery}
+					<button
+						type="button"
+						class="mt-3 w-full rounded-xl py-2 text-xs font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+						on:click={loadMore}
+						disabled={loadingMore}
+					>
+						{loadingMore ? 'Loading…' : 'Load older tasks'}
+					</button>
+				{/if}
 			</div>
 		{/if}
 	</div>

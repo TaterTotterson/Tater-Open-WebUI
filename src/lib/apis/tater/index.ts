@@ -47,6 +47,11 @@ export type TaterTask = {
 
 export type TaterTaskHistoryItem = TaterTask & {
 	parent_chat_title: string | null;
+	prompt_preview: string;
+	output_preview: string;
+};
+
+export type TaterTaskDetail = TaterTask & {
 	prompt: string;
 	output: string;
 };
@@ -96,10 +101,17 @@ export const verifyTaterProfile = (
 
 export const getTaterTasks = (token: string): Promise<TaterTask[]> => request('/tasks', token);
 
-export const getTaterTaskHistory = (token: string, limit = 100): Promise<TaterTaskHistoryItem[]> =>
-	request(`/tasks/history?limit=${encodeURIComponent(String(limit))}`, token);
+export const getTaterTaskHistory = (
+	token: string,
+	limit = 50,
+	offset = 0
+): Promise<TaterTaskHistoryItem[]> =>
+	request(
+		`/tasks/history?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`,
+		token
+	);
 
-export const getTaterTask = (token: string, taskId: string): Promise<TaterTask> =>
+export const getTaterTask = (token: string, taskId: string): Promise<TaterTaskDetail> =>
 	request(`/tasks/${encodeURIComponent(taskId)}`, token);
 
 export const cancelTaterTask = (token: string, taskId: string): Promise<TaterTask> =>
