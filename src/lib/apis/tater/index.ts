@@ -34,7 +34,8 @@ export type TaterTask = {
 		| 'completed'
 		| 'failed'
 		| 'cancelled'
-		| 'interrupted';
+		| 'interrupted'
+		| 'unknown';
 	activity: string;
 	capabilities: ('terminal' | 'hydra')[];
 	parent_chat_id: string | null;
@@ -42,6 +43,12 @@ export type TaterTask = {
 	updated_at: number;
 	started_at: number | null;
 	finished_at: number | null;
+};
+
+export type TaterTaskHistoryItem = TaterTask & {
+	parent_chat_title: string | null;
+	prompt: string;
+	output: string;
 };
 
 const request = async <T>(path: string, token: string, options: RequestInit = {}): Promise<T> => {
@@ -88,6 +95,9 @@ export const verifyTaterProfile = (
 	});
 
 export const getTaterTasks = (token: string): Promise<TaterTask[]> => request('/tasks', token);
+
+export const getTaterTaskHistory = (token: string, limit = 100): Promise<TaterTaskHistoryItem[]> =>
+	request(`/tasks/history?limit=${encodeURIComponent(String(limit))}`, token);
 
 export const getTaterTask = (token: string, taskId: string): Promise<TaterTask> =>
 	request(`/tasks/${encodeURIComponent(taskId)}`, token);

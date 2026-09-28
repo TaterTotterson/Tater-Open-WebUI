@@ -4417,7 +4417,6 @@
 						bind:params
 						bind:files
 						chatId={$chatId}
-						chatUser={chatOwner}
 						modelId={selectedModelIds?.at(0) ?? null}
 						models={selectedModelIds.reduce((a, e, i, arr) => {
 							const model = $models.find((m) => m.id === e);
@@ -4428,9 +4427,7 @@
 						}, [])}
 						submitPrompt={submitHandler}
 						{stopResponse}
-						{showMessage}
 						{eventTarget}
-						{codeInterpreterEnabled}
 					/>
 				{/if}
 			</div>

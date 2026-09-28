@@ -33,6 +33,8 @@ TATER_TASK_TYPE = 'tater_task'
 TATER_TASK_ACTIVE_STATUSES = {'queued', 'running', 'cancelling'}
 TATER_TASK_MAX_CONCURRENT_PER_USER = 2
 TATER_TASK_RESULT_MAX_CHARS = 40_000
+TATER_TASK_PROMPT_MAX_CHARS = 12_000
+TATER_TASK_HISTORY_LIMIT_MAX = 200
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +90,82 @@ def tater_task_summary(chat: ChatModel) -> dict[str, Any]:
         'started_at': meta.get('started_at'),
         'finished_at': meta.get('finished_at'),
     }
+
+
+def _task_chat_messages(chat: ChatModel) -> list[dict[str, Any]]:
+    history = (chat.chat or {}).get('history') or {}
+    messages = history.get('messages') or {}
+    if not isinstance(messages, dict):
+        return []
+    return sorted(
+        [message for message in messages.values() if isinstance(message, dict)],
+        key=lambda message: int(message.get('timestamp') or 0),
+    )
+
+
+def _task_prompt(chat: ChatModel) -> str:
+    for message in _task_chat_messages(chat):
+        if message.get('role') == 'user':
+            return _message_text(message)[:TATER_TASK_PROMPT_MAX_CHARS]
+    return ''
+
+
+def _task_output(chat: ChatModel) -> str:
+    context = (chat.chat or {}).get('taterAgentContext') or {}
+    if isinstance(context, dict):
+        summary = str(context.get('execution_summary') or '').strip()
+        if summary:
+            return summary[:TATER_TASK_RESULT_MAX_CHARS]
+
+    for message in reversed(_task_chat_messages(chat)):
+        if message.get('role') != 'assistant':
+            continue
+        content = _message_text(message)
+        if content:
+            return content[:TATER_TASK_RESULT_MAX_CHARS]
+        error = message.get('error')
+        if error:
+            error_text = error.get('content', str(error)) if isinstance(error, dict) else str(error)
+            if error_text.strip():
+                return error_text.strip()[:TATER_TASK_RESULT_MAX_CHARS]
+    return str((chat.meta or {}).get('activity') or '').strip()[:TATER_TASK_RESULT_MAX_CHARS]
+
+
+async def get_user_tater_task_history(user_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+    limit = max(1, min(int(limit), TATER_TASK_HISTORY_LIMIT_MAX))
+    chats = await get_user_tater_task_chats(user_id)
+    completed = [
+        chat
+        for chat in chats
+        if str((chat.meta or {}).get('status') or '') not in TATER_TASK_ACTIVE_STATUSES
+    ][:limit]
+
+    parent_ids = {
+        str((chat.meta or {}).get('parent_chat_id'))
+        for chat in completed
+        if (chat.meta or {}).get('parent_chat_id')
+    }
+    parent_titles: dict[str, str] = {}
+    if parent_ids:
+        async with get_async_db_context() as db:
+            result = await db.execute(
+                select(Chat.id, Chat.title).where(Chat.user_id == user_id, Chat.id.in_(parent_ids))
+            )
+            parent_titles = {str(chat_id): str(title or 'Untitled chat') for chat_id, title in result.all()}
+
+    history = []
+    for chat in completed:
+        summary = tater_task_summary(chat)
+        parent_chat_id = str(summary.get('parent_chat_id') or '')
+        history.append(
+            {
+                **summary,
+                'parent_chat_title': parent_titles.get(parent_chat_id),
+                'prompt': _task_prompt(chat),
+                'output': _task_output(chat),
+            }
+        )
+    return history
 
 
 async def get_user_tater_task_chats(user_id: str) -> list[ChatModel]:

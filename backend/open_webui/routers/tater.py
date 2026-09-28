@@ -10,6 +10,7 @@ from open_webui.utils.tater_tasks import (
     TATER_TASK_ACTIVE_STATUSES,
     emit_tater_task_event,
     get_user_tater_task,
+    get_user_tater_task_history,
     reconcile_user_tater_tasks,
     tater_task_summary,
     update_tater_task,
@@ -60,6 +61,16 @@ async def list_background_tasks(request: Request, user=Depends(get_verified_user
         for task in tasks
         if (task.meta or {}).get('status') in TATER_TASK_ACTIVE_STATUSES
     ]
+
+
+@router.get('/tasks/history')
+async def list_background_task_history(
+    request: Request,
+    limit: int = 100,
+    user=Depends(get_verified_user),
+):
+    await reconcile_user_tater_tasks(request.app, user.id)
+    return await get_user_tater_task_history(user.id, limit=limit)
 
 
 @router.get('/tasks/{task_id}')

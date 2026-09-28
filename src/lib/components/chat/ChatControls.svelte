@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-	let savedTab: 'controls' | 'files' | 'overview' = 'controls';
+	let savedTab: 'controls' | 'files' | 'history' = 'controls';
 </script>
 
 <script lang="ts">
@@ -23,7 +23,7 @@
 	import Artifacts from './Artifacts.svelte';
 	import Embeds from './ChatControls/Embeds.svelte';
 	import FileNav from './FileNav.svelte';
-	import Overview from './Overview.svelte';
+	import TaskHistory from './TaskHistory.svelte';
 	import { isSavedChatId } from '$lib/utils/chatId';
 
 	const i18n = getContext('i18n');
@@ -32,7 +32,6 @@
 	export let models = [];
 
 	export let chatId = null;
-	export let chatUser = null;
 
 	export let chatFiles = [];
 	export let params = {};
@@ -40,11 +39,8 @@
 	export let eventTarget: EventTarget;
 	export let submitPrompt: Function;
 	export let stopResponse: Function;
-	export let showMessage: Function;
 	export let files;
 	export let modelId;
-
-	export let codeInterpreterEnabled = false;
 
 	let largeScreen = false;
 	let dragged = false;
@@ -57,8 +53,6 @@
 	$: {
 		savedTab = activeTab;
 	}
-
-	$: hasMessages = history?.messages && Object.keys(history.messages).length > 0;
 
 	$: showControlsTab = $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true);
 	const chatContext = (terminal: any) => terminal?.contexts?.chat ?? {};
@@ -79,18 +73,18 @@
 				($user?.role === 'admin' || ($user?.permissions?.features?.direct_tool_servers ?? true))))
 	);
 	$: showFilesTab = terminalFilesAvailable;
-	$: showOverviewTab = hasMessages;
+	$: showHistoryTab = !!chatId;
 
 	// Tab fallback: if active tab becomes hidden, switch to next available
-	$: if (!showOverviewTab && activeTab === 'overview') activeTab = 'controls';
+	$: if (!showHistoryTab && activeTab === 'history') activeTab = 'controls';
 	$: if (!showFilesTab && activeTab === 'files') activeTab = 'controls';
 	$: if (!showControlsTab && activeTab === 'controls') {
 		if (showFilesTab) activeTab = 'files';
-		else if (showOverviewTab) activeTab = 'overview';
+		else if (showHistoryTab) activeTab = 'history';
 	}
 
 	// Auto-close if there are no visible tabs
-	$: if (!showControlsTab && !showFilesTab && !showOverviewTab) {
+	$: if (!showControlsTab && !showFilesTab && !showHistoryTab) {
 		showControls.set(false);
 	}
 
@@ -242,15 +236,15 @@
 										{$i18n.t('Files')}
 									</button>
 								{/if}
-								{#if showOverviewTab}
+								{#if showHistoryTab}
 									<button
 										class="px-2.5 py-1 text-sm rounded-lg transition whitespace-nowrap {activeTab ===
-										'overview'
+										'history'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'overview')}
+										on:click={() => (activeTab = 'history')}
 									>
-										{$i18n.t('Overview')}
+										{$i18n.t('Task History')}
 									</button>
 								{/if}
 							</div>
@@ -273,21 +267,14 @@
 						</div>
 
 						<div
-							class="flex-1 min-h-0 {activeTab === 'overview'
+							class="flex-1 min-h-0 {activeTab === 'history'
 								? 'h-full'
 								: activeTab === 'controls'
 									? 'overflow-y-auto px-3 pt-1'
 									: ''}"
 						>
-							{#if activeTab === 'overview'}
-								<Overview
-									{history}
-									{chatUser}
-									onNodeClick={(e) => {
-										const node = e.node;
-										showMessage(node.data.message, true);
-									}}
-								/>
+							{#if activeTab === 'history'}
+								<TaskHistory {chatId} />
 							{:else if activeTab === 'files' && terminalFilesAvailable && $selectedTerminalId}
 								<FileNav {chatId} />
 							{:else}
@@ -363,15 +350,15 @@
 										{$i18n.t('Files')}
 									</button>
 								{/if}
-								{#if showOverviewTab}
+								{#if showHistoryTab}
 									<button
 										class="px-2.5 py-1 text-sm rounded-lg transition whitespace-nowrap {activeTab ===
-										'overview'
+										'history'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'overview')}
+										on:click={() => (activeTab = 'history')}
 									>
-										{$i18n.t('Overview')}
+										{$i18n.t('Task History')}
 									</button>
 								{/if}
 							</div>
@@ -394,26 +381,14 @@
 						</div>
 
 						<div
-							class="flex-1 min-h-0 {activeTab === 'overview'
+							class="flex-1 min-h-0 {activeTab === 'history'
 								? 'h-full'
 								: activeTab === 'controls'
 									? 'overflow-y-auto px-3 pt-1'
 									: ''}"
 						>
-							{#if activeTab === 'overview'}
-								<Overview
-									{history}
-									{chatUser}
-									onNodeClick={(e) => {
-										const node = e.node;
-										if (node?.data?.message?.favorite) {
-											history.messages[node.data.message.id].favorite = true;
-										} else {
-											history.messages[node.data.message.id].favorite = null;
-										}
-										showMessage(node.data.message, true);
-									}}
-								/>
+							{#if activeTab === 'history'}
+								<TaskHistory {chatId} />
 							{:else if activeTab === 'files' && terminalFilesAvailable && $selectedTerminalId}
 								<FileNav overlay={dragged} {chatId} />
 							{:else}
