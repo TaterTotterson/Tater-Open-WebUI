@@ -97,6 +97,7 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('render_recent_chat_history', middleware_source)
         self.assertIn('You are the completion gate for a computer-using agent', middleware_source)
         self.assertIn("body['_tater_agent_response']", middleware_source)
+        self.assertIn('request.state.tater_agent_stop_reason', middleware_source)
 
         main_source = MAIN_PATH.read_text(encoding='utf-8')
         self.assertIn("form_data.pop('_tater_agent_response', None)", main_source)
@@ -117,6 +118,7 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('background_task_result_answer', subagent_source)
         self.assertIn('Posting the result to the originating chat', task_source)
         self.assertIn("completed_context.get('execution_summary')", task_source)
+        self.assertIn("getattr(child_request.state, 'tater_agent_stop_reason'", task_source)
         self.assertIn('tater_task_awareness', middleware_source)
         ast.parse(task_source)
         ast.parse(subagent_source)

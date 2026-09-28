@@ -538,7 +538,11 @@ async def start_tater_task(
             )
             summary = str(completed_context.get('execution_summary') or '').strip() or _message_text(message)
             message_error = (message or {}).get('error')
-            if message_error:
+            agent_stop_reason = str(getattr(child_request.state, 'tater_agent_stop_reason', '') or '').strip()
+            if agent_stop_reason:
+                error = agent_stop_reason
+                status = 'failed'
+            elif message_error:
                 error = (
                     message_error.get('content', str(message_error))
                     if isinstance(message_error, dict)

@@ -1806,6 +1806,7 @@ async def chat_completion_tools_handler(
     loop_stopped = False
     prepared_final_answer = ''
     prepared_agent_context = {}
+    working_agent_context = {}
     emitted_progress_updates = []
     emitted_progress_text: set[str] = set()
     completion_protocol_failures = 0
@@ -1912,6 +1913,12 @@ async def chat_completion_tools_handler(
             loop_stopped = True
             break
 
+        if tool_calls and plan.get('context'):
+            working_agent_context = normalize_agent_context(
+                plan['context'],
+                working_agent_context or persistent_agent_context,
+            )
+
         if tool_calls and not background_task_id and not history_records:
             try:
                 from open_webui.utils.tater_tasks import start_tater_task
@@ -1958,7 +1965,11 @@ async def chat_completion_tools_handler(
 
         if not tool_calls:
             prepared_final_answer = plan['final_answer'] if history_records else ''
-            prepared_agent_context = plan['context'] if history_records else {}
+            prepared_agent_context = (
+                normalize_agent_context(plan['context'], working_agent_context)
+                if history_records and (plan['context'] or working_agent_context)
+                else {}
+            )
 
             continuation_update = continuation_progress_update(prepared_final_answer)
             if history_records and continuation_update:
@@ -2113,6 +2124,8 @@ async def chat_completion_tools_handler(
         loop_stopped = True
 
     direct_answer = prepared_final_answer if not loop_stopped else agent_stop_message
+    if loop_stopped:
+        request.state.tater_agent_stop_reason = agent_stop_message or 'The agent loop stopped before completion.'
 
     if history_records and can_persist_agent_context:
         context_update = dict(prepared_agent_context) if isinstance(prepared_agent_context, dict) else {}
@@ -2181,7 +2194,7 @@ async def chat_completion_tools_handler(
                     error=repr(exc),
                 )
 
-    if history_records and direct_answer:
+    if direct_answer and (history_records or loop_stopped):
         body['_tater_agent_response'] = {
             'content': direct_answer,
             'display_content': '\n\n'.join([*emitted_progress_updates, direct_answer]),

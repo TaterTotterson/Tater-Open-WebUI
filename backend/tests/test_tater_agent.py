@@ -220,12 +220,38 @@ class TaterAgentTests(unittest.TestCase):
                 allow_plain_final_answer=True,
             )
 
-    def test_rejects_context_while_tools_are_requested(self):
-        with self.assertRaisesRegex(ValueError, 'context must be empty'):
-            tater_agent.parse_tool_plan_response(
-                '{"progress":"","tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}],'
-                '"final_answer":"","context":{"cwd":"/workspace"}}'
-            )
+    def test_accepts_context_while_tools_are_requested(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"progress":"","tool_calls":[{"name":"terminal","parameters":{"command":"pwd"}}],'
+            '"final_answer":"","context":{"cwd":"/workspace"}}'
+        )
+
+        self.assertEqual(plan['tool_calls'][0]['parameters']['command'], 'pwd')
+        self.assertEqual(plan['context']['cwd'], '/workspace')
+
+    def test_parses_model_native_terminal_call_markup(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '<|tool_call>call:terminal{command:<|"|>grep -rnE "Hydra|hydra" . | head<|"|>}<tool_call|>'
+        )
+
+        self.assertEqual(plan['tool_calls'][0]['name'], 'terminal')
+        self.assertEqual(plan['tool_calls'][0]['parameters']['command'], 'grep -rnE "Hydra|hydra" . | head')
+
+    def test_repairs_literal_newline_inside_final_answer_json(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"tool_calls":[],"final_answer":"First line\nSecond line","context":{}}'
+        )
+
+        self.assertEqual(plan['final_answer'], 'First line\nSecond line')
+
+    def test_recovers_final_answer_with_unescaped_prose_quotes(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"tool_calls":[],"final_answer":"Hydra handles "Minos" results.\nDone.",'
+            '"context":{"objective":"Explain Hydra"}}'
+        )
+
+        self.assertEqual(plan['tool_calls'], [])
+        self.assertEqual(plan['final_answer'], 'Hydra handles "Minos" results.\nDone.')
 
     def test_rejects_tool_markup_in_progress(self):
         with self.assertRaisesRegex(ValueError, 'must not contain tool-call markup'):

@@ -127,6 +127,14 @@ _FAST_READ_ONLY_COMMANDS = {
     'wc',
 }
 _FAST_READ_ONLY_GIT_COMMANDS = {'diff', 'log', 'rev-parse', 'show', 'status'}
+_MODEL_TOOL_CALL_RE = re.compile(
+    r'<\|tool_call>\s*call:([A-Za-z0-9_.:-]+)\s*(.*?)\s*<tool_call\|>',
+    re.DOTALL,
+)
+_MODEL_QUOTED_PARAMETER_RE = re.compile(
+    r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*<\|"\|>(.*?)<\|"\|>(?=\s*[,}])',
+    re.DOTALL,
+)
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r'(?i)\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)\s*=\s*'
     r'("[^"]*"|\'[^\']*\'|[^\s;&|]+)'
@@ -479,6 +487,123 @@ def merge_project_context(project: Any, chat: Any) -> dict[str, Any]:
     return normalize_agent_context(merged)
 
 
+def _escape_json_string_controls(content: str) -> str:
+    """Escape literal control characters only while inside JSON strings."""
+
+    output = []
+    in_string = False
+    escaped = False
+    for character in content:
+        if in_string:
+            if escaped:
+                output.append(character)
+                escaped = False
+                continue
+            if character == '\\':
+                output.append(character)
+                escaped = True
+                continue
+            if character == '"':
+                output.append(character)
+                in_string = False
+                continue
+            if character == '\n':
+                output.append('\\n')
+                continue
+            if character == '\r':
+                output.append('\\r')
+                continue
+            if character == '\t':
+                output.append('\\t')
+                continue
+            if ord(character) < 0x20:
+                output.append(f'\\u{ord(character):04x}')
+                continue
+            output.append(character)
+            continue
+
+        output.append(character)
+        if character == '"':
+            in_string = True
+    return ''.join(output)
+
+
+def _model_tool_call_plan(content: str, max_calls: int) -> dict[str, Any] | None:
+    calls = []
+    for match in _MODEL_TOOL_CALL_RE.finditer(content):
+        name = match.group(1).strip()
+        raw_parameters = match.group(2).strip()
+        if not raw_parameters.startswith('{') or not raw_parameters.endswith('}'):
+            continue
+        parameters = {}
+        for parameter in _MODEL_QUOTED_PARAMETER_RE.finditer(raw_parameters):
+            parameters[parameter.group(1)] = parameter.group(2)
+        if not parameters:
+            try:
+                parameters = json.loads(raw_parameters.replace('<|"|>', '"'))
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(parameters, dict):
+            continue
+        calls.append({'name': name, 'parameters': parameters})
+    if not calls:
+        return None
+    if len(calls) > max(1, max_calls):
+        raise ValueError(f'Tool plan contains too many calls ({len(calls)} > {max(1, max_calls)})')
+    return {
+        'progress': '',
+        'task_title': '',
+        'tool_calls': calls,
+        'final_answer': '',
+        'context': {},
+    }
+
+
+def _json_like_final_answer_plan(content: str) -> dict[str, Any] | None:
+    """Recover a no-tools final response containing unescaped prose quotes."""
+
+    if not re.search(r'"tool_calls"\s*:\s*\[\s*\]', content):
+        return None
+    answer_match = re.search(
+        r'"final_answer"\s*:\s*"(.*)"\s*,\s*"context"\s*:',
+        content,
+        re.DOTALL,
+    )
+    if not answer_match:
+        return None
+
+    final_answer = answer_match.group(1)
+    final_answer = (
+        final_answer.replace('\\n', '\n')
+        .replace('\\r', '\r')
+        .replace('\\t', '\t')
+        .replace('\\"', '"')
+        .replace('\\/', '/')
+        .replace('\\\\', '\\')
+        .strip()
+    )
+    if not final_answer:
+        return None
+
+    context = {}
+    raw_context = content[answer_match.end() :].lstrip()
+    if raw_context.startswith('{'):
+        try:
+            parsed_context, _ = json.JSONDecoder().raw_decode(_escape_json_string_controls(raw_context))
+            if isinstance(parsed_context, dict):
+                context = parsed_context
+        except json.JSONDecodeError:
+            pass
+
+    return {
+        'progress': '',
+        'task_title': '',
+        'tool_calls': [],
+        'final_answer': final_answer[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS],
+        'context': context,
+    }
+
+
 def parse_tool_plan_response(
     content: str,
     max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP,
@@ -488,22 +613,31 @@ def parse_tool_plan_response(
     content = str(content or '')
     payload = None
     decoder = json.JSONDecoder()
-    for index, character in enumerate(content):
-        if character != '{':
-            continue
-        try:
-            candidate, _ = decoder.raw_decode(content[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(candidate, dict) and (
-            'tool_calls' in candidate
-            or candidate.get('name')
-            or 'progress' in candidate
-            or 'final_answer' in candidate
-        ):
-            payload = candidate
+    for candidate_content in (content, _escape_json_string_controls(content)):
+        for index, character in enumerate(candidate_content):
+            if character != '{':
+                continue
+            try:
+                candidate, _ = decoder.raw_decode(candidate_content[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and (
+                'tool_calls' in candidate
+                or candidate.get('name')
+                or 'progress' in candidate
+                or 'final_answer' in candidate
+            ):
+                payload = candidate
+                break
+        if payload is not None:
             break
     if payload is None:
+        model_tool_plan = _model_tool_call_plan(content, max_calls)
+        if model_tool_plan is not None:
+            return model_tool_plan
+        json_like_answer = _json_like_final_answer_plan(content)
+        if json_like_answer is not None:
+            return json_like_answer
         plain_answer = content.strip()
         if (
             allow_plain_final_answer
@@ -563,9 +697,6 @@ def parse_tool_plan_response(
         raise ValueError('final_answer must not contain tool-call markup')
     if calls and final_answer:
         raise ValueError('final_answer must be empty while tool_calls are present')
-    if calls and context:
-        raise ValueError('context must be empty while tool_calls are present')
-
     return {
         'progress': progress,
         'task_title': task_title,
