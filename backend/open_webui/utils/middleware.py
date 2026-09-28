@@ -1595,15 +1595,15 @@ async def chat_completion_tools_handler(
         activity = tool_activity_status(tool_name, tool_params, done=done, failed=failed)
         if background_task_id:
             try:
-                from open_webui.utils.tater_tasks import update_tater_task
+                from open_webui.utils.tater_tasks import record_tater_task_progress
 
-                await update_tater_task(
+                activity_message = ' — '.join(
+                    value for value in (activity['description'], activity['detail']) if value
+                )
+                await record_tater_task_progress(
                     background_task_id,
-                    {
-                        'activity': ' — '.join(
-                            value for value in (activity['description'], activity['detail']) if value
-                        )[:240]
-                    },
+                    activity_message,
+                    kind='tool_finished' if done else 'tool_started',
                     user_id=user.id,
                 )
             except Exception as e:
@@ -1632,11 +1632,12 @@ async def chat_completion_tools_handler(
             ledger_event('progress_update', message=message.strip())
         if background_task_id and message:
             try:
-                from open_webui.utils.tater_tasks import update_tater_task
+                from open_webui.utils.tater_tasks import record_tater_task_progress
 
-                await update_tater_task(
+                await record_tater_task_progress(
                     background_task_id,
-                    {'activity': message.strip()[:240]},
+                    message,
+                    kind='progress',
                     user_id=user.id,
                 )
             except Exception as e:
@@ -1652,6 +1653,18 @@ async def chat_completion_tools_handler(
             )
         except Exception as e:
             log.debug('Could not emit agent progress update: %s', e)
+
+    async def persist_background_task_context(context: dict[str, Any]) -> None:
+        if not background_task_id or not can_persist_agent_context or not context:
+            return
+        try:
+            await Chats.update_chat_by_id(
+                chat_id,
+                {'taterAgentContext': normalize_agent_context(context, persistent_agent_context)},
+                touch=False,
+            )
+        except Exception as e:
+            log.debug('Could not persist live background task context: %s', e)
 
     async def tool_call_handler(tool_call: dict, iteration: int) -> dict:
         nonlocal skip_files
@@ -1921,6 +1934,7 @@ async def chat_completion_tools_handler(
                 plan['context'],
                 working_agent_context or persistent_agent_context,
             )
+            await persist_background_task_context(working_agent_context)
 
         if tool_calls and not background_task_id and not history_records:
             try:
@@ -2104,6 +2118,19 @@ async def chat_completion_tools_handler(
         for tool_call in tool_calls:
             record = await tool_call_handler(tool_call, iteration)
             history_records.append(record)
+            if background_task_id and record.get('tool') == 'terminal':
+                live_result = record.get('result')
+                if isinstance(live_result, str) and live_result[:1] in {'{', '['}:
+                    try:
+                        live_result = json.loads(live_result)
+                    except json.JSONDecodeError:
+                        live_result = None
+                if isinstance(live_result, dict) and live_result.get('cwd'):
+                    working_agent_context = normalize_agent_context(
+                        {'cwd': str(live_result['cwd'])},
+                        working_agent_context or persistent_agent_context,
+                    )
+                    await persist_background_task_context(working_agent_context)
             signature = tool_outcome_signature(record['tool'], record['parameters'], record['result'])
             outcome_counts[signature] = outcome_counts.get(signature, 0) + 1
             if outcome_counts[signature] == TATER_AGENT_REPEAT_LIMIT - 1:
@@ -3199,7 +3226,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         try:
             from open_webui.utils.tater_tasks import tater_task_awareness
 
-            task_context = await tater_task_awareness(request.app, user.id)
+            task_context = await tater_task_awareness(
+                request.app,
+                user.id,
+                chat_id=str(metadata.get('chat_id') or '') or None,
+            )
             if task_context:
                 form_data['messages'] = add_or_update_system_message(
                     task_context,

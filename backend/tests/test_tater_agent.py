@@ -49,14 +49,21 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(request, 'Is it in the home folder we cloned it somewhere?')
 
     def test_task_status_question_stays_in_chat(self):
-        self.assertIsNone(
-            tater_agent.task_dispatch_request(
-                [
-                    {'role': 'assistant', 'content': 'The search is running in the background.'},
-                    {'role': 'user', 'content': 'What happened to the task?'},
-                ]
-            )
-        )
+        for question in (
+            'What happened to the task?',
+            'What are you doing?',
+            "What's your progress?",
+            "How's it going?",
+        ):
+            with self.subTest(question=question):
+                self.assertIsNone(
+                    tater_agent.task_dispatch_request(
+                        [
+                            {'role': 'assistant', 'content': 'The search is running in the background.'},
+                            {'role': 'user', 'content': question},
+                        ]
+                    )
+                )
 
     def test_explicit_work_after_status_phrase_can_dispatch(self):
         self.assertEqual(
@@ -350,6 +357,16 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(merged['completed'], ['Earlier work', 'Background work'])
         self.assertEqual(merged['tests'], ['Earlier test', 'pytest'])
         self.assertEqual(merged['execution_summary'], 'Background task completed.')
+
+    def test_completed_task_context_keeps_the_latest_bounded_history(self):
+        merged = tater_agent.merge_task_context(
+            {'completed': [f'parent-{index}' for index in range(45)]},
+            {'completed': [f'task-{index}' for index in range(10)]},
+        )
+
+        self.assertEqual(len(merged['completed']), tater_agent.TATER_AGENT_CONTEXT_LIST_MAX_ITEMS)
+        self.assertNotIn('parent-0', merged['completed'])
+        self.assertEqual(merged['completed'][-1], 'task-9')
 
     def test_project_context_keeps_shared_history_and_latest_working_state(self):
         merged = tater_agent.merge_project_context(

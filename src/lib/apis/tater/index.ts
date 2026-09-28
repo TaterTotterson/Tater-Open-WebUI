@@ -37,6 +37,12 @@ export type TaterTask = {
 		| 'interrupted'
 		| 'unknown';
 	activity: string;
+	progress_events: {
+		at: number;
+		kind: string;
+		message: string;
+	}[];
+	result_summary: string;
 	capabilities: ('terminal' | 'hydra')[];
 	parent_chat_id: string | null;
 	created_at: number;

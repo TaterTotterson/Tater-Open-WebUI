@@ -120,6 +120,10 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("completed_context.get('execution_summary')", task_source)
         self.assertIn("getattr(child_request.state, 'tater_agent_stop_reason'", task_source)
         self.assertIn('tater_task_awareness', middleware_source)
+        self.assertIn('record_tater_task_progress', middleware_source)
+        self.assertIn("chat_id=str(metadata.get('chat_id') or '') or None", middleware_source)
+        self.assertIn("'progress_events':", task_source)
+        self.assertIn('handoff_context', task_source)
         ast.parse(task_source)
         ast.parse(subagent_source)
 

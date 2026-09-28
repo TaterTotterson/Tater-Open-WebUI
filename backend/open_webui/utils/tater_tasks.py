@@ -23,8 +23,10 @@ from open_webui.tasks import create_task, list_tasks
 from open_webui.utils.auth import create_token
 from open_webui.utils.misc import get_last_user_message
 from open_webui.utils.tater_agent import (
+    TATER_AGENT_CONTEXT_LIST_MAX_ITEMS,
     background_task_result_answer,
     merge_task_context,
+    normalize_agent_context,
     normalize_task_title,
 )
 from open_webui.utils.tater_run_ledger import record_tater_run_event
@@ -36,6 +38,9 @@ TATER_TASK_RESULT_MAX_CHARS = 40_000
 TATER_TASK_PROMPT_MAX_CHARS = 12_000
 TATER_TASK_HISTORY_LIMIT_MAX = 200
 TATER_TASK_HISTORY_PREVIEW_MAX_CHARS = 600
+TATER_TASK_LIVE_EVENT_LIMIT = 12
+TATER_TASK_LIVE_EVENT_MAX_CHARS = 600
+TATER_TASK_RESULT_SUMMARY_MAX_CHARS = 4_000
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +89,8 @@ def tater_task_summary(chat: ChatModel) -> dict[str, Any]:
         'title': chat.title,
         'status': str(meta.get('status') or 'unknown'),
         'activity': str(meta.get('activity') or ''),
+        'progress_events': list(meta.get('progress_events') or []),
+        'result_summary': str(meta.get('result_summary') or ''),
         'capabilities': list(meta.get('capabilities') or []),
         'parent_chat_id': meta.get('parent_chat_id'),
         'created_at': chat.created_at,
@@ -229,6 +236,53 @@ async def update_tater_task(
         return ChatModel.model_validate(chat)
 
 
+def _clean_live_event_message(value: Any) -> str:
+    message = ' '.join(str(value or '').split()).strip()
+    if len(message) > TATER_TASK_LIVE_EVENT_MAX_CHARS:
+        return f'{message[: TATER_TASK_LIVE_EVENT_MAX_CHARS - 1].rstrip()}…'
+    return message
+
+
+async def record_tater_task_progress(
+    task_id: str,
+    message: str,
+    *,
+    kind: str,
+    user_id: str | None = None,
+) -> ChatModel | None:
+    """Persist a small, safe live handoff that the originating chat can inspect."""
+
+    message = _clean_live_event_message(message)
+    if not message:
+        return None
+
+    async with get_async_db_context() as db:
+        statement = select(Chat).where(Chat.id == task_id)
+        if user_id:
+            statement = statement.where(Chat.user_id == user_id)
+        if db.bind.dialect.name == 'postgresql':
+            statement = statement.with_for_update()
+        result = await db.execute(statement)
+        chat = result.scalar_one_or_none()
+        if not chat or (chat.meta or {}).get('type') != TATER_TASK_TYPE:
+            return None
+
+        meta = dict(chat.meta or {})
+        events = [event for event in (meta.get('progress_events') or []) if isinstance(event, dict)]
+        event = {'at': int(time.time()), 'kind': str(kind or 'progress')[:40], 'message': message}
+        if events and events[-1].get('kind') == event['kind'] and events[-1].get('message') == message:
+            events[-1] = event
+        else:
+            events.append(event)
+        meta['progress_events'] = events[-TATER_TASK_LIVE_EVENT_LIMIT:]
+        meta['activity'] = message[:240]
+        chat.meta = meta
+        chat.updated_at = int(time.time())
+        flag_modified(chat, 'meta')
+        await db.commit()
+        return ChatModel.model_validate(chat)
+
+
 async def emit_tater_task_event(user_id: str, task_id: str, status: str) -> None:
     from open_webui.socket.main import sio
 
@@ -253,6 +307,7 @@ async def reconcile_user_tater_tasks(app, user_id: str) -> list[ChatModel]:
                 {
                     'status': 'interrupted',
                     'activity': 'The server stopped before this task finished.',
+                    'result_summary': 'The server stopped before this task finished.',
                     'finished_at': int(time.time()),
                 },
                 user_id=user_id,
@@ -262,46 +317,119 @@ async def reconcile_user_tater_tasks(app, user_id: str) -> list[ChatModel]:
     return await get_user_tater_task_chats(user_id)
 
 
-async def tater_task_awareness(app, user_id: str, *, exclude_task_id: str | None = None) -> str:
+def _working_context_lines(chat: ChatModel) -> list[str]:
+    context = normalize_agent_context((chat.chat or {}).get('taterAgentContext'))
+    lines = []
+    location = ', '.join(
+        value
+        for value in (
+            f'repository {context["repository_root"]}' if context.get('repository_root') else '',
+            f'branch {context["branch"]}' if context.get('branch') else '',
+            f'cwd {context["cwd"]}' if context.get('cwd') else '',
+        )
+        if value
+    )
+    if location:
+        lines.append(f'  Working location: {location}')
+    if context.get('files_changed'):
+        lines.append(f'  Files changed so far: {", ".join(context["files_changed"][-5:])}')
+    if context.get('blockers'):
+        lines.append(f'  Current blocker: {context["blockers"][-1]}')
+    return lines
+
+
+def _detailed_task_lines(chat: ChatModel) -> list[str]:
+    task = tater_task_summary(chat)
+    lines = [f'- {task["id"]}: {task["title"]} — {task["status"]}']
+    prompt = _task_prompt(chat)
+    if prompt:
+        lines.append(f'  Requested work: {_clean_live_event_message(prompt)[:500]}')
+    if task['activity']:
+        lines.append(f'  Current state: {task["activity"]}')
+    lines.extend(_working_context_lines(chat))
+    progress_events = [event for event in task['progress_events'] if isinstance(event, dict)][-4:]
+    if progress_events:
+        lines.append('  Recent progress:')
+        lines.extend(
+            f'    - {str(event.get("message") or "").strip()}'
+            for event in progress_events
+            if str(event.get('message') or '').strip()
+        )
+    if task['status'] not in TATER_TASK_ACTIVE_STATUSES:
+        outcome = task['result_summary'] or _task_output(chat)
+        if outcome:
+            lines.append(f'  Outcome: {outcome[:1_500]}')
+    return lines
+
+
+async def tater_task_awareness(
+    app,
+    user_id: str,
+    *,
+    chat_id: str | None = None,
+    exclude_task_id: str | None = None,
+) -> str:
     chats = await reconcile_user_tater_tasks(app, user_id)
-    summaries = [tater_task_summary(chat) for chat in chats if chat.id != exclude_task_id]
-    running = [task for task in summaries if task['status'] in TATER_TASK_ACTIVE_STATUSES]
-    recent = sorted(
-        [task for task in summaries if task['status'] not in TATER_TASK_ACTIVE_STATUSES],
-        key=lambda task: task['updated_at'] or 0,
+    chats = [chat for chat in chats if chat.id != exclude_task_id]
+    if chat_id:
+        related = [chat for chat in chats if str((chat.meta or {}).get('parent_chat_id') or '') == chat_id]
+        related_ids = {chat.id for chat in related}
+        other = [chat for chat in chats if chat.id not in related_ids]
+    else:
+        related = chats
+        other = []
+
+    related_running = [
+        chat for chat in related if str((chat.meta or {}).get('status') or '') in TATER_TASK_ACTIVE_STATUSES
+    ]
+    related_recent = sorted(
+        [
+            chat
+            for chat in related
+            if str((chat.meta or {}).get('status') or '') not in TATER_TASK_ACTIVE_STATUSES
+        ],
+        key=lambda chat: chat.updated_at or 0,
         reverse=True,
     )[:3]
-    lines = ['Authoritative background task state:']
-    if running:
-        lines.extend(
-            [
-                'Active:',
-                *[
-                    f'- {task["id"]}: {task["title"]} — {task["status"]}'
-                    + (f' — {task["activity"]}' if task['activity'] else '')
-                    for task in running
-                ],
-            ]
-        )
+    other_running = [
+        tater_task_summary(chat)
+        for chat in other
+        if str((chat.meta or {}).get('status') or '') in TATER_TASK_ACTIVE_STATUSES
+    ]
+
+    lines = [
+        'Authoritative background work owned by this assistant:',
+        'These are tasks you started and remain responsible for. Refer to them as your background tasks, not as '
+        'unrelated external jobs.',
+    ]
+    if chat_id:
+        lines.append('Tasks started from this chat:')
+    if related_running:
+        lines.append('Active:')
+        for chat in related_running:
+            lines.extend(_detailed_task_lines(chat))
     else:
         lines.append('Active: none')
-    if recent:
+    if related_recent:
+        lines.append('Recently finished from this chat:')
+        for chat in related_recent:
+            lines.extend(_detailed_task_lines(chat))
+    if other_running:
+        lines.append('Other active tasks (brief cross-chat awareness):')
         lines.extend(
-            [
-                'Recently finished:',
-                *[
-                    f'- {task["id"]}: {task["title"]} — {task["status"]}'
-                    + (f' — {task["activity"]}' if task['activity'] else '')
-                    for task in recent
-                ],
-            ]
+            f'- {task["id"]}: {task["title"]} — {task["status"]}'
+            + (f' — {task["activity"]}' if task['activity'] else '')
+            + (f' — originating chat {task["parent_chat_id"]}' if task['parent_chat_id'] else '')
+            for task in other_running
         )
     lines.extend(
         [
-            'Use this state when the user asks about background work. Do not call terminal or Hydra merely to check '
-            'task status. Never say a listed task is pending when it is completed, failed, cancelled, or interrupted. '
-            'Active tasks will report their result into the originating chat when they finish. Never claim that you '
-            'are about to begin or continue tool work unless the interface actually starts a background task.',
+            'Use this state to answer progress questions directly. Do not call terminal or Hydra merely to check task '
+            'status, and do not start a new task for a status question. Explain what you are doing from the current '
+            'state and recent progress above. A running task has the chat snapshot from when it started; do not imply '
+            'that it has seen later chat messages. When it finishes, its verified context and result are merged into '
+            'this originating chat so follow-up work can continue without rediscovery. Never say a task is pending '
+            'when it is completed, failed, cancelled, or interrupted.',
         ]
     )
     return '\n'.join(lines)
@@ -345,6 +473,22 @@ async def _post_parent_result(
 ) -> None:
     task_chat = await Chats.get_chat_by_id(task_chat_id)
     task_context = ((task_chat.chat or {}).get('taterAgentContext') if task_chat else None) or {}
+    outcome = (summary or error or 'The task finished without a result.').strip()
+    handoff_context = normalize_agent_context(task_context)
+    handoff_context['execution_summary'] = outcome[:TATER_TASK_RESULT_SUMMARY_MAX_CHARS]
+    completion_note = _clean_live_event_message(
+        f'Background task "{title}" ({task_chat_id}) finished with status {status}: {outcome}'
+    )
+    if status == 'completed':
+        handoff_context['completed'] = [
+            *(handoff_context.get('completed') or []),
+            completion_note,
+        ][-TATER_AGENT_CONTEXT_LIST_MAX_ITEMS:]
+    else:
+        handoff_context['blockers'] = [
+            *(handoff_context.get('blockers') or []),
+            completion_note,
+        ][-TATER_AGENT_CONTEXT_LIST_MAX_ITEMS:]
     lines = [
         f'[BACKGROUND TASK FINISHED - {task_chat_id}]',
         f'Task: {title}',
@@ -402,11 +546,10 @@ async def _post_parent_result(
         parent_folder_id = parent.folder_id
 
         parent_data = copy.deepcopy(parent.chat or {})
-        if task_context:
-            parent_data['taterAgentContext'] = merge_task_context(
-                parent_data.get('taterAgentContext'),
-                task_context,
-            )
+        parent_data['taterAgentContext'] = merge_task_context(
+            parent_data.get('taterAgentContext'),
+            handoff_context,
+        )
         history = parent_data.setdefault('history', {})
         messages = history.setdefault('messages', {})
         existing_result = messages.get(result_message_id)
@@ -533,7 +676,10 @@ async def start_tater_task(
         'model': body['model'],
         'timestamp': now,
     }
-    child_context = copy.deepcopy((parent_chat.chat or {}).get('taterAgentContext') or {})
+    child_context = normalize_agent_context(
+        {'objective': prompt},
+        copy.deepcopy((parent_chat.chat or {}).get('taterAgentContext') or {}),
+    )
     chat_data = {
         'id': task_id,
         'title': title,
@@ -554,6 +700,7 @@ async def start_tater_task(
             'type': TATER_TASK_TYPE,
             'status': 'running',
             'activity': 'Starting task',
+            'progress_events': [{'at': now, 'kind': 'state', 'message': 'Starting task'}],
             'capabilities': capabilities,
             'parent_chat_id': parent_chat_id,
             'parent_message_id': metadata.get('assistant_message_id') or metadata.get('user_message_id'),
@@ -679,9 +826,10 @@ async def start_tater_task(
         async def finalize() -> None:
             final_status = status
             final_error = error
-            await update_tater_task(
+            await record_tater_task_progress(
                 task_id,
-                {'activity': 'Posting the result to the originating chat'},
+                'Posting the result to the originating chat',
+                kind='state',
                 user_id=user.id,
             )
 
@@ -730,11 +878,19 @@ async def start_tater_task(
                 final_status = 'failed'
                 final_error = f'The work finished, but its result could not be posted: {delivery_error}'
 
+            final_result = summary if final_status == 'completed' else final_error
+            await record_tater_task_progress(
+                task_id,
+                f'Task {final_status}: {final_result or "No result was returned."}',
+                kind='result',
+                user_id=user.id,
+            )
             await update_tater_task(
                 task_id,
                 {
                     'status': final_status,
-                    'activity': summary[:240] if final_status == 'completed' else final_error[:240],
+                    'activity': final_result[:240],
+                    'result_summary': final_result[:TATER_TASK_RESULT_SUMMARY_MAX_CHARS],
                     'finished_at': int(time.time()),
                 },
                 user_id=user.id,
@@ -763,7 +919,12 @@ async def start_tater_task(
         )
         await update_tater_task(
             task_id,
-            {'status': 'failed', 'activity': 'The task could not be scheduled.', 'finished_at': int(time.time())},
+            {
+                'status': 'failed',
+                'activity': 'The task could not be scheduled.',
+                'result_summary': 'The task could not be scheduled.',
+                'finished_at': int(time.time()),
+            },
             user_id=user.id,
         )
         raise

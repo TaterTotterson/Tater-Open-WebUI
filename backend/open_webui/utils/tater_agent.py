@@ -83,6 +83,8 @@ _CONVERSATIONAL_ONLY = _CONVERSATIONAL_CONFIRMATIONS | {
 _TASK_STATUS_RE = re.compile(
     r'(?:\b(?:task|job|background work|process)\b.*\b(?:status|progress|running|finished|done|complete|result|'
     r'update|happened|cancel|stop)\b|\b(?:what happened|how is|how\'s|where is)\b.*\b(?:task|job|work)\b|'
+    r'\bwhat (?:are|were) you (?:doing|working on)\b|\bwhat(?:\'s| is) (?:your|the) progress\b|'
+    r'\bhow(?:\'s| is) (?:it|that|the task) going\b|'
     r'\b(?:are you still working|is it still running|is that still running|did it finish|did that finish|'
     r'is it done|is that done|any update)\b)',
     re.IGNORECASE,
@@ -466,7 +468,7 @@ def merge_task_context(parent: Any, task: Any) -> dict[str, Any]:
     for field in TATER_AGENT_CONTEXT_LIST_FIELDS:
         merged[field] = list(
             dict.fromkeys([*(parent_context.get(field) or []), *(task_context.get(field) or [])])
-        )
+        )[-TATER_AGENT_CONTEXT_LIST_MAX_ITEMS:]
     return normalize_agent_context(merged)
 
 
