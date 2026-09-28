@@ -414,7 +414,7 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(tater_agent.agent_iteration_limit('999'), 128)
         self.assertEqual(tater_agent.agent_iteration_limit('invalid'), 32)
 
-    def test_keeps_newest_history_within_budget(self):
+    def test_keeps_newest_history_within_tiny_budget(self):
         history = tater_agent.render_tool_history(
             [
                 {'tool': 'first', 'result': 'a' * 80},
@@ -424,8 +424,60 @@ class TaterAgentTests(unittest.TestCase):
         )
 
         self.assertLessEqual(len(history), 100)
-        self.assertIn('bbbb', history)
-        self.assertNotIn('aaaa', history)
+        self.assertIn('second', history)
+
+    def test_large_results_preserve_every_command_and_bounded_excerpts(self):
+        history = tater_agent.render_tool_history(
+            [
+                {
+                    'iteration': 1,
+                    'tool': 'terminal',
+                    'status': 'completed',
+                    'parameters': {'command': 'cat hydra/__init__.py'},
+                    'result': {
+                        'output': 'FIRST-START\n' + ('a' * 20_000) + '\nFIRST-END',
+                        'exit_code': 0,
+                        'truncated': True,
+                    },
+                },
+                {
+                    'iteration': 2,
+                    'tool': 'terminal',
+                    'status': 'completed',
+                    'parameters': {'command': 'rg -n "Hydra" hydra'},
+                    'result': {
+                        'output': 'SECOND-START\n' + ('b' * 20_000) + '\nSECOND-END',
+                        'exit_code': 0,
+                        'truncated': False,
+                    },
+                },
+                {
+                    'iteration': 3,
+                    'tool': 'terminal',
+                    'status': 'completed',
+                    'parameters': {'command': "sed -n '1,160p' hydra/__init__.py"},
+                    'result': {
+                        'output': 'THIRD-START\n' + ('c' * 20_000) + '\nTHIRD-END',
+                        'exit_code': 0,
+                        'truncated': False,
+                    },
+                },
+            ],
+            max_chars=6_000,
+        )
+
+        self.assertLessEqual(len(history), 6_000)
+        self.assertIn('cat hydra/__init__.py', history)
+        self.assertIn('rg -n', history)
+        self.assertIn("sed -n '1,160p'", history)
+        self.assertIn('"output_chars":20022', history)
+        self.assertIn('FIRST-START', history)
+        self.assertIn('FIRST-END', history)
+        self.assertIn('SECOND-START', history)
+        self.assertIn('SECOND-END', history)
+        self.assertIn('THIRD-START', history)
+        self.assertIn('THIRD-END', history)
+        self.assertIn('characters omitted', history)
 
     def test_outcome_signature_is_stable_across_parameter_order(self):
         first = tater_agent.tool_outcome_signature('tool', {'b': 2, 'a': 1}, {'ok': True})

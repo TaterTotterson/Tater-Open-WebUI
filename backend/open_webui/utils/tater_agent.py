@@ -749,29 +749,136 @@ def parse_completion_review(content: str) -> dict[str, Any]:
     return {'complete': complete, 'reason': reason}
 
 
+def _bounded_history_text(value: Any, max_chars: int) -> str:
+    text = str(value or '')
+    if max_chars <= 0:
+        return ''
+    if len(text) <= max_chars:
+        return text
+
+    omitted = len(text) - max_chars
+    marker = f'\n...[{omitted:,} characters omitted]...\n'
+    if len(marker) >= max_chars:
+        return text[:max_chars]
+    remaining = max_chars - len(marker)
+    head = (remaining + 1) // 2
+    tail = remaining - head
+    return f'{text[:head]}{marker}{text[-tail:] if tail else ""}'
+
+
+def _history_result_parts(value: Any) -> tuple[dict[str, Any], str]:
+    parsed = value
+    if isinstance(value, str) and value[:1] in {'{', '['}:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = value
+
+    if not isinstance(parsed, dict):
+        if isinstance(parsed, str):
+            return {'result_chars': len(parsed)}, parsed
+        rendered = json.dumps(parsed, ensure_ascii=False, default=str, separators=(',', ':'))
+        return {'result_chars': len(rendered)}, rendered
+
+    metadata: dict[str, Any] = {}
+    output = parsed.get('output')
+    for key, item in parsed.items():
+        if key == 'output':
+            continue
+        if isinstance(item, str):
+            metadata[key] = _bounded_history_text(item, 500)
+            if len(item) > 500:
+                metadata[f'{key}_chars'] = len(item)
+        elif item is None or isinstance(item, (bool, int, float)):
+            metadata[key] = item
+
+    if isinstance(output, str):
+        metadata['output_chars'] = len(output)
+        return metadata, output
+
+    rendered = json.dumps(parsed, ensure_ascii=False, default=str, separators=(',', ':'))
+    metadata['result_chars'] = len(rendered)
+    return metadata, rendered
+
+
 def render_tool_history(records: list[dict[str, Any]], max_chars: int = TATER_AGENT_HISTORY_MAX_CHARS) -> str:
+    """Render history without letting one large result erase earlier commands."""
+
     if not records or max_chars <= 0:
         return ''
 
-    lines = [json.dumps(record, ensure_ascii=False, default=str, separators=(',', ':')) for record in records]
-    selected = []
-    used = 0
-    for line in reversed(lines):
-        separator_size = 1 if selected else 0
-        if used + separator_size + len(line) <= max_chars:
+    summaries: list[str] = []
+    details: list[tuple[str, str]] = []
+    for position, record in enumerate(records, start=1):
+        result_metadata, result_detail = _history_result_parts(record.get('result'))
+        parameters = json.dumps(
+            record.get('parameters') if isinstance(record.get('parameters'), dict) else {},
+            ensure_ascii=False,
+            default=str,
+            separators=(',', ':'),
+        )
+        parameters = _bounded_history_text(parameters, 1_200)
+        result_metadata_text = json.dumps(
+            result_metadata,
+            ensure_ascii=False,
+            default=str,
+            separators=(',', ':'),
+        )
+        iteration = record.get('iteration', position)
+        tool = str(record.get('tool') or 'unknown')
+        status = str(record.get('status') or 'unknown')
+        summaries.append(
+            f'{position}. iteration={iteration} tool={tool} status={status} '
+            f'parameters={parameters} result={result_metadata_text}'
+        )
+        if result_detail:
+            details.append((f'--- result {position}: {tool} ---', result_detail))
+
+    index_header = 'Tool call index (oldest to newest):'
+    index = '\n'.join([index_header, *summaries])
+    if len(index) >= max_chars:
+        # Extremely small budgets cannot hold every command. Keep the newest
+        # complete summaries and never tail-slice the inside of a JSON record.
+        selected = []
+        used = len(index_header)
+        for line in reversed(summaries):
+            if used + 1 + len(line) > max_chars:
+                break
             selected.append(line)
-            used += separator_size + len(line)
-            continue
+            used += 1 + len(line)
+        selected.reverse()
+        if selected:
+            while selected:
+                omitted = len(summaries) - len(selected)
+                omission = f'...[{omitted} older command summaries omitted]...\n' if omitted else ''
+                rendered = f'{index_header}\n{omission}' + '\n'.join(selected)
+                if len(rendered) <= max_chars:
+                    return rendered
+                selected.pop(0)
+        return _bounded_history_text(summaries[-1], max_chars)
 
-        if not selected:
-            marker = '...[tool result truncated]...'
-            selected.append(marker + line[-max(0, max_chars - len(marker)) :])
-        break
+    if not details:
+        return index
 
-    selected.reverse()
-    if len(selected) < len(lines):
-        selected.insert(0, '...[older tool results omitted]...')
-    return '\n'.join(selected)[-max_chars:]
+    details_header = '\n\nTool result excerpts:'
+    fixed_size = (
+        len(details_header)
+        + 1
+        + sum(len(header) + 1 for header, _ in details)
+        + (2 * (len(details) - 1))
+    )
+    detail_budget = max_chars - len(index) - fixed_size
+    if detail_budget <= 0:
+        return index
+
+    per_detail, remainder = divmod(detail_budget, len(details))
+    rendered_details = []
+    for detail_index, (header, detail) in enumerate(details):
+        allowance = per_detail + (1 if detail_index < remainder else 0)
+        rendered_details.append(f'{header}\n{_bounded_history_text(detail, allowance)}')
+
+    rendered = f'{index}{details_header}\n' + '\n\n'.join(rendered_details)
+    return rendered
 
 
 def _stable_result(value: Any) -> Any:

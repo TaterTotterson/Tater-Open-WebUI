@@ -1539,6 +1539,9 @@ async def chat_completion_tools_handler(
         'work only when the Query explicitly states the earlier task it confirms. '
         'Never repeat an action that already succeeded unless rerunning it is needed to verify a later change. Use '
         'terminal for every local action; each call already returns its command output and exit status. For a '
+        'large file or directory, prefer focused rg, sed -n, head, or tail commands instead of unbounded cat or '
+        'recursive listings. If a terminal result says truncated=true, do not repeat the same command: narrow the '
+        'path, search, or line range and continue from the command index in the execution history. For a '
         'simple read-only question, use the minimum number of terminal calls (usually one). If one successful result '
         'directly answers the request, the next response must finish with final_answer instead of exploring further. '
         'For repository coding work, begin a new task or resumed task by confirming the working directory, repository '
@@ -2103,6 +2106,27 @@ async def chat_completion_tools_handler(
             history_records.append(record)
             signature = tool_outcome_signature(record['tool'], record['parameters'], record['result'])
             outcome_counts[signature] = outcome_counts.get(signature, 0) + 1
+            if outcome_counts[signature] == TATER_AGENT_REPEAT_LIMIT - 1:
+                repeat_warning = (
+                    f'The same {record["tool"]} call has now produced the same result twice. '
+                    'Do not run it again. Use the result already present in the tool history, choose a more focused '
+                    'command, or finish the task if the available evidence is sufficient.'
+                )
+                history_records.append(
+                    {
+                        'iteration': iteration,
+                        'tool': 'agent_repeat_guard',
+                        'parameters': {},
+                        'status': 'failed',
+                        'result': repeat_warning,
+                    }
+                )
+                ledger_event(
+                    'repeat_guard_warning',
+                    iteration=iteration,
+                    tool=record['tool'],
+                    warning=repeat_warning,
+                )
             if outcome_counts[signature] >= TATER_AGENT_REPEAT_LIMIT:
                 agent_stop_message = (
                     f'Tool planning stopped after the same {record["tool"]} call produced the same result '
