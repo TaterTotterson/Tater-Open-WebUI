@@ -11,6 +11,8 @@ from typing import Any
 DEFAULT_TATER_AGENT_MAX_ITERATIONS = 32
 MAX_TATER_AGENT_MAX_ITERATIONS = 128
 TATER_AGENT_MAX_CALLS_PER_STEP = 16
+TATER_AGENT_MAX_PARALLEL_TASKS = 4
+TATER_AGENT_PARALLEL_TASK_PROMPT_MAX_CHARS = 4_000
 TATER_AGENT_HISTORY_MAX_CHARS = 120_000
 TATER_AGENT_PLAN_RETRY_LIMIT = 2
 TATER_AGENT_REPEAT_LIMIT = 3
@@ -556,6 +558,7 @@ def _model_tool_call_plan(content: str, max_calls: int) -> dict[str, Any] | None
         'progress': '',
         'task_title': '',
         'tool_calls': calls,
+        'parallel_tasks': [],
         'final_answer': '',
         'context': {},
     }
@@ -601,6 +604,7 @@ def _json_like_final_answer_plan(content: str) -> dict[str, Any] | None:
         'progress': '',
         'task_title': '',
         'tool_calls': [],
+        'parallel_tasks': [],
         'final_answer': final_answer[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS],
         'context': context,
     }
@@ -611,6 +615,7 @@ def parse_tool_plan_response(
     max_calls: int = TATER_AGENT_MAX_CALLS_PER_STEP,
     *,
     allow_plain_final_answer: bool = False,
+    allow_parallel_tasks: bool = True,
 ) -> dict[str, Any]:
     content = str(content or '')
     payload = None
@@ -625,6 +630,7 @@ def parse_tool_plan_response(
                 continue
             if isinstance(candidate, dict) and (
                 'tool_calls' in candidate
+                or 'parallel_tasks' in candidate
                 or candidate.get('name')
                 or 'progress' in candidate
                 or 'final_answer' in candidate
@@ -651,30 +657,90 @@ def parse_tool_plan_response(
                 'progress': '',
                 'task_title': '',
                 'tool_calls': [],
+                'parallel_tasks': [],
                 'final_answer': plain_answer[:TATER_AGENT_FINAL_ANSWER_MAX_CHARS],
                 'context': {},
             }
         raise ValueError('No tool-plan JSON object found')
 
+    def validated_calls(raw_calls: Any, *, field: str) -> list[dict[str, Any]]:
+        if not isinstance(raw_calls, list):
+            raise ValueError(f'{field} must be an array')
+        parsed_calls = []
+        for raw_call in raw_calls:
+            if not isinstance(raw_call, dict):
+                raise ValueError(f'Every call in {field} must be an object')
+            name = str(raw_call.get('name') or '').strip()
+            if not name:
+                raise ValueError(f'Every call in {field} must have a name')
+            parameters = raw_call.get('parameters', {})
+            if not isinstance(parameters, dict):
+                raise ValueError(f'Tool parameters for {name} must be an object')
+            parsed_calls.append({'name': name, 'parameters': parameters})
+        return parsed_calls
+
     raw_calls = payload.get('tool_calls')
     if raw_calls is None:
         raw_calls = [payload] if payload.get('name') else []
-    if not isinstance(raw_calls, list):
-        raise ValueError('tool_calls must be an array')
-    if len(raw_calls) > max(1, max_calls):
-        raise ValueError(f'Tool plan contains too many calls ({len(raw_calls)} > {max(1, max_calls)})')
+    calls = validated_calls(raw_calls, field='tool_calls')
 
-    calls = []
-    for raw_call in raw_calls:
-        if not isinstance(raw_call, dict):
-            raise ValueError('Every tool call must be an object')
-        name = str(raw_call.get('name') or '').strip()
-        if not name:
-            raise ValueError('Every tool call must have a name')
-        parameters = raw_call.get('parameters', {})
-        if not isinstance(parameters, dict):
-            raise ValueError(f'Tool parameters for {name} must be an object')
-        calls.append({'name': name, 'parameters': parameters})
+    raw_parallel_tasks = payload.get('parallel_tasks', [])
+    if not isinstance(raw_parallel_tasks, list):
+        raise ValueError('parallel_tasks must be an array')
+    if len(raw_parallel_tasks) > TATER_AGENT_MAX_PARALLEL_TASKS:
+        raise ValueError(
+            'Plan contains too many parallel tasks '
+            f'({len(raw_parallel_tasks)} > {TATER_AGENT_MAX_PARALLEL_TASKS})'
+        )
+    if raw_parallel_tasks and not allow_parallel_tasks:
+        raise ValueError('parallel_tasks are only allowed on the first planning step of a normal chat')
+
+    parallel_tasks = []
+    for index, raw_task in enumerate(raw_parallel_tasks):
+        if not isinstance(raw_task, dict):
+            raise ValueError('Every parallel task must be an object')
+        task_prompt = raw_task.get('task_prompt', '')
+        if not isinstance(task_prompt, str):
+            raise ValueError('Every parallel task task_prompt must be a string')
+        task_prompt = task_prompt.strip()
+        if not task_prompt:
+            raise ValueError('Every parallel task must have a self-contained task_prompt')
+        task_title = raw_task.get('task_title', '')
+        task_progress = raw_task.get('progress', '')
+        task_context = raw_task.get('context', {})
+        if not isinstance(task_title, str):
+            raise ValueError('Every parallel task task_title must be a string')
+        if not isinstance(task_progress, str):
+            raise ValueError('Every parallel task progress must be a string')
+        if not isinstance(task_context, dict):
+            raise ValueError('Every parallel task context must be an object')
+        task_calls = validated_calls(
+            raw_task.get('tool_calls', []),
+            field=f'parallel_tasks[{index}].tool_calls',
+        )
+        if not task_calls:
+            raise ValueError('Every parallel task must begin with at least one tool call')
+        task_title = re.sub(r'\s+', ' ', task_title).strip(' \t\r\n"\'`')[
+            :TATER_AGENT_TASK_TITLE_MAX_CHARS
+        ]
+        task_progress = task_progress.strip()[:TATER_AGENT_PROGRESS_MAX_CHARS]
+        if '<|tool_call' in task_title.lower() or '<|tool_call' in task_progress.lower():
+            raise ValueError('Parallel task text must not contain tool-call markup')
+        parallel_tasks.append(
+            {
+                'task_title': task_title,
+                'task_prompt': task_prompt[:TATER_AGENT_PARALLEL_TASK_PROMPT_MAX_CHARS],
+                'progress': task_progress,
+                'tool_calls': task_calls,
+                'context': task_context,
+            }
+        )
+
+    total_calls = len(calls) + sum(len(task['tool_calls']) for task in parallel_tasks)
+    if total_calls > max(1, max_calls):
+        raise ValueError(f'Tool plan contains too many calls ({total_calls} > {max(1, max_calls)})')
+    if calls and parallel_tasks:
+        raise ValueError('Use either top-level tool_calls or parallel_tasks, not both')
     progress = payload.get('progress', '')
     task_title = payload.get('task_title', '')
     final_answer = payload.get('final_answer', '')
@@ -697,12 +763,13 @@ def parse_tool_plan_response(
         raise ValueError('task_title must not contain tool-call markup')
     if '<|tool_call' in final_answer.lower():
         raise ValueError('final_answer must not contain tool-call markup')
-    if calls and final_answer:
-        raise ValueError('final_answer must be empty while tool_calls are present')
+    if (calls or parallel_tasks) and final_answer:
+        raise ValueError('final_answer must be empty while tool calls or parallel tasks are present')
     return {
         'progress': progress,
         'task_title': task_title,
         'tool_calls': calls,
+        'parallel_tasks': parallel_tasks,
         'final_answer': final_answer,
         'context': context,
     }
@@ -716,7 +783,8 @@ def tool_plan_retry_instruction(error: Exception | str) -> str:
     reason = str(error).strip()[:300] or 'invalid tool-plan response'
     return (
         f'Your previous response could not be used ({reason}). Retry the same planning step now. '
-        'Return exactly one valid JSON object with task_title, progress, tool_calls, final_answer, and context fields. '
+        'Return exactly one valid JSON object with task_title, progress, tool_calls, parallel_tasks, final_answer, '
+        'and context fields. '
         'Do not include Markdown, tool-call markup, or prose outside the JSON object.'
     )
 

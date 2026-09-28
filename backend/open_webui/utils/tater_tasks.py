@@ -24,6 +24,7 @@ from open_webui.utils.auth import create_token
 from open_webui.utils.misc import get_last_user_message
 from open_webui.utils.tater_agent import (
     TATER_AGENT_CONTEXT_LIST_MAX_ITEMS,
+    TATER_AGENT_MAX_PARALLEL_TASKS,
     background_task_result_answer,
     merge_task_context,
     normalize_agent_context,
@@ -33,7 +34,7 @@ from open_webui.utils.tater_run_ledger import record_tater_run_event
 
 TATER_TASK_TYPE = 'tater_task'
 TATER_TASK_ACTIVE_STATUSES = {'queued', 'running', 'cancelling'}
-TATER_TASK_MAX_CONCURRENT_PER_USER = 2
+TATER_TASK_MAX_CONCURRENT_PER_USER = TATER_AGENT_MAX_PARALLEL_TASKS
 TATER_TASK_RESULT_MAX_CHARS = 40_000
 TATER_TASK_PROMPT_MAX_CHARS = 12_000
 TATER_TASK_HISTORY_LIMIT_MAX = 200
@@ -616,6 +617,7 @@ async def start_tater_task(
     user: UserModel,
     task_prompt: str,
     initial_plan: dict[str, Any],
+    capacity_reserved: bool = False,
 ) -> dict[str, Any]:
     parent_chat_id = metadata.get('chat_id')
     if not parent_chat_id:
@@ -624,13 +626,14 @@ async def start_tater_task(
     if not parent_chat:
         raise RuntimeError('The originating chat could not be found.')
 
-    existing = await reconcile_user_tater_tasks(request.app, user.id)
-    active = [chat for chat in existing if (chat.meta or {}).get('status') in TATER_TASK_ACTIVE_STATUSES]
-    if len(active) >= TATER_TASK_MAX_CONCURRENT_PER_USER:
-        raise RuntimeError(
-            f'At most {TATER_TASK_MAX_CONCURRENT_PER_USER} background tasks can run at once. '
-            'Wait for one to finish or cancel one beneath its originating chat.'
-        )
+    if not capacity_reserved:
+        existing = await reconcile_user_tater_tasks(request.app, user.id)
+        active = [chat for chat in existing if (chat.meta or {}).get('status') in TATER_TASK_ACTIVE_STATUSES]
+        if len(active) >= TATER_TASK_MAX_CONCURRENT_PER_USER:
+            raise RuntimeError(
+                f'At most {TATER_TASK_MAX_CONCURRENT_PER_USER} background tasks can run at once. '
+                'Wait for one to finish or cancel one beneath its originating chat.'
+            )
 
     task_id = str(uuid4())
     user_message_id = str(uuid4())
@@ -932,3 +935,64 @@ async def start_tater_task(
     await emit_tater_task_event(user.id, task_id, 'running')
     ledger_event('task_scheduled')
     return tater_task_summary(chat)
+
+
+async def start_parallel_tater_tasks(
+    request: Request,
+    *,
+    body: dict[str, Any],
+    metadata: dict[str, Any],
+    user: UserModel,
+    task_plans: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Start an independently scoped task batch after one shared capacity check."""
+
+    if not task_plans:
+        raise RuntimeError('No parallel tasks were provided.')
+    if len(task_plans) > TATER_TASK_MAX_CONCURRENT_PER_USER:
+        raise RuntimeError(
+            f'At most {TATER_TASK_MAX_CONCURRENT_PER_USER} independent tasks can be started together.'
+        )
+
+    existing = await reconcile_user_tater_tasks(request.app, user.id)
+    active = [chat for chat in existing if (chat.meta or {}).get('status') in TATER_TASK_ACTIVE_STATUSES]
+    available = TATER_TASK_MAX_CONCURRENT_PER_USER - len(active)
+    if len(task_plans) > available:
+        raise RuntimeError(
+            f'This request needs {len(task_plans)} task slots, but only {max(0, available)} are available. '
+            'Wait for a running task to finish or cancel one beneath its originating chat.'
+        )
+
+    tasks = []
+    errors = []
+    for task_plan in task_plans:
+        prompt = str(task_plan.get('task_prompt') or '').strip()
+        initial_plan = {
+            'task_title': task_plan.get('task_title') or '',
+            'progress': task_plan.get('progress') or '',
+            'tool_calls': copy.deepcopy(task_plan.get('tool_calls') or []),
+            'parallel_tasks': [],
+            'final_answer': '',
+            'context': copy.deepcopy(task_plan.get('context') or {}),
+        }
+        try:
+            tasks.append(
+                await start_tater_task(
+                    request,
+                    body=body,
+                    metadata=metadata,
+                    user=user,
+                    task_prompt=prompt,
+                    initial_plan=initial_plan,
+                    capacity_reserved=True,
+                )
+            )
+        except Exception as exc:
+            errors.append(
+                {
+                    'title': normalize_task_title(task_plan.get('task_title'), prompt),
+                    'error': str(exc),
+                }
+            )
+
+    return {'tasks': tasks, 'errors': errors}

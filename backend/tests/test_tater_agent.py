@@ -130,6 +130,91 @@ class TaterAgentTests(unittest.TestCase):
 
         self.assertEqual(plan['task_title'], 'Inspect Face ID Code')
 
+    def test_parses_independent_parallel_tasks(self):
+        plan = tater_agent.parse_tool_plan_response(
+            json.dumps(
+                {
+                    'task_title': '',
+                    'progress': 'I’ll handle these independent checks at the same time.',
+                    'tool_calls': [],
+                    'parallel_tasks': [
+                        {
+                            'task_title': 'List current directory',
+                            'task_prompt': 'List the current directory and summarize it.',
+                            'progress': 'I’ll inspect the current directory.',
+                            'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'ls'}}],
+                            'context': {},
+                        },
+                        {
+                            'task_title': 'Count Tea files',
+                            'task_prompt': 'Count the files in the tea folder.',
+                            'progress': 'I’ll count the files in the tea folder.',
+                            'tool_calls': [
+                                {'name': 'terminal', 'parameters': {'command': 'find tea -type f | wc -l'}}
+                            ],
+                            'context': {},
+                        },
+                        {
+                            'task_title': 'Check today weather',
+                            'task_prompt': 'Check today’s weather.',
+                            'progress': 'I’ll check today’s weather.',
+                            'tool_calls': [
+                                {'name': 'tater_hydra', 'parameters': {'request': 'Check today’s weather'}}
+                            ],
+                            'context': {},
+                        },
+                    ],
+                    'final_answer': '',
+                    'context': {},
+                }
+            )
+        )
+
+        self.assertEqual(plan['tool_calls'], [])
+        self.assertEqual(len(plan['parallel_tasks']), 3)
+        self.assertEqual(plan['parallel_tasks'][1]['task_title'], 'Count Tea files')
+
+    def test_parallel_tasks_are_first_step_only(self):
+        payload = {
+            'tool_calls': [],
+            'parallel_tasks': [
+                {
+                    'task_title': 'Check files',
+                    'task_prompt': 'Check the files.',
+                    'progress': 'I’ll check the files.',
+                    'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'ls'}}],
+                    'context': {},
+                }
+            ],
+            'final_answer': '',
+            'context': {},
+        }
+
+        with self.assertRaisesRegex(ValueError, 'first planning step'):
+            tater_agent.parse_tool_plan_response(
+                json.dumps(payload),
+                allow_parallel_tasks=False,
+            )
+
+    def test_parallel_tasks_cannot_mix_with_top_level_calls(self):
+        payload = {
+            'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'pwd'}}],
+            'parallel_tasks': [
+                {
+                    'task_title': 'Check files',
+                    'task_prompt': 'Check the files.',
+                    'progress': 'I’ll check the files.',
+                    'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'ls'}}],
+                    'context': {},
+                }
+            ],
+            'final_answer': '',
+            'context': {},
+        }
+
+        with self.assertRaisesRegex(ValueError, 'either top-level tool_calls or parallel_tasks'):
+            tater_agent.parse_tool_plan_response(json.dumps(payload))
+
     def test_normalizes_planner_task_title(self):
         self.assertEqual(
             tater_agent.normalize_task_title('  inspect   Face ID implementation  ', 'ignored'),
@@ -305,7 +390,7 @@ class TaterAgentTests(unittest.TestCase):
         instruction = tater_agent.tool_plan_retry_instruction('No tool-plan JSON object found')
 
         self.assertIn('Retry the same planning step', instruction)
-        self.assertIn('task_title, progress, tool_calls, final_answer, and context', instruction)
+        self.assertIn('task_title, progress, tool_calls, parallel_tasks, final_answer', instruction)
         self.assertIn('Do not include Markdown', instruction)
 
     def test_retry_instruction_limits_error_length(self):

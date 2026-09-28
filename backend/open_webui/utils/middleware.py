@@ -111,6 +111,7 @@ from open_webui.utils.skills import (
 )
 from open_webui.utils.task import get_task_model_id, tools_function_calling_generation_template
 from open_webui.utils.tater_agent import (
+    TATER_AGENT_MAX_PARALLEL_TASKS,
     TATER_AGENT_PLAN_RETRY_LIMIT,
     TATER_AGENT_REPEAT_LIMIT,
     agent_history_char_limit,
@@ -1528,11 +1529,21 @@ async def chat_completion_tools_handler(
         'This is an iterative agent loop. Every response must be exactly one JSON object with this shape:\n'
         '{"task_title":"","progress":"","tool_calls":'
         '[{"name":"terminal","parameters":{"command":"..."}}],'
+        '"parallel_tasks":[],'
         '"final_answer":"","context":{}}\n'
         f'The configured model context window is {configured_context_window} tokens. Keep commands and returned '
         'content focused so the task stays within that budget. '
         'Select only the next necessary action. Calls returned together must be independent because they execute as '
         'one step. Use the execution history on later steps to inspect results, fix failures, and verify the work. '
+        f'On the first planning step of a normal chat, you may instead create up to '
+        f'{TATER_AGENT_MAX_PARALLEL_TASKS} parallel_tasks when the request contains genuinely independent pieces of '
+        'work that can safely run at the same time. Each parallel task must have task_title, a self-contained '
+        'task_prompt, one short progress sentence, its initial tool_calls, and context. Keep top-level tool_calls '
+        'empty when using parallel_tasks. Separate independent questions such as a directory listing, an unrelated '
+        'file count, and a weather lookup when concurrent work is useful. Never split ordered steps, work that needs '
+        'another task\'s result, or edits that may touch overlapping files or shared mutable state. Prefer one task '
+        'when the work is one objective, even if it needs several commands. A background task must never create '
+        'more tasks, and parallel_tasks must be empty after tool execution has begun. '
         'The Query is the only work being requested now. Do not start tools merely because history contains an '
         'unfinished idea or an earlier promise. Questions about background task status must be answered from the '
         'authoritative task state in the system message, never by terminal or Hydra. A bare acknowledgement starts '
@@ -1834,6 +1845,7 @@ async def chat_completion_tools_handler(
         if iteration == 1 and not history_records and isinstance(initial_task_plan, dict):
             plan = copy.deepcopy(initial_task_plan)
             tool_calls = plan.get('tool_calls') or []
+            parallel_tasks = plan.get('parallel_tasks') or []
             ledger_event(
                 'planner_response_reused',
                 iteration=iteration,
@@ -1882,8 +1894,10 @@ async def chat_completion_tools_handler(
                     plan = parse_tool_plan_response(
                         content,
                         allow_plain_final_answer=bool(history_records),
+                        allow_parallel_tasks=not background_task_id and not history_records,
                     )
                     tool_calls = plan['tool_calls']
+                    parallel_tasks = plan['parallel_tasks']
                     ledger_event(
                         'planner_attempt_finished',
                         iteration=iteration,
@@ -1936,6 +1950,63 @@ async def chat_completion_tools_handler(
             )
             await persist_background_task_context(working_agent_context)
 
+        if parallel_tasks and not background_task_id and not history_records:
+            started_tasks = []
+            task_errors = []
+            try:
+                from open_webui.utils.tater_tasks import start_parallel_tater_tasks
+
+                batch = await start_parallel_tater_tasks(
+                    request,
+                    body=body,
+                    metadata=metadata,
+                    user=user,
+                    task_plans=parallel_tasks,
+                )
+                started_tasks = batch['tasks']
+                task_errors = batch['errors']
+                ledger_event(
+                    'parallel_background_tasks_dispatched',
+                    tasks=started_tasks,
+                    errors=task_errors,
+                    plan=plan,
+                )
+            except Exception as e:
+                task_errors = [{'title': 'Parallel task batch', 'error': str(e)}]
+                ledger_event(
+                    'parallel_background_task_dispatch_failed',
+                    plan=plan,
+                    error=repr(e),
+                )
+
+            if started_tasks:
+                noun = 'task' if len(started_tasks) == 1 else 'independent background tasks'
+                task_lines = '\n'.join(f'- **{task["title"]}**' for task in started_tasks)
+                task_message = (
+                    f'I started {len(started_tasks)} {noun} in parallel:\n\n{task_lines}\n\n'
+                    'You can keep chatting while they run. I will post each verified outcome here as it finishes.'
+                )
+                if task_errors:
+                    failed_lines = '\n'.join(
+                        f'- **{error["title"]}**: {error["error"]}' for error in task_errors
+                    )
+                    task_message += f'\n\nThese tasks could not be started:\n{failed_lines}'
+            else:
+                task_message = 'I could not start the parallel tasks: ' + '; '.join(
+                    f'{error["title"]}: {error["error"]}' for error in task_errors
+                )
+
+            body['_tater_agent_response'] = {
+                'content': task_message,
+                'display_content': task_message,
+            }
+            ledger_event(
+                'agent_run_finished',
+                status='dispatched' if started_tasks else 'failed',
+                answer=task_message,
+            )
+            return body, {'sources': sources}
+
         if tool_calls and not background_task_id and not history_records:
             try:
                 from open_webui.utils.tater_tasks import start_tater_task
@@ -1980,7 +2051,7 @@ async def chat_completion_tools_handler(
             )
             return body, {'sources': sources}
 
-        if not tool_calls:
+        if not tool_calls and not parallel_tasks:
             prepared_final_answer = plan['final_answer'] if history_records else ''
             prepared_agent_context = (
                 normalize_agent_context(plan['context'], working_agent_context)

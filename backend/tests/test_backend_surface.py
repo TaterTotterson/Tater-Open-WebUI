@@ -108,7 +108,10 @@ class BackendSurfaceTests(unittest.TestCase):
         subagent_source = SUBAGENTS_PATH.read_text(encoding='utf-8')
 
         self.assertIn('start_tater_task', middleware_source)
+        self.assertIn('start_parallel_tater_tasks', middleware_source)
+        self.assertIn('parallel_background_tasks_dispatched', middleware_source)
         self.assertIn("call.get('name') == 'tater_hydra'", task_source)
+        self.assertIn('TATER_AGENT_MAX_PARALLEL_TASKS', task_source)
         self.assertIn("'type': TATER_TASK_TYPE", task_source)
         self.assertIn("'done': True", task_source)
         self.assertIn("'type': 'chat:reload'", task_source)
