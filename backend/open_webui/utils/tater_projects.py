@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
 
 from open_webui.models.folders import FolderForm, FolderModel, FolderUpdateForm, Folders
+
+TATER_SCRATCH_DIRECTORY_NAME = '.scratch'
 
 
 def configured_projects_root() -> Path:
@@ -18,12 +21,45 @@ def configured_projects_root() -> Path:
     return root
 
 
+def regular_chat_scratch_path(user_id: str, root: Path | None = None) -> Path:
+    """Return one durable, user-isolated workspace shared by non-project chats."""
+
+    root = (root or configured_projects_root()).resolve()
+    user_key = hashlib.sha256(str(user_id or 'anonymous').encode('utf-8')).hexdigest()[:24]
+    scratch_root = (root / TATER_SCRATCH_DIRECTORY_NAME).resolve()
+    if scratch_root.parent != root:
+        raise RuntimeError('Scratch workspace must be inside the projects directory')
+    path = (scratch_root / user_key).resolve()
+    if path.parent != scratch_root:
+        raise RuntimeError('Scratch workspace user path is invalid')
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def regular_chat_prompt(user_id: str, root: Path | None = None) -> str:
+    root = (root or configured_projects_root()).resolve()
+    scratch = regular_chat_scratch_path(user_id, root)
+    return (
+        'Regular-chat scratch workspace (authoritative):\n'
+        f'- Shared scratch root: {scratch}\n'
+        f'- Projects directory: {root}\n'
+        'This durable scratch root is shared by all of this user\'s chats that are not attached to a project. '
+        'Start terminal work here and use it for temporary files, downloads, experiments, and general work that does '
+        'not belong to a named project. Files here persist across regular chats and container updates because the '
+        'projects directory is host-mounted. Do not treat the scratch root as a named project or initialize a Git '
+        'repository there unless the user asks. Named projects remain direct children of the projects directory and '
+        'are accessible for explicit cross-project work.'
+    )
+
+
 def project_directory_name(name: str) -> str:
     """Validate a project name before using it as one direct path component."""
 
     name = str(name or '').strip()
     if not name or name in {'.', '..'}:
         raise ValueError('Project name cannot be empty')
+    if name == TATER_SCRATCH_DIRECTORY_NAME:
+        raise ValueError(f'{TATER_SCRATCH_DIRECTORY_NAME} is reserved for regular-chat scratch files')
     if '/' in name or '\\' in name or any(ord(character) < 32 for character in name):
         raise ValueError('Project name cannot contain path separators or control characters')
     return name

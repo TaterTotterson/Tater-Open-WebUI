@@ -76,6 +76,7 @@ export type ProjectContext = {
 	path: string;
 	project_id: string | null;
 	project_name: string | null;
+	workspace_type: 'project' | 'scratch';
 };
 
 export const getAvailableProjectDirectories = async (

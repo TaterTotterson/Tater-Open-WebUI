@@ -154,6 +154,10 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('sync_user_projects', folder_source)
         self.assertIn("or '/projects'", project_source)
         self.assertIn('Shared project working context', middleware_source)
+        self.assertIn('regular_chat_prompt', middleware_source)
+        self.assertIn('regular_chat_scratch_path', middleware_source)
+        self.assertIn("workspace_type = 'scratch'", folder_source)
+        self.assertIn('regular_chat_scratch_path', tools_source)
         self.assertIn('local_terminal_runtime.set_cwd', tools_source)
         self.assertIn('folder_id=parent_chat.folder_id', task_source)
 

@@ -52,7 +52,7 @@ from open_webui.utils.headers import (
 )
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import is_string_allowed
-from open_webui.utils.tater_projects import folder_project_path
+from open_webui.utils.tater_projects import folder_project_path, regular_chat_scratch_path
 from open_webui.utils.plugin import get_tool_contents_cache, get_tools_cache, load_tool_module_by_id
 from open_webui.utils.terminals import (
     TERMINAL_CONTEXT_HEADER,
@@ -966,6 +966,7 @@ async def get_terminal_tools(
     if terminal_id == LOCAL_TERMINAL_ID:
         metadata = extra_params.get('__metadata__', {})
         chat_id = metadata.get('chat_id')
+        default_path = regular_chat_scratch_path(user.id)
         if chat_id:
             chat = await Chats.get_chat_by_id_and_user_id(chat_id, user.id)
             agent_context = (chat.chat or {}).get('taterAgentContext') if chat else None
@@ -974,15 +975,18 @@ async def get_terminal_tools(
             if chat and chat.folder_id:
                 project = await Folders.get_folder_by_id(chat.folder_id)
                 project_path = folder_project_path(project)
+            if project_path and project_path.is_dir():
+                default_path = project_path
             if saved_cwd:
                 try:
                     local_terminal_runtime.set_cwd(user.id, chat_id, saved_cwd)
                 except ValueError:
                     log.info('Saved terminal cwd no longer exists for chat %s: %s', chat_id, saved_cwd)
-                    if project_path and project_path.is_dir():
-                        local_terminal_runtime.set_cwd(user.id, chat_id, str(project_path))
-            elif project_path and project_path.is_dir():
-                local_terminal_runtime.set_cwd(user.id, chat_id, str(project_path))
+                    local_terminal_runtime.set_cwd(user.id, chat_id, str(default_path))
+            else:
+                local_terminal_runtime.set_cwd(user.id, chat_id, str(default_path))
+        else:
+            local_terminal_runtime.set_cwd(user.id, chat_id, str(default_path))
         return get_local_terminal_tools(user.id, chat_id)
 
     connections = await Config.get('terminal_server.connections', []) or []

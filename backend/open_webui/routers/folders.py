@@ -38,6 +38,7 @@ from open_webui.utils.tater_projects import (
     folder_project_path,
     project_directory_name,
     project_path_for_name,
+    regular_chat_scratch_path,
     sync_user_projects,
 )
 from open_webui.tasks import has_active_tasks
@@ -107,9 +108,10 @@ async def get_project_context(
 
     await check_folders_permission(request, user, db=db)
     root = configured_projects_root()
-    project_path = root
+    project_path = regular_chat_scratch_path(user.id, root)
     project_id = None
-    project_name = None
+    project_name = 'Scratch'
+    workspace_type = 'scratch'
 
     if chat_id:
         chat = await Chats.get_chat_by_id_for_user(chat_id, user, db=db)
@@ -125,12 +127,14 @@ async def get_project_context(
                 project_path = path
                 project_id = folder.id
                 project_name = folder.name
+                workspace_type = 'project'
 
     return {
         'projects_root': str(root),
         'path': str(project_path),
         'project_id': project_id,
         'project_name': project_name,
+        'workspace_type': workspace_type,
     }
 
 

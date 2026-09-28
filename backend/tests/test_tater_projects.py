@@ -61,6 +61,28 @@ class TaterProjectsTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         tater_projects.project_path_for_name(invalid, root)
 
+    def test_regular_chats_share_a_user_isolated_scratch_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+
+            first = tater_projects.regular_chat_scratch_path('user-1', root)
+            second = tater_projects.regular_chat_scratch_path('user-1', root)
+            another_user = tater_projects.regular_chat_scratch_path('user-2', root)
+
+            self.assertEqual(first, second)
+            self.assertNotEqual(first, another_user)
+            self.assertEqual(first.parent.name, tater_projects.TATER_SCRATCH_DIRECTORY_NAME)
+            self.assertTrue(first.is_dir())
+            self.assertNotIn(first.parent, tater_projects.discover_project_directories(root))
+
+    def test_scratch_directory_name_is_reserved_from_projects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, 'reserved'):
+                tater_projects.project_path_for_name(
+                    tater_projects.TATER_SCRATCH_DIRECTORY_NAME,
+                    Path(directory),
+                )
+
     def test_configured_root_prefers_projects_setting_and_creates_it(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'projects'

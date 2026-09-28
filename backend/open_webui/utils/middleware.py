@@ -131,7 +131,12 @@ from open_webui.utils.tater_agent import (
     tool_outcome_signature,
 )
 from open_webui.utils.tater_profile import DEFAULT_TATER_CONTEXT_WINDOW, normalize_tater_context_window
-from open_webui.utils.tater_projects import folder_project_path, project_prompt
+from open_webui.utils.tater_projects import (
+    folder_project_path,
+    project_prompt,
+    regular_chat_prompt,
+    regular_chat_scratch_path,
+)
 from open_webui.utils.tater_run_ledger import record_tater_run_event
 from open_webui.utils.tater_hydra import get_tater_hydra_tools
 from open_webui.utils.tools import (
@@ -3006,8 +3011,8 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     events = []
     sources = []
 
-    # Folder "Project" handling
-    # Check if the request has chat_id and is inside of a folder
+    # Project or shared regular-chat scratch workspace handling
+    # Check if the request has chat_id and is inside of a project
     # Uses lightweight column query — only fetches folder_id, not the full chat JSON blob
     chat_id = metadata.get('chat_id', None)
     folder_id = None
@@ -3018,6 +3023,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     if not folder_id:
         folder_id = metadata.get('folder_id', None)
 
+    project_workspace_active = False
     if folder_id and user:
         folder = await Folders.get_folder_by_id(folder_id)
         if folder and user.role != 'admin' and not await has_folder_access(user.id, folder, 'read', db=None):
@@ -3026,6 +3032,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         if folder:
             authoritative_project_prompt = project_prompt(folder)
             if authoritative_project_prompt:
+                project_workspace_active = True
                 if isinstance(folder.data, dict) and folder.data.get('taterAgentContext'):
                     authoritative_project_prompt = (
                         f'{authoritative_project_prompt}\n\n'
@@ -3050,6 +3057,15 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     if item.get('type') == 'file'
                 ]
                 form_data['files'] = [*folder_files, *form_data.get('files', [])]
+
+    if user and not project_workspace_active:
+        scratch_path = regular_chat_scratch_path(user.id)
+        metadata['scratch_path'] = str(scratch_path)
+        form_data['messages'] = add_or_update_system_message(
+            regular_chat_prompt(user.id),
+            form_data['messages'],
+            append=True,
+        )
 
     form_data.pop('variables', None)
     # Tater Open WebUI owns its tool surface. Ignore caller-, filter-, and server-supplied tools.

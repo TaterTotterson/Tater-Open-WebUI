@@ -414,8 +414,8 @@
 
 		if (mounted && terminal) {
 			if (terminalChanged || chatChanged || projectHintChanged) {
-				// Every chat owns a project context. Enter its project root when
-				// navigation changes; ordinary chats intentionally enter /projects.
+				// Enter the selected project root, or the shared scratch workspace
+				// for ordinary chats, whenever navigation context changes.
 				loading = true;
 				error = null;
 				entries = [];
