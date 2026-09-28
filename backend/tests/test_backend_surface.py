@@ -111,7 +111,7 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('start_parallel_tater_tasks', middleware_source)
         self.assertIn('parallel_background_tasks_dispatched', middleware_source)
         self.assertIn("call.get('name') == 'tater_hydra'", task_source)
-        self.assertIn('TATER_AGENT_MAX_PARALLEL_TASKS', task_source)
+        self.assertNotIn('TATER_TASK_MAX_CONCURRENT_PER_USER', task_source)
         self.assertIn("'type': TATER_TASK_TYPE", task_source)
         self.assertIn("'done': True", task_source)
         self.assertIn("'type': 'chat:reload'", task_source)

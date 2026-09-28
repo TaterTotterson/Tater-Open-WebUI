@@ -196,6 +196,27 @@ class TaterAgentTests(unittest.TestCase):
                 allow_parallel_tasks=False,
             )
 
+    def test_parallel_task_count_has_no_fixed_cap(self):
+        payload = {
+            'tool_calls': [],
+            'parallel_tasks': [
+                {
+                    'task_title': f'Independent check {index}',
+                    'task_prompt': f'Perform independent check {index}.',
+                    'progress': f'I’ll perform independent check {index}.',
+                    'tool_calls': [{'name': 'terminal', 'parameters': {'command': f'echo {index}'}}],
+                    'context': {},
+                }
+                for index in range(8)
+            ],
+            'final_answer': '',
+            'context': {},
+        }
+
+        plan = tater_agent.parse_tool_plan_response(json.dumps(payload))
+
+        self.assertEqual(len(plan['parallel_tasks']), 8)
+
     def test_parallel_tasks_cannot_mix_with_top_level_calls(self):
         payload = {
             'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'pwd'}}],

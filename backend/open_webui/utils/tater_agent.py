@@ -11,7 +11,6 @@ from typing import Any
 DEFAULT_TATER_AGENT_MAX_ITERATIONS = 32
 MAX_TATER_AGENT_MAX_ITERATIONS = 128
 TATER_AGENT_MAX_CALLS_PER_STEP = 16
-TATER_AGENT_MAX_PARALLEL_TASKS = 4
 TATER_AGENT_PARALLEL_TASK_PROMPT_MAX_CHARS = 4_000
 TATER_AGENT_HISTORY_MAX_CHARS = 120_000
 TATER_AGENT_PLAN_RETRY_LIMIT = 2
@@ -687,11 +686,6 @@ def parse_tool_plan_response(
     raw_parallel_tasks = payload.get('parallel_tasks', [])
     if not isinstance(raw_parallel_tasks, list):
         raise ValueError('parallel_tasks must be an array')
-    if len(raw_parallel_tasks) > TATER_AGENT_MAX_PARALLEL_TASKS:
-        raise ValueError(
-            'Plan contains too many parallel tasks '
-            f'({len(raw_parallel_tasks)} > {TATER_AGENT_MAX_PARALLEL_TASKS})'
-        )
     if raw_parallel_tasks and not allow_parallel_tasks:
         raise ValueError('parallel_tasks are only allowed on the first planning step of a normal chat')
 
@@ -720,6 +714,10 @@ def parse_tool_plan_response(
         )
         if not task_calls:
             raise ValueError('Every parallel task must begin with at least one tool call')
+        if len(task_calls) > max(1, max_calls):
+            raise ValueError(
+                f'Parallel task contains too many initial calls ({len(task_calls)} > {max(1, max_calls)})'
+            )
         task_title = re.sub(r'\s+', ' ', task_title).strip(' \t\r\n"\'`')[
             :TATER_AGENT_TASK_TITLE_MAX_CHARS
         ]
@@ -736,9 +734,8 @@ def parse_tool_plan_response(
             }
         )
 
-    total_calls = len(calls) + sum(len(task['tool_calls']) for task in parallel_tasks)
-    if total_calls > max(1, max_calls):
-        raise ValueError(f'Tool plan contains too many calls ({total_calls} > {max(1, max_calls)})')
+    if len(calls) > max(1, max_calls):
+        raise ValueError(f'Tool plan contains too many calls ({len(calls)} > {max(1, max_calls)})')
     if calls and parallel_tasks:
         raise ValueError('Use either top-level tool_calls or parallel_tasks, not both')
     progress = payload.get('progress', '')

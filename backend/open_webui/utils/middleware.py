@@ -111,7 +111,6 @@ from open_webui.utils.skills import (
 )
 from open_webui.utils.task import get_task_model_id, tools_function_calling_generation_template
 from open_webui.utils.tater_agent import (
-    TATER_AGENT_MAX_PARALLEL_TASKS,
     TATER_AGENT_PLAN_RETRY_LIMIT,
     TATER_AGENT_REPEAT_LIMIT,
     agent_history_char_limit,
@@ -1535,8 +1534,8 @@ async def chat_completion_tools_handler(
         'content focused so the task stays within that budget. '
         'Select only the next necessary action. Calls returned together must be independent because they execute as '
         'one step. Use the execution history on later steps to inspect results, fix failures, and verify the work. '
-        f'On the first planning step of a normal chat, you may instead create up to '
-        f'{TATER_AGENT_MAX_PARALLEL_TASKS} parallel_tasks when the request contains genuinely independent pieces of '
+        'On the first planning step of a normal chat, you may instead create as many parallel_tasks as are genuinely '
+        'useful when the request contains independent pieces of '
         'work that can safely run at the same time. Each parallel task must have task_title, a self-contained '
         'task_prompt, one short progress sentence, its initial tool_calls, and context. Keep top-level tool_calls '
         'empty when using parallel_tasks. Separate independent questions such as a directory listing, an unrelated '
