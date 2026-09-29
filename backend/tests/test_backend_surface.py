@@ -218,7 +218,6 @@ class BackendSurfaceTests(unittest.TestCase):
         audio_source = AUDIO_ROUTER_PATH.read_text(encoding='utf-8')
         link_source = TATER_LINK_PATH.read_text(encoding='utf-8')
         models_source = MODELS_PATH.read_text(encoding='utf-8')
-        voice_mode_source = CALL_OVERLAY_PATH.read_text(encoding='utf-8')
 
         self.assertIn("'role': TATER_OPEN_WEBUI_CLIENT_ROLE", tater_source)
         self.assertIn("'tater.link.connected': True", tater_source)
@@ -233,6 +232,13 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("TATER_OPEN_WEBUI_CLIENT_ROLE = 'tater_open_webui'", link_source)
         self.assertIn("model.get('id') == base_model", models_source)
         self.assertNotIn("@router.post('/verify'", tater_source)
+
+    def test_tater_voice_mode_uses_linked_tater_speech(self):
+        if not CALL_OVERLAY_PATH.exists():
+            self.skipTest('frontend source is not bundled in the production image')
+
+        voice_mode_source = CALL_OVERLAY_PATH.read_text(encoding='utf-8')
+
         self.assertIn('transcribeAudio(', voice_mode_source)
         self.assertIn('synthesizeOpenAISpeech(', voice_mode_source)
 
