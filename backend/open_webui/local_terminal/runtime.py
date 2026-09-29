@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import os
+import re
 import shutil
 import signal
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -349,6 +351,58 @@ class LocalTerminalRuntime:
         await self._terminate_process(record)
         record.done.set()
         return record.summary()
+
+    def list_listening_ports(self, *, include_current_process: bool = False) -> list[dict[str, Any]]:
+        """Return TCP listeners available through the local browser preview."""
+
+        listeners: dict[int, dict[str, Any]] = {}
+        try:
+            import psutil
+
+            connections = psutil.net_connections(kind='tcp')
+        except ImportError:
+            try:
+                completed = subprocess.run(
+                    ['lsof', '-nP', '-iTCP', '-sTCP:LISTEN'],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=5,
+                )
+            except (FileNotFoundError, OSError, subprocess.SubprocessError):
+                return []
+            for line in completed.stdout.splitlines()[1:]:
+                fields = line.split()
+                match = re.search(r':(\d+)\s+\(LISTEN\)$', line)
+                if len(fields) < 2 or not match:
+                    continue
+                pid = int(fields[1]) if fields[1].isdigit() else None
+                if not include_current_process and pid == os.getpid():
+                    continue
+                port = int(match.group(1))
+                listeners[port] = {'port': port, 'pid': pid, 'process': fields[0]}
+            return [listeners[port] for port in sorted(listeners)]
+        except Exception:
+            return []
+
+        for connection in connections:
+            if connection.status != psutil.CONN_LISTEN or not connection.laddr:
+                continue
+            port = int(connection.laddr.port)
+            pid = connection.pid
+            if not include_current_process and pid == os.getpid():
+                continue
+            process_name = None
+            if pid is not None:
+                try:
+                    process_name = psutil.Process(pid).name()
+                except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+                    pass
+            candidate = {'port': port, 'pid': pid, 'process': process_name}
+            current = listeners.get(port)
+            if current is None or (current.get('pid') is None and pid is not None):
+                listeners[port] = candidate
+        return [listeners[port] for port in sorted(listeners)]
 
     def list_files(
         self,

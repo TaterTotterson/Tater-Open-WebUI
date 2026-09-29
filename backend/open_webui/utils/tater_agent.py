@@ -146,6 +146,31 @@ _SENSITIVE_FLAG_RE = re.compile(
     r'(?i)(--?(?:api[-_]?key|token|secret|password|passwd|credential)(?:=|\s+))([^\s;&|]+)'
 )
 _BEARER_RE = re.compile(r'(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+')
+_INTERACTIVE_BUILD_RE = re.compile(
+    r'\b(?:build|create|develop|make|write|put together|set up)\b[^\n]{0,160}'
+    r'\b(?:app|application|game|website|web site|dashboard|demo|interface|ui)\b',
+    re.IGNORECASE,
+)
+_INTERACTIVE_LAUNCH_RE = re.compile(
+    r'\b(?:launch|serve|host|start|run|open)\b[^\n]{0,100}'
+    r'\b(?:it|app|application|game|website|web site|dashboard|demo|interface|ui)?\b',
+    re.IGNORECASE,
+)
+_LOCAL_HTTP_PROBE_RE = re.compile(
+    r'\b(?:curl|wget)\b[^\n]*(?:localhost|127\.0\.0\.1|\[::1\])|'
+    r'\b(?:urlopen|requests\.get|httpx\.get)\s*\([^\n]*(?:localhost|127\.0\.0\.1|::1)',
+    re.IGNORECASE,
+)
+_PORT_REFERENCE_RE = re.compile(
+    r'(?:\bport\s*(?:is|:)?\s*|(?:localhost|127\.0\.0\.1):)\d{1,5}\b',
+    re.IGNORECASE,
+)
+_INDEPENDENT_WEATHER_COMPANION_RE = re.compile(
+    r'\b(?:also|and(?:\s+also)?)\s+(?:please\s+)?'
+    r'(?:(?:tell|show|give)\s+me\b|(?:check|find|get|look up)\b|what(?:\'s| is)\b)'
+    r'[^.!?\n]{0,100}\b(?:weather|temperature|temp)\b',
+    re.IGNORECASE,
+)
 
 
 def _plain_message_text(message: dict[str, Any]) -> str:
@@ -311,6 +336,93 @@ def continuation_progress_update(answer: Any) -> str:
     if not _CONTINUATION_ANSWER_RE.search(normalized) or _COMPLETION_ANSWER_RE.search(normalized):
         return ''
     return text[:TATER_AGENT_PROGRESS_MAX_CHARS].rstrip()
+
+
+def requires_live_browser_delivery(request: Any) -> bool:
+    """Return true when a created interactive result was explicitly requested to be launched."""
+
+    text = re.sub(r'\s+', ' ', str(request or '')).strip()
+    return bool(_INTERACTIVE_BUILD_RE.search(text) and _INTERACTIVE_LAUNCH_RE.search(text))
+
+
+def parallel_browser_weather_plan_gap(request: Any, parallel_tasks: Any) -> str:
+    """Require separate local-app and live-weather tasks for an explicitly independent request."""
+
+    text = re.sub(r'\s+', ' ', str(request or '')).strip()
+    if not requires_live_browser_delivery(text) or not _INDEPENDENT_WEATHER_COMPANION_RE.search(text):
+        return ''
+    tasks = parallel_tasks if isinstance(parallel_tasks, list) else []
+    terminal_task_indexes = set()
+    hydra_task_indexes = set()
+    for index, task in enumerate(tasks):
+        calls = task.get('tool_calls') if isinstance(task, dict) else []
+        names = {
+            str(call.get('name') or '')
+            for call in calls
+            if isinstance(call, dict)
+        }
+        if 'terminal' in names:
+            terminal_task_indexes.add(index)
+        if 'tater_hydra' in names:
+            hydra_task_indexes.add(index)
+    if any(
+        terminal_index != hydra_index
+        for terminal_index in terminal_task_indexes
+        for hydra_index in hydra_task_indexes
+    ):
+        return ''
+    return (
+        'This request has two independent outcomes. Return parallel_tasks with a terminal task that builds, serves, '
+        'and verifies the interactive app and a different tater_hydra task that retrieves the live weather.'
+    )
+
+
+def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any) -> str:
+    """Describe missing launch evidence for an interactive browser deliverable."""
+
+    if not requires_live_browser_delivery(request):
+        return ''
+    records = records if isinstance(records, list) else []
+    background_started = False
+    local_http_verified = False
+    for record in records:
+        if not isinstance(record, dict) or record.get('tool') != 'terminal':
+            continue
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '')
+        result = record.get('result')
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except (json.JSONDecodeError, TypeError):
+                result = {}
+        result = result if isinstance(result, dict) else {}
+        if parameters.get('background') is True and result.get('status') == 'running':
+            background_started = True
+        if (
+            record.get('status') == 'completed'
+            and result.get('exit_code') == 0
+            and result.get('timed_out') is not True
+            and _LOCAL_HTTP_PROBE_RE.search(command)
+        ):
+            local_http_verified = True
+
+    if not background_started:
+        return (
+            'The interactive app was not left running as a background server. Start its server with '
+            'terminal background=true before finishing.'
+        )
+    if not local_http_verified:
+        return (
+            'The running app has not been verified over local HTTP. Probe its localhost URL with a successful '
+            'foreground curl or wget command before finishing.'
+        )
+    if not _PORT_REFERENCE_RE.search(str(final_answer or '')):
+        return (
+            'The answer does not identify the verified listening port. Report the exact port and tell the user '
+            'they can open it from the Files panel Ports section.'
+        )
+    return ''
 
 
 def background_task_result_answer(content: Any) -> str:

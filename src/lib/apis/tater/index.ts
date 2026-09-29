@@ -7,13 +7,16 @@ export type TaterProfile = {
 	base_model: string;
 	hydra_model: string;
 	context_window: number;
+	linked: boolean;
+	hub_url: string;
+	hub_name: string;
+	node_id: string;
+	connected_at: number;
+	capabilities: Record<string, boolean>;
+	speech: Record<string, string | boolean>;
 };
 
 export type TaterProfileInput = {
-	api_base_url: string;
-	api_key: string | null;
-	base_model: string;
-	hydra_model: string;
 	context_window: number;
 };
 
@@ -96,14 +99,21 @@ export const updateTaterProfile = (
 		body: JSON.stringify(profile)
 	});
 
-export const verifyTaterProfile = (
+export const linkTater = (
 	token: string,
-	profile: TaterProfileInput
-): Promise<TaterProfileVerification> =>
-	request('/verify', token, {
+	hubUrl: string,
+	pairingCode: string
+): Promise<TaterProfile> =>
+	request('/link', token, {
 		method: 'POST',
-		body: JSON.stringify(profile)
+		body: JSON.stringify({ hub_url: hubUrl, pairing_code: pairingCode })
 	});
+
+export const verifyTaterLink = (token: string): Promise<TaterProfileVerification> =>
+	request('/link/verify', token, { method: 'POST' });
+
+export const unlinkTater = (token: string): Promise<TaterProfile> =>
+	request('/link', token, { method: 'DELETE' });
 
 export const getTaterTasks = (token: string): Promise<TaterTask[]> => request('/tasks', token);
 

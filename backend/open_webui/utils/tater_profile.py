@@ -10,6 +10,33 @@ MIN_TATER_CONTEXT_WINDOW = 4_096
 MAX_TATER_CONTEXT_WINDOW = 2_000_000
 
 
+def normalize_tater_hub_url(value: str) -> str:
+    value = str(value or '').strip()
+    if not value:
+        raise ValueError('Tater URL is required')
+    if '://' not in value:
+        value = f'http://{value}'
+
+    parsed = urlsplit(value)
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
+        raise ValueError('Tater URL must be an absolute HTTP or HTTPS URL')
+    if parsed.username or parsed.password:
+        raise ValueError('Tater credentials must not be embedded in the URL')
+    if parsed.query or parsed.fragment:
+        raise ValueError('Tater URL must not contain a query string or fragment')
+
+    path = parsed.path.rstrip('/')
+    for suffix in ('/api/spudlink/v1', '/api/spudlink', '/v1'):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)].rstrip('/')
+            break
+    return urlunsplit((parsed.scheme, parsed.netloc, path, '', '')).rstrip('/')
+
+
+def tater_openai_api_url(hub_url: str) -> str:
+    return f'{normalize_tater_hub_url(hub_url)}/v1'
+
+
 def normalize_tater_api_base_url(value: str) -> str:
     value = value.strip()
     if not value:

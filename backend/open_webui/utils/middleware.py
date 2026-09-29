@@ -115,9 +115,11 @@ from open_webui.utils.tater_agent import (
     TATER_AGENT_REPEAT_LIMIT,
     agent_history_char_limit,
     agent_iteration_limit,
+    browser_launch_completion_gap,
     continuation_progress_update,
     merge_project_context,
     normalize_agent_context,
+    parallel_browser_weather_plan_gap,
     parse_completion_review,
     parse_tool_plan_response,
     recent_history_char_limit,
@@ -1423,7 +1425,13 @@ async def chat_completion_tools_handler(
                         'is supported by the actual results, and does not announce, promise, or imply additional work '
                         'that still needs to be performed. A concrete blocker is complete only when the evidence shows '
                         'that no safe useful action remains. Otherwise set complete to false and briefly state the '
-                        'specific missing work in reason. Do not call tools and do not include prose outside the JSON.'
+                        'specific missing work in reason. When the request asks to create and launch an interactive '
+                        'app or game, require a browser-based result unless the user explicitly requested a native '
+                        'or terminal interface. It is complete only if a server was left running, its local HTTP URL '
+                        'was successfully probed after launch, and the answer reports its exact port and the Files '
+                        'panel Ports preview. A syntax check, timeout, stdin EOF, or instructions for the user to '
+                        'start it later are not launch evidence. Do not call tools and do not include prose outside '
+                        'the JSON.'
                     ),
                 },
                 {
@@ -1539,12 +1547,14 @@ async def chat_completion_tools_handler(
         'content focused so the task stays within that budget. '
         'Select only the next necessary action. Calls returned together must be independent because they execute as '
         'one step. Use the execution history on later steps to inspect results, fix failures, and verify the work. '
-        'On the first planning step of a normal chat, you may instead create as many parallel_tasks as are genuinely '
-        'useful when the request contains independent pieces of '
-        'work that can safely run at the same time. Each parallel task must have task_title, a self-contained '
+        'On the first planning step of a normal chat, when the request contains two or more independent tool-backed '
+        'deliverables that can safely run at the same time, you must use parallel_tasks with one task per '
+        'independently verifiable outcome. This is required even when the user combines them in one sentence. Each '
+        'parallel task must have task_title, a self-contained '
         'task_prompt, one short progress sentence, its initial tool_calls, and context. Keep top-level tool_calls '
         'empty when using parallel_tasks. Separate independent questions such as a directory listing, an unrelated '
-        'file count, and a weather lookup when concurrent work is useful. Never split ordered steps, work that needs '
+        'file count, and a weather lookup. For example, creating and launching a game plus checking current weather '
+        'must become a terminal build/serve task and a separate Hydra weather task. Never split ordered steps, work that needs '
         'another task\'s result, or edits that may touch overlapping files or shared mutable state. Prefer one task '
         'when the work is one objective, even if it needs several commands. A background task must never create '
         'more tasks, and parallel_tasks must be empty after tool execution has begun. '
@@ -1561,6 +1571,12 @@ async def chat_completion_tools_handler(
         'directly answers the request, the next response must finish with final_answer instead of exploring further. '
         'For repository coding work, begin a new task or resumed task by confirming the working directory, repository '
         'root, branch, and git status in one terminal call. Use the terminal cwd parameter to enter the repository. '
+        'When asked to create an interactive app or game and launch it for the user, build a browser app unless they '
+        'explicitly request a native or terminal interface. Start its server on 0.0.0.0 with terminal background=true, '
+        'then use a separate foreground curl or wget call against localhost to verify it. Before finishing, keep the '
+        'server running and report its exact port and that it can be opened from the Files panel Ports section. Do '
+        'not substitute a terminal game because a desktop GUI cannot open. Do not count a syntax check, timeout, '
+        'stdin EOF, or telling the user how to start it themselves as successful launch evidence. '
         'Whenever tool_calls is nonempty, put one short, natural user-facing explanation in progress describing '
         'what you are about to inspect, change, or verify and why. Make it specific to this step and do not repeat '
         'an earlier update. Also set task_title to a concise, action-oriented 3-8 word label for the overall request. '
@@ -1902,6 +1918,13 @@ async def chat_completion_tools_handler(
                     )
                     tool_calls = plan['tool_calls']
                     parallel_tasks = plan['parallel_tasks']
+                    split_gap = (
+                        parallel_browser_weather_plan_gap(dispatch_request, parallel_tasks)
+                        if not background_task_id and not history_records
+                        else ''
+                    )
+                    if split_gap:
+                        raise ValueError(split_gap)
                     ledger_event(
                         'planner_attempt_finished',
                         iteration=iteration,
@@ -2123,6 +2146,41 @@ async def chat_completion_tools_handler(
                 if completion_protocol_failures < 3:
                     continue
                 agent_stop_message = 'Tool planning stopped because it did not provide a complete answer.'
+                append_agent_notice(agent_stop_message)
+                ledger_event('agent_loop_stopped', iteration=iteration, reason=agent_stop_message)
+                loop_stopped = True
+                break
+
+            launch_gap = browser_launch_completion_gap(
+                dispatch_request or get_last_user_message(body.get('messages', [])),
+                history_records,
+                prepared_final_answer,
+            )
+            if history_records and launch_gap:
+                completion_review_failures += 1
+                prepared_final_answer = ''
+                prepared_agent_context = {}
+                history_records.append(
+                    {
+                        'iteration': iteration,
+                        'tool': 'agent_completion_review',
+                        'status': 'failed',
+                        'result': launch_gap,
+                    }
+                )
+                ledger_event(
+                    'completion_rejected',
+                    iteration=iteration,
+                    reason='missing_browser_launch_evidence',
+                    detail=launch_gap,
+                    failure_count=completion_review_failures,
+                )
+                if completion_review_failures < 3:
+                    continue
+                agent_stop_message = (
+                    'I could not verify that the interactive app was launched for browser use. '
+                    f'The remaining issue was: {launch_gap}'
+                )
                 append_agent_notice(agent_stop_message)
                 ledger_event('agent_loop_stopped', iteration=iteration, reason=agent_stop_message)
                 loop_stopped = True

@@ -18,6 +18,19 @@ TATER_RUN_LEDGER_PATH = BACKEND_ROOT / 'utils' / 'tater_run_ledger.py'
 TATER_PROJECTS_PATH = BACKEND_ROOT / 'utils' / 'tater_projects.py'
 SUBAGENTS_PATH = BACKEND_ROOT / 'utils' / 'subagents.py'
 FOLDERS_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'folders.py'
+TATER_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'tater.py'
+AUDIO_ROUTER_PATH = BACKEND_ROOT / 'routers' / 'audio.py'
+TATER_LINK_PATH = BACKEND_ROOT / 'utils' / 'tater_link.py'
+MODELS_PATH = BACKEND_ROOT / 'utils' / 'models.py'
+CALL_OVERLAY_PATH = (
+    Path(__file__).parents[2]
+    / 'src'
+    / 'lib'
+    / 'components'
+    / 'chat'
+    / 'MessageInput'
+    / 'CallOverlay.svelte'
+)
 
 
 class BackendSurfaceTests(unittest.TestCase):
@@ -98,6 +111,8 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('You are the completion gate for a computer-using agent', middleware_source)
         self.assertIn("body['_tater_agent_response']", middleware_source)
         self.assertIn('request.state.tater_agent_stop_reason', middleware_source)
+        self.assertIn('missing_browser_launch_evidence', middleware_source)
+        self.assertIn('creating and launching a game plus checking current weather', middleware_source)
 
         main_source = MAIN_PATH.read_text(encoding='utf-8')
         self.assertIn("form_data.pop('_tater_agent_response', None)", main_source)
@@ -161,6 +176,15 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('local_terminal_runtime.set_cwd', tools_source)
         self.assertIn('folder_id=parent_chat.folder_id', task_source)
 
+    def test_local_terminal_can_keep_and_preview_browser_apps(self):
+        terminal_tools = (BACKEND_ROOT / 'local_terminal' / 'tools.py').read_text(encoding='utf-8')
+        terminal_router = (BACKEND_ROOT / 'routers' / 'local_terminal.py').read_text(encoding='utf-8')
+
+        self.assertIn("'background': {", terminal_tools)
+        self.assertIn('timeout_seconds=None if background else 600', terminal_tools)
+        self.assertIn("@router.get('/local/ports')", terminal_router)
+        self.assertIn("@router.api_route('/local/proxy/{port}/{path:path}'", terminal_router)
+
     def test_main_still_parses_after_router_pruning(self):
         ast.parse(MAIN_PATH.read_text(encoding='utf-8'))
 
@@ -188,6 +212,29 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertTrue((BACKEND_ROOT / 'routers' / 'audio.py').exists())
         self.assertTrue((BACKEND_ROOT / 'routers' / 'files.py').exists())
         self.assertTrue((BACKEND_ROOT / 'routers' / 'images.py').exists())
+
+    def test_tater_spudlink_is_the_single_model_and_speech_connection(self):
+        tater_source = TATER_ROUTER_PATH.read_text(encoding='utf-8')
+        audio_source = AUDIO_ROUTER_PATH.read_text(encoding='utf-8')
+        link_source = TATER_LINK_PATH.read_text(encoding='utf-8')
+        models_source = MODELS_PATH.read_text(encoding='utf-8')
+        voice_mode_source = CALL_OVERLAY_PATH.read_text(encoding='utf-8')
+
+        self.assertIn("'role': TATER_OPEN_WEBUI_CLIENT_ROLE", tater_source)
+        self.assertIn("'tater.link.connected': True", tater_source)
+        self.assertIn("'audio.stt.engine': 'tater'", tater_source)
+        self.assertIn("'audio.tts.engine': 'tater'", tater_source)
+        self.assertIn("'tater': _tts_tater", audio_source)
+        self.assertIn("== 'tater'", audio_source)
+        self.assertIn('/api/spudlink/v1/stt/transcribe', audio_source)
+        self.assertIn('/api/spudlink/v1/tts/speech', audio_source)
+        self.assertIn("form_data.stt.ENGINE != 'tater'", audio_source)
+        self.assertIn("form_data.tts.ENGINE != 'tater'", audio_source)
+        self.assertIn("TATER_OPEN_WEBUI_CLIENT_ROLE = 'tater_open_webui'", link_source)
+        self.assertIn("model.get('id') == base_model", models_source)
+        self.assertNotIn("@router.post('/verify'", tater_source)
+        self.assertIn('transcribeAudio(', voice_mode_source)
+        self.assertIn('synthesizeOpenAISpeech(', voice_mode_source)
 
     def test_general_ollama_and_retrieval_provider_options_are_removed(self):
         config_source = CONFIG_PATH.read_text(encoding='utf-8')

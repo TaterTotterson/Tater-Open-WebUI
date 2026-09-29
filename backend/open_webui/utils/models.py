@@ -20,7 +20,7 @@ from open_webui.utils.plugin import (
     get_functions_cache,
     get_function_module_from_cache,
 )
-from open_webui.utils.tater_profile import is_reserved_hydra_model
+from open_webui.utils.tater_profile import DEFAULT_TATER_BASE_MODEL
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -30,11 +30,11 @@ BASE_MODELS_CACHE_KEY = f'{REDIS_KEY_PREFIX}:models:base'
 
 async def fetch_openai_models(request: Request, user: UserModel = None):
     openai_response = await openai.get_all_models(request, user=user)
-    hydra_model = await Config.get('tater.hydra_model')
+    base_model = await Config.get('tater.base_model') or DEFAULT_TATER_BASE_MODEL
     return [
         model
         for model in openai_response['data']
-        if not is_reserved_hydra_model(model, hydra_model) and not model.get('pipeline')
+        if model.get('id') == base_model and not model.get('pipeline')
     ]
 
 

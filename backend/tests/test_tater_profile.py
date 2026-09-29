@@ -18,6 +18,23 @@ class TaterProfileTests(unittest.TestCase):
             'http://localhost:8501/v1',
         )
 
+    def test_normalizes_tater_hub_from_supported_connection_urls(self):
+        for value in (
+            'https://tater.example/',
+            'https://tater.example/v1',
+            'https://tater.example/api/spudlink',
+            'https://tater.example/api/spudlink/v1',
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    tater_profile.normalize_tater_hub_url(value),
+                    'https://tater.example',
+                )
+        self.assertEqual(
+            tater_profile.tater_openai_api_url('https://tater.example/tater/api/spudlink'),
+            'https://tater.example/tater/v1',
+        )
+
     def test_rejects_embedded_credentials(self):
         with self.assertRaisesRegex(ValueError, 'must not be embedded'):
             tater_profile.normalize_tater_api_base_url('http://user:secret@localhost:8501/v1')

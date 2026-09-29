@@ -56,6 +56,7 @@ from open_webui.utils.headers import include_user_info_headers
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import strict_match_mime_type
 from open_webui.utils.session_pool import get_session
+from open_webui.utils.tater_link import get_tater_link_connection, tater_link_headers
 from pydantic import BaseModel
 
 # pydub needs stdlib audioop (gone in 3.13); keep requires-python capped < 3.13
@@ -289,6 +290,11 @@ async def get_audio_config(request: Request, user=Depends(get_admin_user)):
 
 @router.post('/config/update')
 async def update_audio_config(request: Request, form_data: AudioConfigUpdateForm, user=Depends(get_admin_user)):
+    if form_data.stt.ENGINE != 'tater' or form_data.tts.ENGINE != 'tater':
+        raise HTTPException(
+            400,
+            'Tater Open WebUI speech is configured by the linked Tater SpudLink connection.',
+        )
     if USE_SLIM:
         current = await Config.get_many('audio.stt.engine', 'audio.tts.engine')
         if form_data.stt.ENGINE == '' and current.get('audio.stt.engine') != '':
@@ -441,6 +447,44 @@ async def _tts_openai(request, payload, file_path, file_body_path, user):
         await _raise_tts_error(exc, r)
 
 
+async def _tts_tater(request, payload, file_path, file_body_path, user):
+    """Generate speech using the Tater linked through SpudLink."""
+
+    try:
+        hub_url, token = await get_tater_link_connection()
+        text = str(payload.get('input') or '').strip()
+        if not text:
+            raise HTTPException(status_code=400, detail='Speech text is required')
+        session = await get_session()
+        headers = {
+            **tater_link_headers(token, user),
+            'Content-Type': 'application/json',
+        }
+        response = await session.post(
+            f'{hub_url}/api/spudlink/v1/tts/speech',
+            headers=headers,
+            json={'text': text},
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        )
+        if response.status >= 400:
+            detail = await response.text()
+            raise HTTPException(
+                status_code=502,
+                detail=f'Tater speech synthesis failed: {detail[:500]}',
+            )
+        audio_data = await response.read()
+        if not audio_data:
+            raise HTTPException(status_code=502, detail='Tater returned no speech audio')
+        content_type = response.headers.get('Content-Type', 'audio/wav').split(';', 1)[0]
+        await _write_tts_cache(file_path, audio_data, file_body_path, payload, content_type)
+        return FileResponse(file_path, media_type=content_type)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception('Tater TTS failed')
+        raise HTTPException(status_code=502, detail=f'Could not use linked Tater speech: {exc}') from exc
+
+
 async def _tts_elevenlabs(request, payload, file_path, file_body_path, user):
     """Generate speech via the ElevenLabs TTS API."""
     voice_id = (payload.get('voice') or '').strip()
@@ -590,6 +634,7 @@ async def _tts_mistral(request, payload, file_path, file_body_path, user):
 
 # Dispatcher map: engine name -> handler
 _TTS_ENGINES = {
+    'tater': _tts_tater,
     'openai': _tts_openai,
     'elevenlabs': _tts_elevenlabs,
     'azure': _tts_azure,
@@ -769,6 +814,84 @@ async def _transcribe_openai(request, file_path, filename, languages, file_dir, 
         # Do not alter, remove, obscure, or replace it except as LICENSE permits:
         # https://docs.openwebui.com/license.
         raise Exception(detail if detail else 'Open WebUI: Server Connection Error')
+
+
+async def _convert_to_tater_wav(file_path: str, output_path: str) -> None:
+    process = await asyncio.create_subprocess_exec(
+        'ffmpeg',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-i',
+        file_path,
+        '-ac',
+        '1',
+        '-ar',
+        '16000',
+        '-c:a',
+        'pcm_s16le',
+        output_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await process.communicate()
+    if process.returncode != 0:
+        detail = stderr.decode('utf-8', errors='ignore').strip()
+        raise HTTPException(status_code=400, detail=f'Could not prepare voice audio for Tater: {detail[:500]}')
+
+
+async def _transcribe_tater(request, file_path, filename, languages, file_dir, id, user=None):
+    """Transcribe browser audio using the Tater linked through SpudLink."""
+
+    wav_path = os.path.join(file_dir, f'{id}_tater.wav')
+    try:
+        await _convert_to_tater_wav(file_path, wav_path)
+        async with aiofiles.open(wav_path, 'rb') as audio_file:
+            wav_bytes = await audio_file.read()
+        if not wav_bytes:
+            raise HTTPException(status_code=400, detail='Voice recording was empty')
+        if len(wav_bytes) > 16 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail='Voice recording is too large for linked Tater STT')
+
+        hub_url, token = await get_tater_link_connection()
+        headers = {
+            **tater_link_headers(token, user),
+            'Content-Type': 'application/json',
+        }
+        session = await get_session()
+        response = await session.post(
+            f'{hub_url}/api/spudlink/v1/stt/transcribe',
+            headers=headers,
+            json={
+                'audio_base64': base64.b64encode(wav_bytes).decode('ascii'),
+                'content_type': 'audio/wav',
+                'language': next((language for language in languages if language), None),
+            },
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        )
+        if response.status >= 400:
+            detail = await response.text()
+            raise HTTPException(status_code=502, detail=f'Tater transcription failed: {detail[:500]}')
+        payload = await response.json()
+        transcript = str(payload.get('text') or '').strip()
+        if not transcript:
+            raise HTTPException(status_code=502, detail='Tater returned an empty transcription')
+        data = {'text': transcript}
+        async with aiofiles.open(os.path.join(file_dir, f'{id}.json'), 'w') as transcript_file:
+            await transcript_file.write(JSONCodec.dumps(data))
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception('Tater STT failed')
+        raise HTTPException(status_code=502, detail=f'Could not use linked Tater transcription: {exc}') from exc
+    finally:
+        if os.path.isfile(wav_path):
+            try:
+                await asyncio.to_thread(os.remove, wav_path)
+            except Exception:
+                pass
 
 
 async def _transcribe_deepgram(request, file_path, languages, file_dir, id):
@@ -973,6 +1096,8 @@ async def transcription_handler(request, file_path, metadata, user=None):
 
     if await Config.get('audio.stt.engine') == '':
         return await _transcribe_whisper(request, file_path, languages, file_dir, id)
+    elif await Config.get('audio.stt.engine') == 'tater':
+        return await _transcribe_tater(request, file_path, filename, languages, file_dir, id, user)
     elif await Config.get('audio.stt.engine') == 'openai':
         return await _transcribe_openai(request, file_path, filename, languages, file_dir, id, user)
     elif await Config.get('audio.stt.engine') == 'deepgram':
@@ -1135,7 +1260,9 @@ async def _transcribe_mistral(request, file_path, filename, metadata, file_dir, 
 async def transcribe(request: Request, file_path: str, metadata: Optional[dict] = None, user=None):
     log.info('transcribe: %s %s', file_path, metadata)
 
-    if BYPASS_PYDUB_PREPROCESSING:
+    if await Config.get('audio.stt.engine') == 'tater':
+        chunk_paths = [file_path]
+    elif BYPASS_PYDUB_PREPROCESSING:
         log.info('Bypassing pydub preprocessing (BYPASS_PYDUB_PREPROCESSING=true)')
         chunk_paths = [file_path]
     else:
@@ -1347,7 +1474,12 @@ async def get_available_models(request: Request) -> list[dict]:
     engine = await Config.get('audio.tts.engine')
     _timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
 
-    if engine == 'openai':
+    if engine == 'tater':
+        speech = await Config.get('tater.link.speech') or {}
+        model = str(speech.get('tts_model') or speech.get('tts_backend') or 'Tater voice')
+        available_models = [{'id': model, 'name': model}]
+
+    elif engine == 'openai':
         base_url = await Config.get('audio.tts.openai.api_base_url')
         if not base_url.startswith('https://api.openai.com'):
             session = await get_session()
@@ -1420,6 +1552,11 @@ async def get_available_voices(request) -> dict:
     """Return ``{voice_id: voice_name}`` for the configured TTS engine."""
     engine = await Config.get('audio.tts.engine')
     _timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
+
+    if engine == 'tater':
+        speech = await Config.get('tater.link.speech') or {}
+        voice = str(speech.get('tts_voice') or 'Tater').strip() or 'Tater'
+        return {voice: voice}
 
     if engine == 'openai':
         base_url = await Config.get('audio.tts.openai.api_base_url')

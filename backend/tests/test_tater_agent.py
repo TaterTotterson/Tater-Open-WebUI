@@ -385,6 +385,69 @@ class TaterAgentTests(unittest.TestCase):
             {'complete': False, 'reason': 'face_id is still uninspected'},
         )
 
+    def test_browser_launch_requires_live_server_http_probe_and_port(self):
+        request = 'Make a funny woodchuck game and launch it so we can play it.'
+        self.assertTrue(tater_agent.requires_live_browser_delivery(request))
+        self.assertIn('background server', tater_agent.browser_launch_completion_gap(request, [], 'Done.'))
+
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {
+                    'command': 'python3 -m http.server 4173 --bind 0.0.0.0',
+                    'background': True,
+                },
+                'result': json.dumps({'status': 'running', 'exit_code': None, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'curl -fsS http://127.0.0.1:4173/'},
+                'result': json.dumps({'status': 'done', 'exit_code': 0, 'timed_out': False}),
+            },
+        ]
+
+        self.assertEqual(
+            tater_agent.browser_launch_completion_gap(
+                request,
+                records,
+                'The game is running on port 4173. Open it from Files > Ports.',
+            ),
+            '',
+        )
+
+    def test_noninteractive_work_does_not_require_browser_launch(self):
+        self.assertFalse(tater_agent.requires_live_browser_delivery('Run the tests for this app.'))
+        self.assertEqual(
+            tater_agent.browser_launch_completion_gap('Run the tests for this app.', [], 'Tests pass.'),
+            '',
+        )
+
+    def test_game_and_live_weather_require_separate_task_types(self):
+        request = (
+            'Make a funny woodchuck game and launch it so we can play it. '
+            'Also tell me the current temperature outside.'
+        )
+        combined_plan = [
+            {
+                'tool_calls': [
+                    {'name': 'terminal', 'parameters': {'command': 'pwd'}},
+                    {'name': 'tater_hydra', 'parameters': {'request': 'Get the weather'}},
+                ]
+            }
+        ]
+        split_plan = [
+            {'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'pwd'}}]},
+            {'tool_calls': [{'name': 'tater_hydra', 'parameters': {'request': 'Get the weather'}}]},
+        ]
+
+        self.assertIn(
+            'two independent outcomes',
+            tater_agent.parallel_browser_weather_plan_gap(request, combined_plan),
+        )
+        self.assertEqual(tater_agent.parallel_browser_weather_plan_gap(request, split_plan), '')
+
     def test_incomplete_review_requires_reason(self):
         with self.assertRaisesRegex(ValueError, 'must explain'):
             tater_agent.parse_completion_review('{"complete":false,"reason":""}')

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import socket
 import sys
 import tempfile
 import unittest
@@ -95,6 +96,16 @@ class LocalTerminalRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result['timed_out'])
         self.assertEqual(result['status'], 'killed')
+
+    def test_lists_listening_tcp_ports(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+            server.bind(('127.0.0.1', 0))
+            server.listen()
+            port = server.getsockname()[1]
+
+            ports = self.runtime.list_listening_ports(include_current_process=True)
+
+        self.assertIn(port, {item['port'] for item in ports})
 
     async def test_cancelling_foreground_wait_terminates_process(self):
         command = asyncio.create_task(

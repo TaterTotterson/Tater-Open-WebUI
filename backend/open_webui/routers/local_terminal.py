@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 import os
+import posixpath
 import signal
 import struct
 import tempfile
@@ -10,10 +11,12 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote
 from uuid import uuid4
 
+import aiohttp
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from open_webui.local_terminal.runtime import local_terminal_runtime
 from open_webui.local_terminal.tools import local_terminal_system_prompt
 from open_webui.utils.auth import get_verified_user, get_verified_user_by_token
@@ -22,6 +25,31 @@ from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 router = APIRouter()
+
+LOCAL_PORT_PROXY_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+LOCAL_PORT_PROXY_STRIPPED_HEADERS = frozenset(
+    ('transfer-encoding', 'connection', 'content-encoding', 'content-length', 'server', 'date')
+)
+
+
+def _safe_local_proxy_path(path: str) -> str | None:
+    decoded = path
+    for _ in range(8):
+        expanded = unquote(decoded)
+        if expanded == decoded:
+            break
+        decoded = expanded
+    if unquote(decoded) != decoded or any(character in decoded for character in '\\\t\r\n'):
+        return None
+    if decoded in {'', '/'}:
+        return ''
+    trailing_slash = decoded.endswith('/')
+    normalized = posixpath.normpath(decoded).lstrip('/')
+    if normalized == '.' or normalized.startswith('..'):
+        return None
+    if trailing_slash and normalized and not normalized.endswith('/'):
+        normalized += '/'
+    return normalized
 
 
 def _session_id(request: Request) -> str | None:
@@ -77,6 +105,58 @@ async def get_local_terminal_config(user=Depends(get_verified_user)):
 async def get_local_terminal_system(request: Request, user=Depends(get_verified_user)):
     cwd = local_terminal_runtime.get_cwd(user.id, _session_id(request))
     return {'prompt': local_terminal_system_prompt(str(cwd))}
+
+
+@router.get('/local/ports')
+async def get_local_listening_ports(user=Depends(get_verified_user)):
+    return {'ports': local_terminal_runtime.list_listening_ports()}
+
+
+@router.api_route('/local/proxy/{port}/{path:path}', methods=LOCAL_PORT_PROXY_METHODS)
+async def proxy_local_port(
+    port: int,
+    path: str,
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    if port < 1 or port > 65535:
+        raise HTTPException(status_code=400, detail='Invalid port')
+    if port not in {item['port'] for item in local_terminal_runtime.list_listening_ports()}:
+        raise HTTPException(status_code=404, detail='No local server is listening on that port')
+
+    safe_path = _safe_local_proxy_path(path)
+    if safe_path is None:
+        raise HTTPException(status_code=400, detail='Invalid proxy path')
+    target_url = f'http://127.0.0.1:{port}/{safe_path}'
+    if request.query_params:
+        target_url += f'?{request.query_params}'
+
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in {'authorization', 'cookie', 'host', 'content-length', 'connection'}
+    }
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300, connect=5)) as session:
+            async with session.request(
+                request.method,
+                target_url,
+                headers=headers,
+                data=await request.body() or None,
+                allow_redirects=False,
+            ) as upstream:
+                response_headers = {
+                    key: value
+                    for key, value in upstream.headers.items()
+                    if key.lower() not in LOCAL_PORT_PROXY_STRIPPED_HEADERS
+                }
+                return Response(
+                    content=await upstream.read(),
+                    status_code=upstream.status,
+                    headers=response_headers,
+                )
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        raise HTTPException(status_code=502, detail=f'Local port proxy failed: {exc}') from exc
 
 
 @router.get('/local/files/cwd')

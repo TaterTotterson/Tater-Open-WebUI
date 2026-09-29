@@ -221,8 +221,8 @@
 		},
 		{
 			id: 'admin:connections',
-			titleKey: 'Tater',
-			title: 'Tater',
+			titleKey: 'Tater Open WebUI',
+			title: 'Tater Open WebUI',
 			searchPrefixes: ['settings.admin.connections.']
 		},
 		{

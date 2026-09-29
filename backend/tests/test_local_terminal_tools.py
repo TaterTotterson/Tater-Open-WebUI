@@ -6,13 +6,17 @@ from open_webui.local_terminal.tools import get_local_terminal_tools
 
 
 class LocalTerminalToolTests(unittest.IsolatedAsyncioTestCase):
-    async def test_model_toolset_is_one_synchronous_terminal(self):
+    async def test_model_toolset_is_one_terminal_with_optional_background_mode(self):
         tools, prompt = get_local_terminal_tools('user', 'chat')
 
         self.assertEqual(set(tools), {'terminal'})
-        self.assertEqual(set(tools['terminal']['spec']['parameters']['properties']), {'command', 'cwd'})
+        self.assertEqual(
+            set(tools['terminal']['spec']['parameters']['properties']),
+            {'command', 'cwd', 'background'},
+        )
         self.assertIn('Use terminal for every local action', prompt)
         self.assertIn('returns its output and exit status automatically', prompt)
+        self.assertIn('Files panel\'s Ports section', prompt)
 
         result = await tools['terminal']['callable']("printf 'terminal-result'")
         self.assertEqual(result['output'], 'terminal-result')
