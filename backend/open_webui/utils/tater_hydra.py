@@ -57,7 +57,8 @@ def build_tater_hydra_payload(
     request_text: str,
     *,
     hydra_model: str,
-    user_identity: str,
+    user_id: str,
+    user_name: str,
     session_id: str | None,
 ) -> dict[str, Any]:
     request_text = str(request_text or '').strip()
@@ -78,9 +79,12 @@ def build_tater_hydra_payload(
             {'role': 'user', 'content': request_text},
         ],
         'stream': False,
-        'user': user_identity,
+        'user': user_id,
+        'user_name': user_name,
         'metadata': {
             'source': 'tater-open-webui',
+            'user_id': user_id,
+            'user_name': user_name,
             **({'chat_id': session_id} if session_id else {}),
         },
     }
@@ -148,7 +152,8 @@ async def request_tater_hydra(
     api_base_url: str,
     api_key: str,
     hydra_model: str,
-    user_identity: str,
+    user_id: str,
+    user_name: str,
     session_id: str | None,
     request_text: str,
     timeout_seconds: float | None = None,
@@ -158,10 +163,18 @@ async def request_tater_hydra(
     payload = build_tater_hydra_payload(
         request_text,
         hydra_model=hydra_model,
-        user_identity=user_identity,
+        user_id=user_id,
+        user_name=user_name,
         session_id=session_id,
     )
-    headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-SpudLink-Client': 'tater-open-webui',
+        'X-SpudLink-Device': 'Tater Open WebUI',
+        'X-SpudLink-User-ID': user_id,
+        'X-SpudLink-User': user_name,
+    }
     if api_key:
         headers['Authorization'] = f'Bearer {api_key}'
     if session_id:
@@ -218,7 +231,8 @@ async def get_tater_hydra_connection() -> tuple[str, str, str]:
 
 def get_tater_hydra_tools(
     *,
-    user_identity: str,
+    user_id: str,
+    user_name: str,
     session_id: str | None,
 ) -> tuple[dict[str, dict], str]:
     async def tater_hydra(request: str):
@@ -227,7 +241,8 @@ def get_tater_hydra_tools(
             api_base_url=api_base_url,
             api_key=api_key,
             hydra_model=hydra_model,
-            user_identity=user_identity,
+            user_id=user_id,
+            user_name=user_name,
             session_id=session_id,
             request_text=request,
         )

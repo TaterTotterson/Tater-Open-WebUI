@@ -32,7 +32,10 @@ def tater_link_headers(token: str, user: Any = None) -> dict[str, str]:
         'X-SpudLink-Client': 'tater-open-webui',
         'X-SpudLink-Device': TATER_OPEN_WEBUI_CLIENT_NAME,
     }
+    user_id = str(getattr(user, 'id', '') or '').strip()
     user_name = str(getattr(user, 'name', '') or getattr(user, 'email', '') or '').strip()
+    if user_id:
+        headers['X-SpudLink-User-ID'] = user_id[:128]
     if user_name:
         headers['X-SpudLink-User'] = user_name[:80]
     return headers

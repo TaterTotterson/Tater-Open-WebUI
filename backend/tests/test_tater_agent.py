@@ -307,6 +307,69 @@ class TaterAgentTests(unittest.TestCase):
             'The test runner could not find the required dependency.',
         )
 
+    def test_single_hydra_request_becomes_self_contained_task_prompt(self):
+        self.assertEqual(
+            tater_agent.resolved_background_task_prompt(
+                'try now i gave you access',
+                {
+                    'tool_calls': [
+                        {
+                            'name': 'tater_hydra',
+                            'parameters': {'request': 'What is the current weather?'},
+                        }
+                    ]
+                },
+            ),
+            'What is the current weather?',
+        )
+
+    def test_non_hydra_task_keeps_original_prompt(self):
+        self.assertEqual(
+            tater_agent.resolved_background_task_prompt(
+                'Inspect the repository',
+                {'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'git status'}}]},
+            ),
+            'Inspect the repository',
+        )
+
+    def test_completed_hydra_response_is_the_delegation_answer(self):
+        result = json.dumps(
+            {
+                'status': 'completed',
+                'model': 'tater/hydra',
+                'response': 'It is partly cloudy and 86.7°F outside.',
+                'usage': {'total_tokens': 100},
+            }
+        )
+
+        self.assertEqual(
+            tater_agent.completed_hydra_delegation_answer(
+                [
+                    {
+                        'tool': 'tater_hydra',
+                        'status': 'completed',
+                        'parameters': {'request': 'What is the current weather?'},
+                        'result': result,
+                    }
+                ]
+            ),
+            'It is partly cloudy and 86.7°F outside.',
+        )
+
+    def test_failed_hydra_call_is_not_adopted_as_a_completed_answer(self):
+        self.assertEqual(
+            tater_agent.completed_hydra_delegation_answer(
+                [
+                    {
+                        'tool': 'tater_hydra',
+                        'status': 'failed',
+                        'result': {'error': 'connection failed'},
+                    }
+                ]
+            ),
+            '',
+        )
+
     def test_parses_persistent_context_with_final_answer(self):
         plan = tater_agent.parse_tool_plan_response(
             '{"progress":"","tool_calls":[],"final_answer":"Done.",'

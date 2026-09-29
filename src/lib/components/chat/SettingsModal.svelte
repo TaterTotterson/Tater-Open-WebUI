@@ -24,6 +24,7 @@
 	import DataControls from './Settings/DataControls.svelte';
 	import Usage from './Settings/Usage.svelte';
 	import ArchivedChats from './Settings/ArchivedChats.svelte';
+	import TaterIdentity from './Settings/TaterIdentity.svelte';
 	import Search from '../icons/Search.svelte';
 	import DatabaseSettings from '../icons/DatabaseSettings.svelte';
 	import SettingsAlt from '../icons/SettingsAlt.svelte';
@@ -35,6 +36,7 @@
 	import ChevronLeft from '../icons/ChevronLeft.svelte';
 	import Keyboard from '../icons/Keyboard.svelte';
 	import UsageIcon from '../icons/UsageIcon.svelte';
+	import UserBadgeCheck from '../icons/UserBadgeCheck.svelte';
 	import AdminTabIcon from '$lib/components/admin/Settings/AdminTabIcon.svelte';
 	import AdminGeneral from '$lib/components/admin/Settings/General.svelte';
 	import AdminAuthentication from '$lib/components/admin/Settings/Authentication.svelte';
@@ -128,6 +130,7 @@
 		data_controls: $i18n.t('Data'),
 		usage: $i18n.t('Data'),
 		archived_chats: $i18n.t('Data'),
+		tater_identity: 'Tater',
 		account: $i18n.t('Profile'),
 		about: $i18n.t('Profile')
 	};
@@ -191,6 +194,12 @@
 			titleKey: 'settings.personal.archivedChats.title',
 			title: $i18n.t('settings.personal.archivedChats.title'),
 			searchPrefixes: ['settings.personal.archivedChats.']
+		},
+		{
+			id: 'tater_identity',
+			titleKey: 'Tater Identity',
+			title: 'Tater Identity',
+			searchPrefixes: []
 		},
 		{
 			id: 'account',
@@ -509,6 +518,19 @@
 							<ArchiveBox className="size-3.5" strokeWidth="2" />
 							<span>{$i18n.t('settings.personal.archivedChats.title')}</span>
 						</button>
+					{:else if tabId === 'tater_identity'}
+						<button
+							role="tab"
+							aria-controls="tab-tater-identity"
+							aria-selected={selectedTab === 'tater_identity'}
+							class={tabButtonClass(selectedTab === 'tater_identity')}
+							on:click={() => {
+								selectTab('tater_identity');
+							}}
+						>
+							<UserBadgeCheck className="size-3.5" strokeWidth="2" />
+							<span>Tater Identity</span>
+						</button>
 					{:else if tabId === 'account'}
 						<button
 							role="tab"
@@ -608,6 +630,8 @@
 				<Usage />
 			{:else if selectedTab === 'archived_chats'}
 				<ArchivedChats />
+			{:else if selectedTab === 'tater_identity'}
+				<TaterIdentity />
 			{:else if selectedTab === 'account'}
 				<Account
 					saveHandler={() => {

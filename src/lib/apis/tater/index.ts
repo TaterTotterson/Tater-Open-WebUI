@@ -27,6 +27,26 @@ export type TaterProfileVerification = {
 	models: string[];
 };
 
+export type TaterIdentity = {
+	connected: boolean;
+	state: 'disconnected' | 'unregistered' | 'pending' | 'linked' | string;
+	registered: boolean;
+	linked: boolean;
+	hub_name: string;
+	identity: {
+		platform?: string;
+		external_id?: string;
+		label?: string;
+		node_id?: string;
+		node_name?: string;
+	};
+	person: {
+		id: string;
+		name: string;
+		is_admin: boolean;
+	} | null;
+};
+
 export type TaterTask = {
 	id: string;
 	title: string;
@@ -114,6 +134,12 @@ export const verifyTaterLink = (token: string): Promise<TaterProfileVerification
 
 export const unlinkTater = (token: string): Promise<TaterProfile> =>
 	request('/link', token, { method: 'DELETE' });
+
+export const getTaterIdentity = (token: string): Promise<TaterIdentity> =>
+	request('/identity', token);
+
+export const registerTaterIdentity = (token: string): Promise<TaterIdentity> =>
+	request('/identity', token, { method: 'POST' });
 
 export const getTaterTasks = (token: string): Promise<TaterTask[]> => request('/tasks', token);
 

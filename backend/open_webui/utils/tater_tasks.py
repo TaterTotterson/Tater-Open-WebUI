@@ -668,7 +668,11 @@ async def start_tater_task(
         'timestamp': now,
     }
     child_context = normalize_agent_context(
-        {'objective': prompt},
+        {
+            'objective': prompt,
+            'execution_summary': '',
+            'blockers': [],
+        },
         copy.deepcopy((parent_chat.chat or {}).get('taterAgentContext') or {}),
     )
     chat_data = {

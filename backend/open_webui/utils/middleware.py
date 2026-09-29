@@ -116,6 +116,7 @@ from open_webui.utils.tater_agent import (
     agent_history_char_limit,
     agent_iteration_limit,
     browser_launch_completion_gap,
+    completed_hydra_delegation_answer,
     continuation_progress_update,
     merge_project_context,
     normalize_agent_context,
@@ -126,6 +127,7 @@ from open_webui.utils.tater_agent import (
     render_agent_context,
     render_recent_chat_history,
     render_tool_history,
+    resolved_background_task_prompt,
     simple_read_only_terminal_history,
     task_dispatch_request,
     tool_activity_status,
@@ -1394,7 +1396,8 @@ async def chat_completion_tools_handler(
                 'call or independent group of calls. Continue until every part of the request is satisfied. If '
                 'an agent_completion_review record is failed, the proposed answer was rejected: perform the missing '
                 'work stated in its result before trying to finish again. If the task is complete or no useful tool '
-                'remains, return no calls and provide final_answer.'
+                'remains, return no calls and provide final_answer. Results from this run are newer and more '
+                'authoritative than conflicting failures or blockers in chat history or persistent context.'
             )
 
         return {
@@ -2043,10 +2046,11 @@ async def chat_completion_tools_handler(
                     body=body,
                     metadata=metadata,
                     user=user,
-                    task_prompt=(
+                    task_prompt=resolved_background_task_prompt(
                         dispatch_request
                         or get_last_user_message(body.get('messages', []))
-                        or 'Background task'
+                        or 'Background task',
+                        plan,
                     ),
                     initial_plan=plan,
                 )
@@ -2248,9 +2252,11 @@ async def chat_completion_tools_handler(
             emitted_progress_updates.append(progress)
             emitted_progress_text.add(progress)
 
+        iteration_records = []
         for tool_call in tool_calls:
             record = await tool_call_handler(tool_call, iteration)
             history_records.append(record)
+            iteration_records.append(record)
             if background_task_id and record.get('tool') == 'terminal':
                 live_result = record.get('result')
                 if isinstance(live_result, str) and live_result[:1] in {'{', '['}:
@@ -2298,6 +2304,32 @@ async def chat_completion_tools_handler(
                 break
 
         if loop_stopped:
+            break
+
+        initial_calls = (
+            initial_task_plan.get('tool_calls')
+            if isinstance(initial_task_plan, dict) and isinstance(initial_task_plan.get('tool_calls'), list)
+            else []
+        )
+        direct_hydra_answer = (
+            completed_hydra_delegation_answer(iteration_records)
+            if background_task_id
+            and iteration == 1
+            and initial_calls
+            and len(iteration_records) == len(initial_calls)
+            and all(
+                isinstance(call, dict) and call.get('name') == 'tater_hydra'
+                for call in initial_calls
+            )
+            else ''
+        )
+        if direct_hydra_answer:
+            prepared_final_answer = direct_hydra_answer
+            ledger_event(
+                'hydra_delegation_adopted',
+                iteration=iteration,
+                answer=direct_hydra_answer,
+            )
             break
     else:
         agent_stop_message = (
@@ -3430,7 +3462,8 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
         if expose_agent_tools:
             hydra_tools, hydra_system_prompt = get_tater_hydra_tools(
-                user_identity=user.name or user.email or user.id,
+                user_id=str(user.id),
+                user_name=str(user.name or user.email or user.id),
                 session_id=metadata.get('chat_id'),
             )
             tools_dict = {**tools_dict, **hydra_tools}

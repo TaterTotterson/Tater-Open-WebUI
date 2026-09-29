@@ -449,6 +449,51 @@ def background_task_result_answer(content: Any) -> str:
     return f'{heading}\n\n{result}'
 
 
+def resolved_background_task_prompt(prompt: Any, plan: Any) -> str:
+    """Use a self-contained Hydra request instead of a vague conversational follow-up."""
+
+    fallback = str(prompt or '').strip()
+    if not isinstance(plan, dict):
+        return fallback
+    calls = plan.get('tool_calls')
+    if not isinstance(calls, list) or len(calls) != 1:
+        return fallback
+    call = calls[0]
+    if not isinstance(call, dict) or call.get('name') != 'tater_hydra':
+        return fallback
+    parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
+    request = str(parameters.get('request') or '').strip()
+    return request or fallback
+
+
+def completed_hydra_delegation_answer(records: Any) -> str:
+    """Return Hydra's final response when an isolated delegation completed successfully."""
+
+    if not isinstance(records, list) or not records:
+        return ''
+    responses = []
+    for record in records:
+        if (
+            not isinstance(record, dict)
+            or record.get('tool') != 'tater_hydra'
+            or record.get('status') != 'completed'
+        ):
+            return ''
+        result = record.get('result')
+        if isinstance(result, str) and result[:1] in {'{', '['}:
+            try:
+                result = json.loads(result)
+            except json.JSONDecodeError:
+                return ''
+        if not isinstance(result, dict) or result.get('status') != 'completed':
+            return ''
+        response = str(result.get('response') or '').strip()
+        if not response:
+            return ''
+        responses.append(response)
+    return '\n\n'.join(responses)
+
+
 def simple_read_only_terminal_history(records: Any) -> bool:
     """Return true for a small, successful batch of obviously read-only commands."""
 

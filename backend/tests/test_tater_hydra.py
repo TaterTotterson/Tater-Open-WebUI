@@ -18,13 +18,17 @@ class TaterHydraTests(unittest.TestCase):
         payload = tater_hydra.build_tater_hydra_payload(
             'Turn on the kitchen lights',
             hydra_model='tater/hydra',
-            user_identity='user-1',
+            user_id='user-1',
+            user_name='Ada',
             session_id='chat-1',
         )
 
         self.assertEqual(payload['model'], 'tater/hydra')
         self.assertFalse(payload['stream'])
         self.assertEqual(payload['messages'][-1], {'role': 'user', 'content': 'Turn on the kitchen lights'})
+        self.assertEqual(payload['user'], 'user-1')
+        self.assertEqual(payload['user_name'], 'Ada')
+        self.assertEqual(payload['metadata']['user_id'], 'user-1')
         self.assertEqual(payload['metadata']['chat_id'], 'chat-1')
 
     def test_rejects_an_empty_delegation(self):
@@ -32,7 +36,8 @@ class TaterHydraTests(unittest.TestCase):
             tater_hydra.build_tater_hydra_payload(
                 '   ',
                 hydra_model='tater/hydra',
-                user_identity='user-1',
+                user_id='user-1',
+                user_name='Ada',
                 session_id='chat-1',
             )
 
@@ -59,6 +64,8 @@ class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):
         async def completion(request):
             self.received['authorization'] = request.headers.get('Authorization')
             self.received['session'] = request.headers.get('X-Tater-Session')
+            self.received['user_id'] = request.headers.get('X-SpudLink-User-ID')
+            self.received['user_name'] = request.headers.get('X-SpudLink-User')
             self.received['payload'] = await request.json()
             return web.json_response(
                 {
@@ -84,7 +91,8 @@ class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):
             api_base_url=self.api_base_url,
             api_key='secret-token',
             hydra_model='tater/hydra',
-            user_identity='user-1',
+            user_id='user-1',
+            user_name='Ada',
             session_id='chat-1',
             request_text='Run a connected device action',
             timeout_seconds=5,
@@ -93,6 +101,8 @@ class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['response'], 'Device action completed.')
         self.assertEqual(self.received['authorization'], 'Bearer secret-token')
         self.assertEqual(self.received['session'], 'chat-1')
+        self.assertEqual(self.received['user_id'], 'user-1')
+        self.assertEqual(self.received['user_name'], 'Ada')
         self.assertEqual(self.received['payload']['model'], 'tater/hydra')
 
 

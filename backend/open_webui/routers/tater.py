@@ -71,6 +71,68 @@ class TaterProfileVerification(BaseModel):
     models: list[str]
 
 
+class TaterIdentityResponse(BaseModel):
+    connected: bool
+    state: str = 'disconnected'
+    registered: bool = False
+    linked: bool = False
+    hub_name: str = ''
+    identity: dict[str, Any] = Field(default_factory=dict)
+    person: dict[str, Any] | None = None
+
+
+async def _tater_identity_request(user: Any, *, register: bool) -> TaterIdentityResponse:
+    try:
+        hub_url, token = await get_tater_link_connection()
+    except RuntimeError:
+        return TaterIdentityResponse(connected=False)
+
+    method = 'POST' if register else 'GET'
+    timeout = aiohttp.ClientTimeout(total=15)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+            async with session.request(
+                method,
+                f'{hub_url}/api/spudlink/v1/tater-open-webui/identity',
+                headers=tater_link_headers(token, user),
+            ) as response:
+                body = await response.text()
+                if response.status >= 400:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f'Tater could not read this WebUI identity: {body[:500]}',
+                    )
+                try:
+                    payload = await response.json()
+                except Exception as exc:
+                    raise HTTPException(status_code=502, detail='Tater returned an invalid identity response') from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'Could not reach the linked Tater: {exc}') from exc
+
+    server = payload.get('server') if isinstance(payload.get('server'), dict) else {}
+    return TaterIdentityResponse(
+        connected=bool(payload.get('connected', True)),
+        state=str(payload.get('state') or 'unregistered'),
+        registered=bool(payload.get('registered')),
+        linked=bool(payload.get('linked')),
+        hub_name=str(server.get('name') or ''),
+        identity=payload.get('identity') if isinstance(payload.get('identity'), dict) else {},
+        person=payload.get('person') if isinstance(payload.get('person'), dict) else None,
+    )
+
+
+@router.get('/identity', response_model=TaterIdentityResponse)
+async def get_tater_identity(user=Depends(get_verified_user)):
+    return await _tater_identity_request(user, register=False)
+
+
+@router.post('/identity', response_model=TaterIdentityResponse)
+async def register_tater_identity(user=Depends(get_verified_user)):
+    return await _tater_identity_request(user, register=True)
+
+
 @router.get('/tasks')
 async def list_background_tasks(request: Request, user=Depends(get_verified_user)):
     tasks = await reconcile_user_tater_tasks(request.app, user.id)

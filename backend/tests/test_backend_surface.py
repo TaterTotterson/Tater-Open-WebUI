@@ -230,6 +230,9 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("form_data.stt.ENGINE != 'tater'", audio_source)
         self.assertIn("form_data.tts.ENGINE != 'tater'", audio_source)
         self.assertIn("TATER_OPEN_WEBUI_CLIENT_ROLE = 'tater_open_webui'", link_source)
+        self.assertIn("headers['X-SpudLink-User-ID']", link_source)
+        self.assertIn("@router.get('/identity'", tater_source)
+        self.assertIn("@router.post('/identity'", tater_source)
         self.assertIn("model.get('id') == base_model", models_source)
         self.assertNotIn("@router.post('/verify'", tater_source)
 
