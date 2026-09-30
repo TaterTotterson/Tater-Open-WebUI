@@ -1228,8 +1228,10 @@
 					}
 				} else if (type === 'chat:message:delta' || type === 'message') {
 					message.content += data.content;
+					autoScrollToBottom();
 				} else if (type === 'chat:message' || type === 'replace') {
 					message.content = data.content;
+					autoScrollToBottom();
 				} else if (type === 'chat:message:files' || type === 'files') {
 					message.files = data.files;
 				} else if (type === 'chat:message:tasks') {
@@ -1599,6 +1601,10 @@
 		return () => {
 			try {
 				clearTimeout(saveControlsTimer);
+				if (scrollRAF !== null) {
+					cancelAnimationFrame(scrollRAF);
+					scrollRAF = null;
+				}
 				saveControls();
 				if (chatIdProp && !$temporaryChatEnabled) {
 					updateLastReadAt(chatIdProp);
@@ -2344,17 +2350,35 @@
 	const shouldAutoScrollResponse = () =>
 		autoScroll && ($settings?.scrollOnResponseGeneration ?? true);
 
-	let scrollRAF = null;
+	let scrollRAF: number | null = null;
+	let scrollFollowUntil = 0;
 	let contentsRAF = null;
 	const autoScrollToBottom = () => {
 		if (!shouldAutoScrollResponse()) return;
 
-		if (!scrollRAF) {
-			scrollRAF = requestAnimationFrame(async () => {
+		// Keep following briefly after each chunk. This covers both DOM layout and the
+		// eased text reveal without forcing the user to keep nudging the scrollbar.
+		scrollFollowUntil = performance.now() + 1600;
+		if (scrollRAF !== null) return;
+
+		const followIncomingContent = () => {
+			if (!shouldAutoScrollResponse()) {
 				scrollRAF = null;
-				await scrollToBottom();
-			});
-		}
+				return;
+			}
+
+			if (messagesContainerElement) {
+				messagesContainerElement.scrollTop = messagesContainerElement.scrollHeight;
+			}
+
+			if (performance.now() < scrollFollowUntil) {
+				scrollRAF = requestAnimationFrame(followIncomingContent);
+			} else {
+				scrollRAF = null;
+			}
+		};
+
+		scrollRAF = requestAnimationFrame(followIncomingContent);
 	};
 
 	let processingQueueChats = new Set<string>();
@@ -3075,7 +3099,8 @@
 					return;
 				} catch (error) {
 					console.debug('Active response did not accept live terminal steering', error);
-					if ($settings?.enableMessageQueue ?? true) {
+					const steeringStatus = Number((error as { status?: number })?.status ?? 0);
+					if (steeringStatus === 409 && ($settings?.enableMessageQueue ?? true)) {
 						chatRequestQueues.update((queues) => ({
 							...queues,
 							[$chatId]: (queues[$chatId] ?? []).map((item) =>
@@ -3088,6 +3113,18 @@
 						...queues,
 						[$chatId]: (queues[$chatId] ?? []).filter((item) => item.id !== queuedItem.id)
 					}));
+					const currentDraft = String(prompt ?? '').trim();
+					const restoredPrompt = currentDraft
+						? `${String(userPrompt)}\n\n${currentDraft}`
+						: String(userPrompt);
+					messageInput?.setText(restoredPrompt);
+					prompt = restoredPrompt;
+					toast.error(
+						$i18n.t(
+							'Could not add that message to the active run. The run is still continuing; please try sending it again.'
+						)
+					);
+					return;
 				}
 			}
 
@@ -4210,7 +4247,15 @@
 							<div
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
+								role="region"
+								aria-label={$i18n.t('Chat messages')}
 								bind:this={messagesContainerElement}
+								on:wheel={(event) => {
+									if (event.deltaY < 0) autoScroll = false;
+								}}
+								on:touchmove={() => {
+									autoScroll = false;
+								}}
 								on:scroll={(e) => {
 									autoScroll =
 										messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=

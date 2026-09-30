@@ -108,7 +108,7 @@ const request = async <T>(path: string, token: string, options: RequestInit = {}
 		} catch {
 			error = await response.text();
 		}
-		throw new Error(getErrorMessage(error));
+		throw Object.assign(new Error(getErrorMessage(error)), { status: response.status });
 	}
 
 	return response.json();

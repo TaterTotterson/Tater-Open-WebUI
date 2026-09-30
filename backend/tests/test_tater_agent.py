@@ -121,6 +121,31 @@ class TaterAgentTests(unittest.TestCase):
         self.assertEqual(plan['final_answer'], 'Done.')
         self.assertEqual(plan['context'], {})
 
+    def test_naturalizes_repetitive_future_progress_announcements(self):
+        examples = {
+            'I will start by exploring the Hydra code.': 'Exploring the Hydra code.',
+            'I’ll inspect the execution loop next.': 'Inspecting the execution loop next.',
+            'I am analyzing the call sites.': 'Analyzing the call sites.',
+            'Let me run the focused tests.': 'Running the focused tests.',
+            'The loop is in hydra/__init__.py; tracing its caller now.': (
+                'The loop is in hydra/__init__.py; tracing its caller now.'
+            ),
+        }
+
+        for original, expected in examples.items():
+            with self.subTest(original=original):
+                self.assertEqual(tater_agent.naturalize_progress_update(original), expected)
+
+    def test_live_steering_acknowledgement_keeps_the_run_active(self):
+        self.assertEqual(
+            tater_agent.live_steering_acknowledgement(['thanks']),
+            'You’re welcome—the current work is still moving along.',
+        )
+        self.assertEqual(
+            tater_agent.live_steering_acknowledgement(['also add a regression test']),
+            'Got it—adding that to the work already in progress.',
+        )
+
     def test_parses_concise_task_title(self):
         plan = tater_agent.parse_tool_plan_response(
             '{"task_title":"Inspect Face ID Code","progress":"I’ll locate the implementation.",'

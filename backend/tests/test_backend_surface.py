@@ -31,6 +31,20 @@ CALL_OVERLAY_PATH = (
     / 'MessageInput'
     / 'CallOverlay.svelte'
 )
+CHAT_COMPONENT_PATH = Path(__file__).parents[2] / 'src' / 'lib' / 'components' / 'chat' / 'Chat.svelte'
+TATER_API_PATH = Path(__file__).parents[2] / 'src' / 'lib' / 'apis' / 'tater' / 'index.ts'
+RESPONSE_MESSAGE_PATH = (
+    Path(__file__).parents[2]
+    / 'src'
+    / 'lib'
+    / 'components'
+    / 'chat'
+    / 'Messages'
+    / 'ResponseMessage.svelte'
+)
+SETTINGS_MODAL_PATH = (
+    Path(__file__).parents[2] / 'src' / 'lib' / 'components' / 'chat' / 'SettingsModal.svelte'
+)
 
 
 class BackendSurfaceTests(unittest.TestCase):
@@ -131,6 +145,7 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('partition_parallel_tasks(parallel_tasks)', middleware_source)
         self.assertIn('fixed task-count limit', middleware_source.lower())
         self.assertIn("@router.post('/steer')", tater_router_source)
+        self.assertIn('from open_webui.models.chats import Chats', tater_router_source)
         self.assertIn('enqueue_live_agent_message', tater_router_source)
         self.assertIn("'type': 'tater:steer:consumed'", middleware_source)
         self.assertIn("call.get('name') == 'tater_hydra'", task_source)
@@ -152,6 +167,42 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('handoff_context', task_source)
         ast.parse(task_source)
         ast.parse(subagent_source)
+
+    def test_live_message_transport_failures_do_not_cancel_the_active_run(self):
+        chat_source = CHAT_COMPONENT_PATH.read_text(encoding='utf-8')
+        api_source = TATER_API_PATH.read_text(encoding='utf-8')
+
+        self.assertIn('{ status: response.status }', api_source)
+        self.assertIn('steeringStatus === 409', chat_source)
+        self.assertIn('The run is still continuing', chat_source)
+        self.assertIn('messageInput?.setText(restoredPrompt)', chat_source)
+
+    def test_progress_updates_are_present_tense_and_evidence_driven(self):
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+
+        self.assertIn('naturalize_progress_update(message)', middleware_source)
+        self.assertIn('never announce that work is about to start', middleware_source)
+        self.assertIn('mention the useful finding that drives the next action', middleware_source)
+
+    def test_live_chat_smoothly_reveals_and_follows_streamed_content(self):
+        chat_source = CHAT_COMPONENT_PATH.read_text(encoding='utf-8')
+        response_source = RESPONSE_MESSAGE_PATH.read_text(encoding='utf-8')
+
+        self.assertIn("type === 'chat:message:delta' || type === 'message'", chat_source)
+        self.assertIn('scrollFollowUntil = performance.now() + 1600', chat_source)
+        self.assertIn('requestAnimationFrame(followIncomingContent)', chat_source)
+        self.assertIn('let renderedContent = message.content', response_source)
+        self.assertIn('requestAnimationFrame(animateRenderedContent)', response_source)
+        self.assertIn('content={renderedContent}', response_source)
+        self.assertIn("prefers-reduced-motion: reduce", response_source)
+
+    def test_settings_modal_scrolls_within_every_viewport(self):
+        settings_source = SETTINGS_MODAL_PATH.read_text(encoding='utf-8')
+
+        self.assertIn('h-[calc(100dvh-2rem)]', settings_source)
+        self.assertIn('lg:h-[calc(100dvh-4rem)]', settings_source)
+        self.assertIn('max-h-[54rem] min-h-0', settings_source)
+        self.assertIn('overflow-y-auto overscroll-contain scrollbar-hover', settings_source)
 
     def test_agent_runs_have_a_persistent_structured_ledger(self):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')

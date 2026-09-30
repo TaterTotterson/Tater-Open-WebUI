@@ -4,6 +4,7 @@ import aiohttp
 import time
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
+from open_webui.models.chats import Chats
 from open_webui.models.config import Config
 from open_webui.env import INSTANCE_ID
 from open_webui.routers.openai import clear_openai_model_cache

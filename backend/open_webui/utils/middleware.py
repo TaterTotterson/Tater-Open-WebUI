@@ -120,7 +120,9 @@ from open_webui.utils.tater_agent import (
     completed_hydra_delegation_answer,
     continuation_progress_update,
     execution_routing_plan_gap,
+    live_steering_acknowledgement,
     merge_project_context,
+    naturalize_progress_update,
     normalize_agent_context,
     parallel_browser_weather_plan_gap,
     parse_completion_review,
@@ -1609,9 +1611,14 @@ async def chat_completion_tools_handler(
         'server running and report its exact port and that it can be opened from the Files panel Ports section. Do '
         'not substitute a terminal game because a desktop GUI cannot open. Do not count a syntax check, timeout, '
         'stdin EOF, or telling the user how to start it themselves as successful launch evidence. '
-        'Whenever tool_calls is nonempty, put one short, natural user-facing explanation in progress describing '
-        'what you are about to inspect, change, or verify and why. Make it specific to this step and do not repeat '
-        'an earlier update. Also set task_title to a concise, action-oriented 3-8 word label for the overall request. '
+        'Whenever tool_calls is nonempty, put one short, natural user-facing activity update in progress describing '
+        'the concrete step currently underway and why it matters. Write it in present tense, normally beginning with '
+        'an action such as "Inspecting", "Tracing", "Updating", "Testing", or "Verifying". Never begin with "I", '
+        '"I’ll", "I will", "I am going to", "Let me", or "Next", and never announce that work is about to start. '
+        'After the first result, mention the useful finding that drives the next action when possible, such as '
+        '"The execution loop is in hydra/__init__.py; tracing its call sites now." Make it specific to this step and '
+        'do not repeat an earlier update. Also set task_title to a concise, action-oriented 3-8 word label for the '
+        'overall request. '
         'Describe the work rather than quoting the user, and never begin it with "I", "You", or "Task". '
         'A progress update does not complete the task. Never put JSON, commands, tool names, or '
         'tool-call markup in progress. When tool_calls is nonempty, final_answer must be empty. Return an empty '
@@ -1691,6 +1698,7 @@ async def chat_completion_tools_handler(
             log.debug('Could not emit tool status for %s: %s', tool_name, e)
 
     async def emit_progress_update(message: str):
+        message = naturalize_progress_update(message)
         if message:
             ledger_event('progress_update', message=message.strip())
         if background_task_id and message:
@@ -1970,9 +1978,7 @@ async def chat_completion_tools_handler(
             except Exception as e:
                 log.debug('Could not emit live steering receipt: %s', e)
         await emit_progress_update(
-            'Got it—I’m folding that into the work already in progress.'
-            if len(message_ids) == 1
-            else 'Got it—I’m folding those updates into the work already in progress.'
+            live_steering_acknowledgement(steering_messages[-len(message_ids) :])
         )
         return True
 

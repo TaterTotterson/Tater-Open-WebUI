@@ -151,6 +151,43 @@ _INTERACTIVE_BUILD_RE = re.compile(
     r'\b(?:app|application|game|website|web site|dashboard|demo|interface|ui)\b',
     re.IGNORECASE,
 )
+
+_PROGRESS_FUTURE_PREFIX_RE = re.compile(
+    r'^(?:(?:okay|ok|alright|sure)[,!.:\-\s]+)?(?:next[,.:\-\s]+)?'
+    r'(?:(?:i\s+(?:will|shall|am going to)|i[\'’]ll)\s+|let me\s+)',
+    re.IGNORECASE,
+)
+_PROGRESS_PRESENT_PREFIX_RE = re.compile(
+    r'^i\s+(?:am|[\'’]m)\s+(?:now\s+)?(?=[a-z]+ing\b)', re.IGNORECASE
+)
+_PROGRESS_START_PREFIX_RE = re.compile(
+    r'^(?:start|starting|begin|beginning)(?:\s+(?:by|with))?\s+', re.IGNORECASE
+)
+_PROGRESS_VERB_FORMS = {
+    'analyze': 'Analyzing',
+    'build': 'Building',
+    'change': 'Changing',
+    'check': 'Checking',
+    'continue': 'Continuing',
+    'edit': 'Editing',
+    'explore': 'Exploring',
+    'find': 'Finding',
+    'inspect': 'Inspecting',
+    'implement': 'Implementing',
+    'locate': 'Locating',
+    'look': 'Looking',
+    'map': 'Mapping',
+    'read': 'Reading',
+    'review': 'Reviewing',
+    'run': 'Running',
+    'scan': 'Scanning',
+    'search': 'Searching',
+    'take': 'Taking',
+    'test': 'Testing',
+    'trace': 'Tracing',
+    'update': 'Updating',
+    'verify': 'Verifying',
+}
 _INTERACTIVE_LAUNCH_RE = re.compile(
     r'\b(?:launch|serve|host|start|run|open)\b[^\n]{0,100}'
     r'\b(?:it|app|application|game|website|web site|dashboard|demo|interface|ui)?\b',
@@ -238,6 +275,55 @@ def _plain_message_text(message: dict[str, Any]) -> str:
 def _normalized_conversation_text(value: str) -> str:
     value = re.sub(r'\s+', ' ', str(value or '').replace('’', "'").strip().casefold())
     return value.strip(' .,!?:;…👍🙏')
+
+
+def naturalize_progress_update(value: Any) -> str:
+    """Turn future-work announcements into concise, present-tense activity updates."""
+
+    text = re.sub(r'\s+', ' ', str(value or '').strip())
+    if not text:
+        return ''
+
+    revised = _PROGRESS_FUTURE_PREFIX_RE.sub('', text, count=1)
+    future_announcement = revised != text
+    if not future_announcement:
+        revised = _PROGRESS_PRESENT_PREFIX_RE.sub('', text, count=1)
+        future_announcement = revised != text
+    if not future_announcement:
+        return text
+
+    revised = _PROGRESS_START_PREFIX_RE.sub('', revised, count=1)
+    revised = re.sub(r'^be\s+(?=[a-z]+ing\b)', '', revised, count=1, flags=re.IGNORECASE)
+    revised = re.sub(r'^now\s+', '', revised, count=1, flags=re.IGNORECASE).strip()
+    if not revised:
+        return text
+
+    first_word = re.match(r'^([A-Za-z]+)(.*)$', revised, re.DOTALL)
+    if not first_word:
+        return revised[:1].upper() + revised[1:]
+    verb, remainder = first_word.groups()
+    natural_verb = _PROGRESS_VERB_FORMS.get(verb.casefold())
+    if natural_verb:
+        return f'{natural_verb}{remainder}'
+    return revised[:1].upper() + revised[1:]
+
+
+def live_steering_acknowledgement(messages: Any) -> str:
+    """Acknowledge an in-flight user message without implying that the run stopped."""
+
+    candidates = [messages] if isinstance(messages, str) else messages or []
+    values = [str(message or '').strip() for message in candidates if str(message or '').strip()]
+    if len(values) != 1:
+        return 'Got them—I’m incorporating those updates while the current work continues.'
+
+    normalized = _normalized_conversation_text(values[0])
+    if normalized in {'thanks', 'thank you', 'thx'}:
+        return 'You’re welcome—the current work is still moving along.'
+    if normalized in _CONVERSATIONAL_ONLY:
+        return 'Sounds good—the current work is still moving along.'
+    if '?' in values[0] or _is_task_status_query(normalized):
+        return 'Good question—checking it against the work in progress now.'
+    return 'Got it—adding that to the work already in progress.'
 
 
 def _is_task_status_query(value: str) -> bool:

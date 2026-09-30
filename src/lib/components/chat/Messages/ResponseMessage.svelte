@@ -147,6 +147,58 @@
 		}
 	}
 
+	let renderedContent = message.content ?? '';
+	let renderTarget = renderedContent;
+	let renderFrame: number | null = null;
+	let smoothStreamActive = !message.done;
+
+	const animateRenderedContent = () => {
+		const remaining = renderTarget.length - renderedContent.length;
+		if (remaining <= 0) {
+			renderFrame = null;
+			if (message.done) smoothStreamActive = false;
+			return;
+		}
+
+		const characters = Math.min(160, Math.max(2, Math.ceil(remaining / 5)));
+		renderedContent = renderTarget.slice(0, renderedContent.length + characters);
+		renderFrame = requestAnimationFrame(animateRenderedContent);
+	};
+
+	const syncRenderedContent = (content: string, done: boolean) => {
+		const nextContent = String(content ?? '');
+		const reducedMotion =
+			typeof window === 'undefined' ||
+			window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		if (!smoothStreamActive && done) {
+			renderTarget = nextContent;
+			renderedContent = nextContent;
+			return;
+		}
+
+		if (!nextContent.startsWith(renderedContent)) {
+			renderedContent = nextContent;
+		}
+		renderTarget = nextContent;
+		if (!done) smoothStreamActive = true;
+
+		if (reducedMotion) {
+			renderedContent = renderTarget;
+			smoothStreamActive = !done;
+			return;
+		}
+
+		if (renderedContent !== renderTarget && renderFrame === null) {
+			renderFrame = requestAnimationFrame(animateRenderedContent);
+		} else if (done && renderedContent === renderTarget) {
+			smoothStreamActive = false;
+		}
+	};
+
+	$: syncRenderedContent(message.content ?? '', message.done);
+	$: renderedDone = message.done && renderedContent === (message.content ?? '');
+
 	export let siblings;
 
 	export let setInputText: Function = () => {};
@@ -646,6 +698,9 @@
 	});
 
 	onDestroy(() => {
+		if (renderFrame !== null) {
+			cancelAnimationFrame(renderFrame);
+		}
 		if (buttonsContainerElement) {
 			buttonsContainerElement.removeEventListener('wheel', buttonsWheelHandler);
 		}
@@ -836,10 +891,10 @@
 									id={`${chatId}-${message.id}`}
 									{chatId}
 									messageId={message.id}
-									content={message.content}
+									content={renderedContent}
 									output={message.output}
 									sources={message.sources}
-									floatingButtons={message?.done &&
+									floatingButtons={renderedDone &&
 										!readOnly &&
 										($settings?.showFloatingActionButtons ?? true)}
 									save={!readOnly}
@@ -847,7 +902,7 @@
 									{compactPreview}
 									{editCodeBlock}
 									{topPadding}
-									done={message?.done ?? false}
+									done={renderedDone}
 									allowEmbeds={!readOnly}
 									{model}
 									onTaskClick={async (e) => {
@@ -892,7 +947,7 @@
 								/>
 							{/if}
 
-							{#if !message.done && !message.error && (hasResponseContent || !hasVisibleStatus)}
+							{#if !renderedDone && !message.error && (hasResponseContent || !hasVisibleStatus)}
 								<div class="text-[0.9375rem] leading-relaxed">
 									<span
 										class="inline-block w-[0.125rem] h-3.5 bg-gray-400 dark:bg-gray-500 ml-0.5 animate-pulse align-text-bottom"
