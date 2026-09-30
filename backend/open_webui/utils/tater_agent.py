@@ -171,6 +171,55 @@ _INDEPENDENT_WEATHER_COMPANION_RE = re.compile(
     r'[^.!?\n]{0,100}\b(?:weather|temperature|temp)\b',
     re.IGNORECASE,
 )
+_CODE_CHANGE_REQUEST_RE = re.compile(
+    r'\b(?:add|build|change|create|develop|edit|fix|implement|make|modify|remove|refactor|repair|replace|'
+    r'rewrite|update|write)\b[^\n]{0,180}\b(?:app|application|bug|code|component|endpoint|feature|file|'
+    r'function|game|implementation|interface|library|module|package|project|repo|repository|script|service|'
+    r'site|test|ui|website)\b|'
+    r'\b(?:bug|code|component|endpoint|feature|file|function|implementation|module|project|repo|repository|'
+    r'script|service|test|ui)\b[^\n]{0,180}\b(?:add|change|create|edit|fix|implement|modify|remove|refactor|'
+    r'repair|replace|rewrite|update|write)\b',
+    re.IGNORECASE,
+)
+_FILE_MUTATION_COMMAND_RE = re.compile(
+    r'(?:^|[;&|]\s*)(?:apply_patch\b|(?:sed|perl)\b[^\n;&|]*\s-(?:i|pi)\b|'
+    r'(?:cp|install|mkdir|mv|rm|touch|truncate)\b|'
+    r'(?:npm|pnpm|yarn|bun)\s+(?:add|install|remove|uninstall|update)\b)|'
+    r'(?:^|[^<>])>>?\s*[^&|\s]|'
+    r'\b(?:open|write_text|write_bytes)\s*\([^\n]*(?:["\'](?:a|w|x)[+bt]?["\']|\.write)',
+    re.IGNORECASE,
+)
+_GIT_REPOSITORY_COMMAND_RE = re.compile(r'\bgit\s+(?:[^\s]+\s+)*(?:rev-parse|status)\b', re.IGNORECASE)
+_GIT_DIFF_COMMAND_RE = re.compile(r'\bgit\s+(?:[^\s]+\s+)*diff\b', re.IGNORECASE)
+_CODE_VERIFICATION_COMMAND_RE = re.compile(
+    r'\b(?:pytest|py\.test|unittest|vitest|jest|mocha|ava|playwright|cypress|rspec|rubocop|ruff|pylint|'
+    r'mypy|eslint|biome|stylelint|shellcheck)\b|'
+    r'\bpython(?:\d+(?:\.\d+)*)?\b[^\n;&|]*\s-m\s+(?:compileall|py_compile|pytest|unittest)\b|'
+    r'\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:build|check|lint|test|typecheck|validate)\b|'
+    r'\b(?:cargo\s+(?:build|check|clippy|test)|go\s+test|dotnet\s+(?:build|test)|'
+    r'mvn\s+(?:test|verify)|gradle\w*\s+(?:build|check|test)|make\s+(?:build|check|lint|test)|'
+    r'cmake\s+--build|ctest\b|swift\s+(?:build|test))',
+    re.IGNORECASE,
+)
+_CODE_TEST_COMMAND_RE = re.compile(
+    r'\b(?:pytest|py\.test|unittest|vitest|jest|mocha|ava|playwright|cypress|rspec)\b|'
+    r'\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|'
+    r'\b(?:cargo\s+test|go\s+test|dotnet\s+test|mvn\s+test|gradle\w*\s+test|ctest\b|swift\s+test)',
+    re.IGNORECASE,
+)
+_REGRESSION_TEST_REQUEST_RE = re.compile(
+    r'\b(?:bug|defect|regression|broken|fix|repair)\b',
+    re.IGNORECASE,
+)
+_NO_TEST_HARNESS_ANSWER_RE = re.compile(
+    r'\b(?:no|without)\s+(?:existing\s+)?test(?:ing)?\s+(?:framework|harness|suite)|'
+    r'\bno\s+(?:automated\s+)?tests?\b',
+    re.IGNORECASE,
+)
+_VERIFICATION_BLOCKER_ANSWER_RE = re.compile(
+    r"\b(?:blocked|could not|couldn't|failed|failing|failure|unable|unresolved error)\b",
+    re.IGNORECASE,
+)
 
 
 def _plain_message_text(message: dict[str, Any]) -> str:
@@ -377,6 +426,64 @@ def parallel_browser_weather_plan_gap(request: Any, parallel_tasks: Any) -> str:
     )
 
 
+def partition_parallel_tasks(
+    parallel_tasks: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split first-step tasks into foreground terminal, background Hydra, and invalid mixed plans."""
+
+    terminal_tasks: list[dict[str, Any]] = []
+    hydra_tasks: list[dict[str, Any]] = []
+    mixed_tasks: list[dict[str, Any]] = []
+    for task in parallel_tasks if isinstance(parallel_tasks, list) else []:
+        if not isinstance(task, dict):
+            mixed_tasks.append(task)
+            continue
+        names = {
+            str(call.get('name') or '')
+            for call in task.get('tool_calls', [])
+            if isinstance(call, dict)
+        }
+        if names == {'terminal'}:
+            terminal_tasks.append(task)
+        elif names == {'tater_hydra'}:
+            hydra_tasks.append(task)
+        else:
+            mixed_tasks.append(task)
+    return terminal_tasks, hydra_tasks, mixed_tasks
+
+
+def tool_calls_are_hydra_only(tool_calls: Any) -> bool:
+    calls = tool_calls if isinstance(tool_calls, list) else []
+    return bool(calls) and all(
+        isinstance(call, dict) and call.get('name') == 'tater_hydra'
+        for call in calls
+    )
+
+
+def execution_routing_plan_gap(tool_calls: Any, parallel_tasks: Any) -> str:
+    """Reject plans that would blur foreground terminal work with background Hydra work."""
+
+    calls = tool_calls if isinstance(tool_calls, list) else []
+    top_level_names = {
+        str(call.get('name') or '')
+        for call in calls
+        if isinstance(call, dict)
+    }
+    if 'terminal' in top_level_names and 'tater_hydra' in top_level_names:
+        return (
+            'Terminal and Hydra work use different execution lanes. Return parallel_tasks with terminal work in '
+            'one or more terminal-only tasks and every independent Hydra outcome in its own Hydra-only task.'
+        )
+
+    _, _, mixed_tasks = partition_parallel_tasks(parallel_tasks)
+    if mixed_tasks:
+        return (
+            'Every parallel task must use exactly one execution lane. Keep each task terminal-only or Hydra-only, '
+            'and use a separate Hydra task for every independent Hydra outcome.'
+        )
+    return ''
+
+
 def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any) -> str:
     """Describe missing launch evidence for an interactive browser deliverable."""
 
@@ -421,6 +528,101 @@ def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any)
         return (
             'The answer does not identify the verified listening port. Report the exact port and tell the user '
             'they can open it from the Files panel Ports section.'
+        )
+    return ''
+
+
+def _terminal_result(record: dict[str, Any]) -> dict[str, Any]:
+    result = record.get('result')
+    if isinstance(result, str) and result[:1] in {'{', '['}:
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    return result if isinstance(result, dict) else {}
+
+
+def _successful_terminal_record(record: dict[str, Any]) -> bool:
+    result = _terminal_result(record)
+    return (
+        record.get('status') == 'completed'
+        and result.get('exit_code') == 0
+        and result.get('timed_out') is not True
+    )
+
+
+def coding_change_completion_gap(request: Any, records: Any, final_answer: Any) -> str:
+    """Require diff inspection and post-edit verification before reporting coding success."""
+
+    records = records if isinstance(records, list) else []
+    terminal_records = [
+        (index, record)
+        for index, record in enumerate(records)
+        if isinstance(record, dict) and record.get('tool') == 'terminal'
+    ]
+    if not terminal_records:
+        return ''
+
+    mutation_indexes = []
+    for index, record in terminal_records:
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '')
+        if _FILE_MUTATION_COMMAND_RE.search(command):
+            mutation_indexes.append(index)
+
+    coding_request = bool(_CODE_CHANGE_REQUEST_RE.search(str(request or '')))
+    if not mutation_indexes and not coding_request:
+        return ''
+    last_mutation = max(mutation_indexes, default=-1)
+
+    repository_confirmed = False
+    diff_inspected = False
+    verification_attempted = False
+    verification_succeeded = False
+    test_attempted = False
+    test_succeeded = False
+    for index, record in terminal_records:
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '')
+        successful = _successful_terminal_record(record)
+        if successful and _GIT_REPOSITORY_COMMAND_RE.search(command):
+            repository_confirmed = True
+        if index >= last_mutation and successful and _GIT_DIFF_COMMAND_RE.search(command):
+            diff_inspected = True
+        if index >= last_mutation and _CODE_VERIFICATION_COMMAND_RE.search(command):
+            verification_attempted = True
+            verification_succeeded = verification_succeeded or successful
+        if index >= last_mutation and _CODE_TEST_COMMAND_RE.search(command):
+            test_attempted = True
+            test_succeeded = test_succeeded or successful
+
+    if repository_confirmed and not diff_inspected:
+        return (
+            'Files were changed in a Git repository, but the final diff was not inspected after the last edit. '
+            'Run git diff (and preferably git diff --check) now, review the actual changes, then continue.'
+        )
+    if not verification_attempted:
+        return (
+            'Code was changed without a post-edit verification command. Run the most relevant focused tests and '
+            'a proportionate build, typecheck, lint, compile, or syntax check before finishing.'
+        )
+    needs_regression_test = bool(_REGRESSION_TEST_REQUEST_RE.search(str(request or '')))
+    no_test_harness = bool(_NO_TEST_HARNESS_ANSWER_RE.search(str(final_answer or '')))
+    if needs_regression_test and not test_attempted and not no_test_harness:
+        return (
+            'This is a bug fix or regression-sensitive change, but no focused test ran after the last edit. Add or '
+            'update a regression test when the project has a test harness and run it before finishing. If the project '
+            'has no test harness, verify that fact and explain it explicitly.'
+        )
+    if test_attempted and not test_succeeded and not _VERIFICATION_BLOCKER_ANSWER_RE.search(str(final_answer or '')):
+        return (
+            'A post-edit test command failed. Fix the failure and rerun the focused test, or clearly report the '
+            'verified test failure as a blocker instead of claiming success.'
+        )
+    if not verification_succeeded and not _VERIFICATION_BLOCKER_ANSWER_RE.search(str(final_answer or '')):
+        return (
+            'The post-edit verification did not pass. Fix the failure and rerun it, or clearly report the verified '
+            'failure as a blocker instead of claiming the coding work succeeded.'
         )
     return ''
 

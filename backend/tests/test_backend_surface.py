@@ -117,14 +117,22 @@ class BackendSurfaceTests(unittest.TestCase):
         main_source = MAIN_PATH.read_text(encoding='utf-8')
         self.assertIn("form_data.pop('_tater_agent_response', None)", main_source)
 
-    def test_terminal_and_hydra_work_dispatch_to_visible_background_tasks(self):
+    def test_terminal_stays_live_and_hydra_dispatches_to_visible_background_tasks(self):
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
         task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
         subagent_source = SUBAGENTS_PATH.read_text(encoding='utf-8')
+        tater_router_source = TATER_ROUTER_PATH.read_text(encoding='utf-8')
 
         self.assertIn('start_tater_task', middleware_source)
         self.assertIn('start_parallel_tater_tasks', middleware_source)
         self.assertIn('parallel_background_tasks_dispatched', middleware_source)
+        self.assertIn('Terminal work always runs live in the current chat', middleware_source)
+        self.assertIn('tool_calls_are_hydra_only(tool_calls)', middleware_source)
+        self.assertIn('partition_parallel_tasks(parallel_tasks)', middleware_source)
+        self.assertIn('fixed task-count limit', middleware_source.lower())
+        self.assertIn("@router.post('/steer')", tater_router_source)
+        self.assertIn('enqueue_live_agent_message', tater_router_source)
+        self.assertIn("'type': 'tater:steer:consumed'", middleware_source)
         self.assertIn("call.get('name') == 'tater_hydra'", task_source)
         self.assertNotIn('TATER_TASK_MAX_CONCURRENT_PER_USER', task_source)
         self.assertIn("'type': TATER_TASK_TYPE", task_source)

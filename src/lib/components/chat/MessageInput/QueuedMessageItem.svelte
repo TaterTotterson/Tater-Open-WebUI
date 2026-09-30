@@ -14,6 +14,7 @@
 	export let id: string;
 	export let content: string;
 	export let files: any[] = [];
+	export let steering = false;
 	export let onSendNow: (id: string) => void;
 	export let onEdit: (id: string) => void;
 	export let onDelete: (id: string) => void;
@@ -75,73 +76,79 @@
 			<span class="shrink-0 text-xs text-gray-400 dark:text-gray-500">
 				{$i18n.t('Upload failed')}
 			</span>
+		{:else if steering}
+			<span class="shrink-0 text-[0.6875rem] text-orange-500 dark:text-orange-400">
+				{$i18n.t('Adding to current run…')}
+			</span>
 		{/if}
 	</div>
 
 	<!-- Actions -->
-	<div class="flex items-center gap-1 shrink-0">
-		<!-- Send immediately -->
-		<Tooltip
-			content={files.some((file) => ['uploading', 'error'].includes(file.status))
-				? $i18n.t('Waiting for upload')
-				: $i18n.t('Send now')}
-		>
-			<button
-				type="button"
-				class="p-1 text-gray-400 transition-colors {files.some((file) =>
-					['uploading', 'error'].includes(file.status)
-				)
-					? 'opacity-40 cursor-not-allowed'
-					: 'hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300'}"
-				disabled={files.some((file) => ['uploading', 'error'].includes(file.status))}
-				on:click={() => {
-					if (!files.some((file) => ['uploading', 'error'].includes(file.status))) {
-						onSendNow(id);
-					}
-				}}
-				aria-label={files.some((file) => ['uploading', 'error'].includes(file.status))
+	{#if !steering}
+		<div class="flex items-center gap-1 shrink-0">
+			<!-- Send immediately -->
+			<Tooltip
+				content={files.some((file) => ['uploading', 'error'].includes(file.status))
 					? $i18n.t('Waiting for upload')
 					: $i18n.t('Send now')}
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="1.5"
-					stroke="currentColor"
-					class="size-3.5"
+				<button
+					type="button"
+					class="p-1 text-gray-400 transition-colors {files.some((file) =>
+						['uploading', 'error'].includes(file.status)
+					)
+						? 'opacity-40 cursor-not-allowed'
+						: 'hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300'}"
+					disabled={files.some((file) => ['uploading', 'error'].includes(file.status))}
+					on:click={() => {
+						if (!files.some((file) => ['uploading', 'error'].includes(file.status))) {
+							onSendNow(id);
+						}
+					}}
+					aria-label={files.some((file) => ['uploading', 'error'].includes(file.status))
+						? $i18n.t('Waiting for upload')
+						: $i18n.t('Send now')}
 				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18"
-					/>
-				</svg>
-			</button>
-		</Tooltip>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="1.5"
+						stroke="currentColor"
+						class="size-3.5"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18"
+						/>
+					</svg>
+				</button>
+			</Tooltip>
 
-		<!-- Edit -->
-		<Tooltip content={$i18n.t('Edit')}>
-			<button
-				type="button"
-				class="p-1 text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
-				on:click={() => onEdit(id)}
-				aria-label={$i18n.t('Edit')}
-			>
-				<EditPencil className="size-3.5" />
-			</button>
-		</Tooltip>
+			<!-- Edit -->
+			<Tooltip content={$i18n.t('Edit')}>
+				<button
+					type="button"
+					class="p-1 text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+					on:click={() => onEdit(id)}
+					aria-label={$i18n.t('Edit')}
+				>
+					<EditPencil className="size-3.5" />
+				</button>
+			</Tooltip>
 
-		<!-- Delete -->
-		<Tooltip content={$i18n.t('Delete')}>
-			<button
-				type="button"
-				class="p-1 text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
-				on:click={() => onDelete(id)}
-				aria-label={$i18n.t('Delete')}
-			>
-				<GarbageBin className="size-3.5" />
-			</button>
-		</Tooltip>
-	</div>
+			<!-- Delete -->
+			<Tooltip content={$i18n.t('Delete')}>
+				<button
+					type="button"
+					class="p-1 text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+					on:click={() => onDelete(id)}
+					aria-label={$i18n.t('Delete')}
+				>
+					<GarbageBin className="size-3.5" />
+				</button>
+			</Tooltip>
+		</div>
+	{/if}
 </div>

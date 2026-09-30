@@ -105,6 +105,7 @@
 	import { getFunctions } from '$lib/apis/functions';
 	import { initiateOAuthRedirect } from '$lib/apis/configs';
 	import { updateFolderById } from '$lib/apis/folders';
+	import { steerTaterTerminalRun } from '$lib/apis/tater';
 
 	import Banner from '../common/Banner.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
@@ -1155,11 +1156,24 @@
 			if (type === 'chat:list') {
 				return;
 			}
+			const data = event?.data?.data ?? null;
+			if (type === 'tater:steer:consumed') {
+				const consumedIds = new Set(
+					Array.isArray(data?.ids) ? data.ids.map((id) => String(id)) : []
+				);
+				if (consumedIds.size > 0) {
+					chatRequestQueues.update((queues) => ({
+						...queues,
+						[event.chat_id]: (queues[event.chat_id] ?? []).filter(
+							(item) => !consumedIds.has(String(item.id))
+						)
+					}));
+				}
+				return;
+			}
 			let message = history.messages[event.message_id];
 
 			if (message) {
-				const data = event?.data?.data ?? null;
-
 				if (type === 'status') {
 					if (message?.statusHistory) {
 						const existingIndex = data?.id
@@ -3035,14 +3049,53 @@
 		const isGenerating = lastMessage && lastMessage.role === 'assistant' && !lastMessage.done;
 
 		if (isGenerating) {
+			const _files = structuredClone(files);
+			if (_files.length === 0 && $chatId && !$temporaryChatEnabled) {
+				const queuedItem = {
+					id: uuidv4(),
+					prompt: userPrompt,
+					files: _files,
+					steering: true
+				};
+				chatRequestQueues.update((q) => ({
+					...q,
+					[$chatId]: [...(q[$chatId] ?? []), queuedItem]
+				}));
+				messageInput?.setText('');
+				prompt = '';
+				files = [];
+
+				try {
+					await steerTaterTerminalRun(
+						localStorage.token,
+						$chatId,
+						queuedItem.id,
+						String(userPrompt)
+					);
+					return;
+				} catch (error) {
+					console.debug('Active response did not accept live terminal steering', error);
+					if ($settings?.enableMessageQueue ?? true) {
+						chatRequestQueues.update((queues) => ({
+							...queues,
+							[$chatId]: (queues[$chatId] ?? []).map((item) =>
+								item.id === queuedItem.id ? { ...item, steering: false } : item
+							)
+						}));
+						return;
+					}
+					chatRequestQueues.update((queues) => ({
+						...queues,
+						[$chatId]: (queues[$chatId] ?? []).filter((item) => item.id !== queuedItem.id)
+					}));
+				}
+			}
+
 			if ($settings?.enableMessageQueue ?? true) {
-				// Enqueue the request
-				const _files = structuredClone(files);
 				chatRequestQueues.update((q) => ({
 					...q,
 					[$chatId]: [...(q[$chatId] ?? []), { id: uuidv4(), prompt: userPrompt, files: _files }]
 				}));
-				// Clear input
 				messageInput?.setText('');
 				prompt = '';
 				files = [];

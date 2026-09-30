@@ -85,6 +85,12 @@ export type TaterTaskDetail = TaterTask & {
 	output: string;
 };
 
+export type TaterSteerResponse = {
+	accepted: boolean;
+	id: string;
+	run_id: string;
+};
+
 const request = async <T>(path: string, token: string, options: RequestInit = {}): Promise<T> => {
 	const response = await fetch(`${WEBUI_API_BASE_URL}/tater${path}`, {
 		...options,
@@ -158,3 +164,14 @@ export const getTaterTask = (token: string, taskId: string): Promise<TaterTaskDe
 
 export const cancelTaterTask = (token: string, taskId: string): Promise<TaterTask> =>
 	request(`/tasks/${encodeURIComponent(taskId)}`, token, { method: 'DELETE' });
+
+export const steerTaterTerminalRun = (
+	token: string,
+	chatId: string,
+	id: string,
+	message: string
+): Promise<TaterSteerResponse> =>
+	request('/steer', token, {
+		method: 'POST',
+		body: JSON.stringify({ chat_id: chatId, id, message })
+	});

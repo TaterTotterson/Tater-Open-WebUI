@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from open_webui.models.config import Config
 from open_webui.env import INSTANCE_ID
 from open_webui.routers.openai import clear_openai_model_cache
-from open_webui.tasks import stop_task
+from open_webui.tasks import has_active_tasks, stop_task
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.tater_tasks import (
     TATER_TASK_ACTIVE_STATUSES,
@@ -35,6 +35,7 @@ from open_webui.utils.tater_link import (
     get_tater_link_connection,
     tater_link_headers,
 )
+from open_webui.utils.tater_steering import enqueue_live_agent_message
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -62,6 +63,12 @@ class TaterProfileResponse(BaseModel):
 class TaterLinkForm(BaseModel):
     hub_url: str
     pairing_code: str
+
+
+class TaterSteerForm(BaseModel):
+    chat_id: str = Field(min_length=1, max_length=128)
+    id: str = Field(min_length=1, max_length=128)
+    message: str = Field(min_length=1, max_length=12_000)
 
 
 class TaterProfileVerification(BaseModel):
@@ -131,6 +138,30 @@ async def get_tater_identity(user=Depends(get_verified_user)):
 @router.post('/identity', response_model=TaterIdentityResponse)
 async def register_tater_identity(user=Depends(get_verified_user)):
     return await _tater_identity_request(user, register=True)
+
+
+@router.post('/steer')
+async def steer_live_terminal_run(
+    request: Request,
+    form_data: TaterSteerForm,
+    user=Depends(get_verified_user),
+):
+    chat = await Chats.get_chat_by_id_and_user_id(form_data.chat_id, user.id)
+    if not chat:
+        raise HTTPException(status_code=404, detail='Chat not found')
+    if not await has_active_tasks(request.app.state.redis, form_data.chat_id):
+        raise HTTPException(status_code=409, detail='There is no active chat run to update')
+
+    item = await enqueue_live_agent_message(
+        request.app.state.redis,
+        chat_id=form_data.chat_id,
+        user_id=user.id,
+        message_id=form_data.id,
+        message=form_data.message,
+    )
+    if not item:
+        raise HTTPException(status_code=409, detail='The active response is not accepting live updates')
+    return {'accepted': True, 'id': item['id'], 'run_id': item['run_id']}
 
 
 @router.get('/tasks')

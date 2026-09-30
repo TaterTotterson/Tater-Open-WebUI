@@ -236,6 +236,54 @@ class TaterAgentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'either top-level tool_calls or parallel_tasks'):
             tater_agent.parse_tool_plan_response(json.dumps(payload))
 
+    def test_partitions_terminal_and_multiple_hydra_tasks(self):
+        tasks = [
+            {
+                'task_title': 'Inspect code',
+                'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'rg TODO .'}}],
+            },
+            {
+                'task_title': 'Check weather',
+                'tool_calls': [{'name': 'tater_hydra', 'parameters': {'request': 'Check weather'}}],
+            },
+            {
+                'task_title': 'Set lights',
+                'tool_calls': [{'name': 'tater_hydra', 'parameters': {'request': 'Set lights'}}],
+            },
+        ]
+
+        terminal, hydra, mixed = tater_agent.partition_parallel_tasks(tasks)
+
+        self.assertEqual([task['task_title'] for task in terminal], ['Inspect code'])
+        self.assertEqual([task['task_title'] for task in hydra], ['Check weather', 'Set lights'])
+        self.assertEqual(mixed, [])
+
+    def test_rejects_mixed_terminal_and_hydra_execution_lane(self):
+        gap = tater_agent.execution_routing_plan_gap(
+            [
+                {'name': 'terminal', 'parameters': {'command': 'pwd'}},
+                {'name': 'tater_hydra', 'parameters': {'request': 'Check weather'}},
+            ],
+            [],
+        )
+
+        self.assertIn('different execution lanes', gap)
+
+    def test_recognizes_hydra_only_calls(self):
+        self.assertTrue(
+            tater_agent.tool_calls_are_hydra_only(
+                [
+                    {'name': 'tater_hydra', 'parameters': {'request': 'Check weather'}},
+                    {'name': 'tater_hydra', 'parameters': {'request': 'Check lights'}},
+                ]
+            )
+        )
+        self.assertFalse(
+            tater_agent.tool_calls_are_hydra_only(
+                [{'name': 'terminal', 'parameters': {'command': 'pwd'}}]
+            )
+        )
+
     def test_normalizes_planner_task_title(self):
         self.assertEqual(
             tater_agent.normalize_task_title('  inspect   Face ID implementation  ', 'ignored'),
@@ -484,6 +532,190 @@ class TaterAgentTests(unittest.TestCase):
         self.assertFalse(tater_agent.requires_live_browser_delivery('Run the tests for this app.'))
         self.assertEqual(
             tater_agent.browser_launch_completion_gap('Run the tests for this app.', [], 'Tests pass.'),
+            '',
+        )
+
+    def test_coding_change_requires_final_diff_inspection(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git status --short'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': "python3 -c \"open('app.py', 'w').write('pass')\""},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'python3 -m py_compile app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+        ]
+
+        self.assertIn(
+            'final diff was not inspected',
+            tater_agent.coding_change_completion_gap('Fix the bug in app.py', records, 'Fixed.'),
+        )
+
+    def test_coding_change_requires_post_edit_verification(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git status --short'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': "python3 -c \"open('app.py', 'w').write('pass')\""},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git diff --check && git diff -- app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+        ]
+
+        self.assertIn(
+            'post-edit verification command',
+            tater_agent.coding_change_completion_gap('Fix the bug in app.py', records, 'Fixed.'),
+        )
+
+    def test_verified_coding_change_can_complete(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git status --short'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': "python3 -c \"open('app.py', 'w').write('pass')\""},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git diff --check && git diff -- app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'python3 -m unittest tests.test_app'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+        ]
+
+        self.assertEqual(
+            tater_agent.coding_change_completion_gap('Fix the bug in app.py', records, 'Fixed and tested.'),
+            '',
+        )
+
+    def test_bug_fix_requires_a_focused_regression_test(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git status --short'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'touch app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git diff -- app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'python3 -m py_compile app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+        ]
+
+        self.assertIn(
+            'no focused test ran',
+            tater_agent.coding_change_completion_gap('Fix the app bug', records, 'Fixed and compiled.'),
+        )
+
+    def test_verification_must_run_again_after_a_later_edit(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'pytest -q'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'sed -i.bak s/old/new/ app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git diff -- app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+        ]
+
+        self.assertIn(
+            'post-edit verification command',
+            tater_agent.coding_change_completion_gap('Update the app code', records, 'Done.'),
+        )
+
+    def test_failed_verification_can_be_reported_as_a_blocker(self):
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git status --short'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'touch app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'git diff -- app.py'},
+                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
+            },
+            {
+                'tool': 'terminal',
+                'status': 'failed',
+                'parameters': {'command': 'pytest -q'},
+                'result': json.dumps({'exit_code': 1, 'timed_out': False}),
+            },
+        ]
+
+        self.assertEqual(
+            tater_agent.coding_change_completion_gap(
+                'Fix the app bug',
+                records,
+                'Verification is blocked because pytest failed with an existing dependency error.',
+            ),
             '',
         )
 
