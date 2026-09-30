@@ -169,6 +169,9 @@ class BackendSurfaceTests(unittest.TestCase):
         ast.parse(subagent_source)
 
     def test_live_message_transport_failures_do_not_cancel_the_active_run(self):
+        if not CHAT_COMPONENT_PATH.exists():
+            self.skipTest('frontend source is not bundled in the production image')
+
         chat_source = CHAT_COMPONENT_PATH.read_text(encoding='utf-8')
         api_source = TATER_API_PATH.read_text(encoding='utf-8')
 
@@ -185,6 +188,9 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('mention the useful finding that drives the next action', middleware_source)
 
     def test_live_chat_smoothly_reveals_and_follows_streamed_content(self):
+        if not CHAT_COMPONENT_PATH.exists():
+            self.skipTest('frontend source is not bundled in the production image')
+
         chat_source = CHAT_COMPONENT_PATH.read_text(encoding='utf-8')
         response_source = RESPONSE_MESSAGE_PATH.read_text(encoding='utf-8')
 
@@ -197,6 +203,9 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("prefers-reduced-motion: reduce", response_source)
 
     def test_settings_modal_scrolls_within_every_viewport(self):
+        if not SETTINGS_MODAL_PATH.exists():
+            self.skipTest('frontend source is not bundled in the production image')
+
         settings_source = SETTINGS_MODAL_PATH.read_text(encoding='utf-8')
 
         self.assertIn('h-[calc(100dvh-2rem)]', settings_source)
