@@ -72,7 +72,13 @@
 		model: string;
 		content: string;
 		output?: OutputItem[];
-		files?: { type: string; url: string }[];
+		files?: {
+			type: string;
+			url: string;
+			name?: string;
+			content_type?: string;
+			size?: number;
+		}[];
 		timestamp: number;
 		role: string;
 		statusHistory?: {
@@ -751,15 +757,25 @@
 							<StatusHistory statusHistory={message?.statusHistory} />
 						{/if}
 
-						{#if message?.files && message.files?.filter( (f) => ['image', 'file'].includes(f.type) ).length > 0}
+						{#if message?.files && message.files?.filter( (f) => ['image', 'audio', 'video', 'file'].includes(f.type) ).length > 0}
 							<div
 								class="my-1 w-full flex overflow-x-auto gap-2 flex-wrap"
 								dir={$settings?.chatDirection ?? 'auto'}
 							>
-								{#each message.files.filter((f) => ['image', 'file'].includes(f.type)) as file}
+								{#each message.files.filter( (f) => ['image', 'audio', 'video', 'file'].includes(f.type) ) as file}
 									<div>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 											<Image src={file.url} alt={file.name || $i18n.t('Generated Image')} />
+										{:else if file.type === 'video' || (file?.content_type ?? '').startsWith('video/')}
+											<!-- svelte-ignore a11y_media_has_caption -->
+											<video
+												src={file.url}
+												controls
+												preload="metadata"
+												class="max-h-96 max-w-full rounded-lg"
+											></video>
+										{:else if file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')}
+											<audio src={file.url} controls preload="metadata" class="max-w-full"></audio>
 										{:else}
 											<FileItem
 												item={file}

@@ -30,6 +30,16 @@ class TaterHydraTests(unittest.TestCase):
         self.assertEqual(payload['user_name'], 'Ada')
         self.assertEqual(payload['metadata']['user_id'], 'user-1')
         self.assertEqual(payload['metadata']['chat_id'], 'chat-1')
+        self.assertIn('image, audio, music, or video generation', payload['messages'][0]['content'])
+        self.assertIn('generation is unavailable', payload['messages'][0]['content'])
+
+    def test_tool_prompt_routes_media_generation_to_hydra(self):
+        prompt = f"{tater_hydra.TATER_HYDRA_TOOL_SPEC['description']}\n{tater_hydra.TATER_HYDRA_SYSTEM_PROMPT}"
+
+        for media_type in ('image', 'audio', 'music', 'video'):
+            self.assertIn(media_type, prompt.lower())
+        self.assertIn('ComfyUI', prompt)
+        self.assertIn('Do not retry the same request', prompt)
 
     def test_rejects_an_empty_delegation(self):
         with self.assertRaisesRegex(ValueError, 'non-empty'):
@@ -55,6 +65,51 @@ class TaterHydraTests(unittest.TestCase):
         self.assertEqual(parsed['response'], 'The lights are on.')
         self.assertEqual(parsed['artifacts'][0]['url'], 'http://tater.local:8501/api/files/1')
         self.assertEqual(parsed['usage']['total_tokens'], 12)
+
+    def test_media_artifacts_become_visible_chat_attachments(self):
+        parsed = tater_hydra.parse_tater_hydra_response(
+            {
+                'model': 'tater/hydra',
+                'choices': [{'message': {'role': 'assistant', 'content': ''}}],
+                'spud_link': {
+                    'artifacts': [
+                        {
+                            'id': 'image-1',
+                            'type': 'image',
+                            'name': 'potato.png',
+                            'mimetype': 'image/png',
+                            'url': '/api/spudlink/v1/files/image-1?mimetype=image/png',
+                        },
+                        {
+                            'id': 'audio-1',
+                            'name': 'song.mp3',
+                            'mimetype': 'audio/mpeg',
+                            'url': '/api/spudlink/v1/files/audio-1?mimetype=audio/mpeg',
+                        },
+                        {
+                            'type': 'video',
+                            'name': 'clip.mp4',
+                            'mimetype': 'video/mp4',
+                            'url': 'https://media.example/clip.mp4',
+                        },
+                    ]
+                },
+            },
+            api_base_url='http://tater.local:8501/v1',
+        )
+
+        files = tater_hydra.tater_hydra_artifact_files(parsed)
+
+        self.assertEqual([item['type'] for item in files], ['image', 'audio', 'video'])
+        self.assertEqual(
+            files[0]['url'],
+            '/api/v1/tater/artifacts/image-1?mimetype=image%2Fpng',
+        )
+        self.assertEqual(
+            files[1]['url'],
+            '/api/v1/tater/artifacts/audio-1?mimetype=audio%2Fmpeg',
+        )
+        self.assertEqual(files[2]['url'], 'https://media.example/clip.mp4')
 
 
 class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):

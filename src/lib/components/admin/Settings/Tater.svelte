@@ -208,7 +208,7 @@
 					<div>
 						<i class="hydra"></i><span
 							><strong>tater/hydra</strong><small
-								>Images, home control, media, and other Tater tools</small
+								>Image, audio, music, and video generation, home control, and other Tater tools</small
 							></span
 						>
 					</div>

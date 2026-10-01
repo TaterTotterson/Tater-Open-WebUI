@@ -3,7 +3,9 @@ from __future__ import annotations
 import aiohttp
 import time
 from typing import Any
+from urllib.parse import quote, urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
 from open_webui.env import INSTANCE_ID
@@ -139,6 +141,76 @@ async def get_tater_identity(user=Depends(get_verified_user)):
 @router.post('/identity', response_model=TaterIdentityResponse)
 async def register_tater_identity(user=Depends(get_verified_user)):
     return await _tater_identity_request(user, register=True)
+
+
+@router.get('/artifacts/{file_id}')
+async def get_tater_artifact(
+    file_id: str,
+    request: Request,
+    mimetype: str = 'application/octet-stream',
+    user=Depends(get_verified_user),
+):
+    """Stream a protected Hydra artifact through the authenticated WebUI origin."""
+
+    file_id = str(file_id or '').strip()
+    if not file_id or len(file_id) > 256:
+        raise HTTPException(status_code=400, detail='Invalid Tater artifact id')
+    requested_mimetype = str(mimetype or 'application/octet-stream').strip().lower()
+    if not requested_mimetype or len(requested_mimetype) > 200 or '\r' in requested_mimetype or '\n' in requested_mimetype:
+        requested_mimetype = 'application/octet-stream'
+
+    try:
+        hub_url, token = await get_tater_link_connection()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    headers = tater_link_headers(token, user)
+    headers['Accept'] = request.headers.get('accept') or requested_mimetype
+    if request.headers.get('range'):
+        headers['Range'] = request.headers['range']
+    query = urlencode({'mimetype': requested_mimetype})
+    artifact_url = f'{hub_url}/api/spudlink/v1/files/{quote(file_id, safe="")}?{query}'
+
+    session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600), trust_env=True)
+    try:
+        upstream = await session.get(artifact_url, headers=headers)
+    except Exception as exc:
+        await session.close()
+        raise HTTPException(status_code=502, detail=f'Could not retrieve the Tater artifact: {exc}') from exc
+
+    if upstream.status >= 400:
+        detail = (await upstream.text())[:500]
+        upstream.release()
+        await session.close()
+        raise HTTPException(
+            status_code=upstream.status if upstream.status in {404, 410} else 502,
+            detail=detail or 'Tater could not return the requested artifact',
+        )
+
+    async def stream_artifact():
+        try:
+            async for chunk in upstream.content.iter_chunked(64 * 1024):
+                yield chunk
+        finally:
+            upstream.release()
+            await session.close()
+
+    response_headers = {
+        key: value
+        for key, value in {
+            'Content-Length': upstream.headers.get('Content-Length'),
+            'Content-Range': upstream.headers.get('Content-Range'),
+            'Accept-Ranges': upstream.headers.get('Accept-Ranges'),
+            'Cache-Control': 'private, max-age=300',
+        }.items()
+        if value
+    }
+    return StreamingResponse(
+        stream_artifact(),
+        status_code=upstream.status,
+        media_type=upstream.headers.get('Content-Type') or requested_mimetype,
+        headers=response_headers,
+    )
 
 
 @router.post('/steer')

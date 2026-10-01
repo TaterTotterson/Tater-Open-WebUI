@@ -119,6 +119,8 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('The task cannot be marked complete without final_answer', middleware_source)
         self.assertIn('The context object may be empty', middleware_source)
         self.assertIn('simple_read_only_terminal_history', middleware_source)
+        self.assertIn('repeated_tool_call_plan_gap(tool_calls, history_records)', middleware_source)
+        self.assertIn('exit code zero means the command ran', middleware_source)
         self.assertNotIn("missing_completion_fields.append('context')", middleware_source)
         self.assertIn("{'taterAgentContext': saved_agent_context}", middleware_source)
         self.assertIn('render_recent_chat_history', middleware_source)
@@ -301,8 +303,19 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn("headers['X-SpudLink-User-ID']", link_source)
         self.assertIn("@router.get('/identity'", tater_source)
         self.assertIn("@router.post('/identity'", tater_source)
+        self.assertIn("@router.get('/artifacts/{file_id}')", tater_source)
+        self.assertIn('tater_link_headers(token, user)', tater_source)
         self.assertIn("model.get('id') == base_model", models_source)
         self.assertNotIn("@router.post('/verify'", tater_source)
+
+        middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
+        task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
+        response_source = RESPONSE_MESSAGE_PATH.read_text(encoding='utf-8')
+        self.assertIn('tater_hydra_artifact_files(tool_result)', middleware_source)
+        self.assertIn("'files': copy.deepcopy(files)", task_source)
+        self.assertIn("['image', 'audio', 'video', 'file']", response_source)
+        self.assertIn('<video', response_source)
+        self.assertIn('<audio', response_source)
 
     def test_tater_voice_mode_uses_linked_tater_speech(self):
         if not CALL_OVERLAY_PATH.exists():

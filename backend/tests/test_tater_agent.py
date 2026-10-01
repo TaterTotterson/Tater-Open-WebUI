@@ -429,6 +429,36 @@ class TaterAgentTests(unittest.TestCase):
             'It is partly cloudy and 86.7°F outside.',
         )
 
+    def test_media_only_hydra_result_finishes_without_repeating_generation(self):
+        result = json.dumps(
+            {
+                'status': 'completed',
+                'model': 'tater/hydra',
+                'response': '',
+                'artifacts': [
+                    {
+                        'id': 'image-1',
+                        'type': 'image',
+                        'url': '/api/v1/tater/artifacts/image-1',
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(
+            tater_agent.completed_hydra_delegation_answer(
+                [
+                    {
+                        'tool': 'tater_hydra',
+                        'status': 'completed',
+                        'parameters': {'request': 'Generate a funny potato image'},
+                        'result': result,
+                    }
+                ]
+            ),
+            'Tater Hydra generated 1 image artifact. The generated media is attached.',
+        )
+
     def test_failed_hydra_call_is_not_adopted_as_a_completed_answer(self):
         self.assertEqual(
             tater_agent.completed_hydra_delegation_answer(
@@ -1004,6 +1034,151 @@ class TaterAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(first, second)
+
+    def test_repeated_successful_call_requires_a_different_next_action(self):
+        records = [
+            {
+                'iteration': 8,
+                'tool': 'terminal',
+                'parameters': {'command': "sed -n '5700,6000p' hydra/__init__.py", 'cwd': '/projects/tater'},
+                'status': 'completed',
+                'result': {'output': 'execution loop', 'exit_code': 0},
+            },
+            {
+                'iteration': 9,
+                'tool': 'agent_protocol',
+                'parameters': {},
+                'status': 'failed',
+                'result': 'A final answer is required.',
+            },
+        ]
+
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [
+                {
+                    'name': 'terminal',
+                    'parameters': {
+                        'cwd': '/projects/tater',
+                        'command': "sed -n '5700,6000p' hydra/__init__.py",
+                    },
+                }
+            ],
+            records,
+        )
+
+        self.assertIn('already completed', gap)
+        self.assertIn('choose a different command', gap)
+
+    def test_repeated_failed_call_requires_corrected_parameters(self):
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [{'name': 'terminal', 'parameters': {'command': 'cat missing.py'}}],
+            [
+                {
+                    'iteration': 2,
+                    'tool': 'terminal',
+                    'parameters': {'command': 'cat missing.py'},
+                    'status': 'failed',
+                    'result': {'output': 'No such file', 'exit_code': 1},
+                }
+            ],
+        )
+
+        self.assertIn('already failed', gap)
+        self.assertIn('change the command or parameters', gap)
+
+    def test_repeated_file_read_is_rejected_after_other_read_only_commands(self):
+        records = [
+            {
+                'iteration': 2,
+                'tool': 'terminal',
+                'parameters': {'command': 'cat game.py', 'cwd': '/projects/woodchuck_game'},
+                'status': 'completed',
+                'result': {'output': 'terminal game', 'exit_code': 0},
+            },
+            {
+                'iteration': 3,
+                'tool': 'terminal',
+                'parameters': {'command': 'ls -F', 'cwd': '/projects/woodchuck_game'},
+                'status': 'completed',
+                'result': {'output': 'game.py', 'exit_code': 0},
+            },
+        ]
+
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [
+                {
+                    'name': 'terminal',
+                    'parameters': {'command': 'cat game.py', 'cwd': '/projects/woodchuck_game'},
+                }
+            ],
+            records,
+        )
+
+        self.assertIn('no intervening action changed its inputs', gap)
+
+    def test_repeated_terminal_call_matches_persisted_cwd_when_omitted(self):
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [{'name': 'terminal', 'parameters': {'command': 'ls -F'}}],
+            [
+                {
+                    'iteration': 3,
+                    'tool': 'terminal',
+                    'parameters': {'command': 'ls -F', 'cwd': '/projects/woodchuck_game'},
+                    'status': 'completed',
+                    'result': {
+                        'cwd': '/projects/woodchuck_game',
+                        'output': 'game.py',
+                        'exit_code': 0,
+                    },
+                }
+            ],
+        )
+
+        self.assertIn('already completed', gap)
+
+    def test_repeated_call_is_allowed_after_an_intervening_tool_step(self):
+        records = [
+            {
+                'iteration': 2,
+                'tool': 'terminal',
+                'parameters': {'command': 'pytest -q'},
+                'status': 'failed',
+                'result': {'output': 'one failure', 'exit_code': 1},
+            },
+            {
+                'iteration': 3,
+                'tool': 'terminal',
+                'parameters': {'command': "apply_patch <<'PATCH'\nPATCH"},
+                'status': 'completed',
+                'result': {'output': 'Done', 'exit_code': 0},
+            },
+        ]
+
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [{'name': 'terminal', 'parameters': {'command': 'pytest -q'}}],
+            records,
+        )
+
+        self.assertEqual(gap, '')
+
+    def test_duplicate_calls_in_one_plan_are_rejected(self):
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [
+                {'name': 'terminal', 'parameters': {'command': 'pwd'}},
+                {'name': 'terminal', 'parameters': {'command': 'pwd'}},
+            ],
+            [
+                {
+                    'iteration': 1,
+                    'tool': 'terminal',
+                    'parameters': {'command': 'ls'},
+                    'status': 'completed',
+                    'result': {'output': 'README.md', 'exit_code': 0},
+                }
+            ],
+        )
+
+        self.assertIn('more than once', gap)
 
 
 if __name__ == '__main__':

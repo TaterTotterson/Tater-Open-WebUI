@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urlencode, urljoin
 
 TATER_HYDRA_TOOL_NAME = 'tater_hydra'
 DEFAULT_TATER_HYDRA_TIMEOUT_SECONDS = 600
@@ -14,9 +14,12 @@ TATER_HYDRA_TOOL_SPEC = {
     'name': TATER_HYDRA_TOOL_NAME,
     'description': (
         'Delegate one self-contained task to the connected Tater Hydra runtime. Use this only for Tater-provided '
-        'capabilities such as Verbas, Cores, Portals, smart-home or other connected devices, Tater media, and Tater '
-        'automations. Do not use it for ordinary conversation, reasoning, terminal commands, files, Git, builds, or '
-        'tests. Hydra does not see the surrounding chat, so include the target, requested action, and relevant details.'
+        'capabilities such as Verbas, Cores, Portals, smart-home or other connected devices, Tater automations, and '
+        'generation of images, audio, music, and video. Media generation may be provided by a configured '
+        'Tater Verba such as ComfyUI. Do not use this tool for ordinary conversation, reasoning, terminal commands, '
+        'files, Git, builds, or tests. Hydra does not see the surrounding chat, so include the target, requested '
+        'action, prompt, format, and other relevant details. If Tater reports that no matching Verba or provider is '
+        'configured, report that result honestly and do not claim that media was generated.'
     ),
     'parameters': {
         'type': 'object',
@@ -35,11 +38,19 @@ TATER_HYDRA_TOOL_SPEC = {
 TATER_HYDRA_SYSTEM_PROMPT = """Tater capability routing:
 
 - Use `tater_hydra` only when the request needs a capability owned by the connected Tater system: Verbas, Cores,
-  Portals, connected devices, Tater media, or Tater automations.
+  Portals, connected devices, Tater automations, or media generation.
+- Requests to generate an image, animation, audio clip, music, speech media, or video belong to Hydra. Tater
+  may fulfill them through a configured Verba or provider such as ComfyUI. Include the complete creative prompt and
+  any requested style, dimensions, aspect ratio, duration, or format in the delegation.
 - Do not delegate ordinary answers or local computer work. Use `terminal` for commands, files, Git, builds, tests,
   package management, and processes.
 - Hydra does not receive this conversation automatically. Make every delegated request self-contained and include the
   exact target, action, and constraints it needs.
+- Generated media can be returned as Hydra artifacts. Treat those artifacts as the requested output and tell the user
+  they are attached; do not call Hydra again just because its textual response is brief or empty.
+- If Hydra reports that generation is unavailable because a matching Verba or provider is missing, disabled, or not
+  configured, report that limitation directly. Do not retry the same request, fabricate an artifact, or silently fall
+  back to a terminal-made substitute unless the user explicitly asks for another approach.
 - Treat Hydra's result as a tool result. Continue the task after it returns and clearly report the actual outcome.
 """
 
@@ -72,8 +83,10 @@ def build_tater_hydra_payload(
                 'role': 'system',
                 'content': (
                     'This is a delegated Tater capability request from Tater Open WebUI. Execute the requested Tater action '
-                    'using your available Tater tools, then return a concise, factual result. Do not claim success '
-                    'unless the action actually completed.'
+                    'using your available Tater tools, then return a concise, factual result. For image, audio, music, '
+                    'or video generation, return every generated item as a Spud Link artifact. If no capable Verba or '
+                    'provider is configured, clearly say that generation is unavailable. Do not claim success unless '
+                    'the action actually completed, and never invent an artifact.'
                 ),
             },
             {'role': 'user', 'content': request_text},
@@ -135,6 +148,51 @@ def parse_tater_hydra_response(payload: Any, *, api_base_url: str) -> dict[str, 
         **({'artifacts': artifacts} if artifacts else {}),
         **({'usage': payload['usage']} if isinstance(payload.get('usage'), dict) else {}),
     }
+
+
+def tater_hydra_artifact_files(result: Any) -> list[dict[str, Any]]:
+    """Convert Hydra artifacts into chat attachments without exposing the Tater link token."""
+
+    if not isinstance(result, dict) or not isinstance(result.get('artifacts'), list):
+        return []
+
+    files: list[dict[str, Any]] = []
+    for artifact in result['artifacts']:
+        if not isinstance(artifact, dict):
+            continue
+
+        mimetype = str(artifact.get('mimetype') or artifact.get('mime_type') or '').strip().lower()
+        media_type = str(artifact.get('type') or '').strip().lower()
+        if media_type not in {'image', 'audio', 'video', 'file'}:
+            if mimetype.startswith('image/'):
+                media_type = 'image'
+            elif mimetype.startswith('audio/'):
+                media_type = 'audio'
+            elif mimetype.startswith('video/'):
+                media_type = 'video'
+            else:
+                media_type = 'file'
+
+        url = str(artifact.get('url') or artifact.get('dataUrl') or artifact.get('previewUrl') or '').strip()
+        file_id = str(artifact.get('id') or artifact.get('file_id') or '').strip()
+        if file_id and '/api/spudlink/v1/files/' in url:
+            query = urlencode({'mimetype': mimetype or 'application/octet-stream'})
+            url = f'/api/v1/tater/artifacts/{quote(file_id, safe="")}?{query}'
+        if not url:
+            continue
+
+        file_item: dict[str, Any] = {
+            'type': media_type,
+            'url': url,
+            'name': str(artifact.get('name') or artifact.get('filename') or 'Generated media').strip()
+            or 'Generated media',
+        }
+        if mimetype:
+            file_item['content_type'] = mimetype
+        if artifact.get('size') is not None:
+            file_item['size'] = artifact.get('size')
+        files.append(file_item)
+    return files
 
 
 def _error_detail(payload: Any, fallback: str) -> str:

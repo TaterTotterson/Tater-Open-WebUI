@@ -133,6 +133,7 @@ from open_webui.utils.tater_agent import (
     render_recent_chat_history,
     render_tool_history,
     resolved_background_task_prompt,
+    repeated_tool_call_plan_gap,
     simple_read_only_terminal_history,
     task_dispatch_request,
     tool_activity_status,
@@ -153,7 +154,11 @@ from open_webui.utils.tater_steering import (
     drain_live_agent_messages,
     register_live_agent_run,
 )
-from open_webui.utils.tater_hydra import get_tater_hydra_tools
+from open_webui.utils.tater_hydra import (
+    TATER_HYDRA_TOOL_NAME,
+    get_tater_hydra_tools,
+    tater_hydra_artifact_files,
+)
 from open_webui.utils.tools import (
     get_terminal_tools,
     get_updated_tool_function,
@@ -1187,6 +1192,9 @@ async def process_tool_result(
 
     tool_result_files = []
 
+    if tool_function_name == TATER_HYDRA_TOOL_NAME and isinstance(tool_result, dict):
+        tool_result_files.extend(tater_hydra_artifact_files(tool_result))
+
     # Detect base64 image data URIs from tool results (e.g. binary image
     # responses from execute_tool_server).  Move the data URI to
     # tool_result_files and replace tool_result with a text summary.
@@ -1588,12 +1596,23 @@ async def chat_completion_tools_handler(
         'foreground terminal workflow when the work is one objective, even if it needs several commands. A '
         'background task must never create '
         'more tasks, and parallel_tasks must be empty after tool execution has begun. '
+        'Use tater_hydra for requests to generate images, animation, audio, music, speech media, or video; '
+        'Tater may provide these through a configured Verba such as ComfyUI. Include the complete creative prompt '
+        'and requested format, size, aspect ratio, or duration. A successful Hydra artifact '
+        'is the deliverable even when its text response is empty. If Hydra says the required Verba or provider is '
+        'missing, disabled, or unavailable, report that result and finish without retrying the same request, '
+        'fabricating media, or substituting a terminal-built placeholder unless the user asks for an alternative. '
         'The Query is the only work being requested now. Do not start tools merely because history contains an '
         'unfinished idea or an earlier promise. Questions about background task status must be answered from the '
         'authoritative task state in the system message, never by terminal or Hydra. A bare acknowledgement starts '
         'work only when the Query explicitly states the earlier task it confirms. '
         'Never repeat an action that already succeeded unless rerunning it is needed to verify a later change. Use '
         'terminal for every local action; each call already returns its command output and exit status. For a '
+        'terminal command, exit code zero means the command ran; it does not mean the output answered the task. If '
+        'a read does not reveal the needed information, change the path, search, line range, or inspection method '
+        'instead of repeating it. An unchanged call from the immediately preceding execution step is rejected '
+        'before execution. If a command failed, inspect its error and correct the command or choose another approach '
+        'before retrying. For a '
         'large file or directory, prefer focused rg, sed -n, head, or tail commands instead of unbounded cat or '
         'recursive listings. If a terminal result says truncated=true, do not repeat the same command: narrow the '
         'path, search, or line range and continue from the command index in the execution history. For a '
@@ -2063,6 +2082,9 @@ async def chat_completion_tools_handler(
                     routing_gap = execution_routing_plan_gap(tool_calls, parallel_tasks)
                     if routing_gap:
                         raise ValueError(routing_gap)
+                    repeat_gap = repeated_tool_call_plan_gap(tool_calls, history_records)
+                    if repeat_gap:
+                        raise ValueError(repeat_gap)
                     ledger_event(
                         'planner_attempt_finished',
                         iteration=iteration,

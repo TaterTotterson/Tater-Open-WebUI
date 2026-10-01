@@ -469,6 +469,7 @@ async def _post_parent_result(
     summary: str,
     error: str,
     model_id: str,
+    files: list[dict[str, Any]] | None = None,
 ) -> None:
     task_chat = await Chats.get_chat_by_id(task_chat_id)
     task_context = ((task_chat.chat or {}).get('taterAgentContext') if task_chat else None) or {}
@@ -531,6 +532,7 @@ async def _post_parent_result(
         'done': True,
         'model': model_id,
         'timestamp': int(time.time()),
+        **({'files': copy.deepcopy(files)} if files else {}),
     }
 
     parent_folder_id = None
@@ -730,6 +732,7 @@ async def start_tater_task(
         status = 'failed'
         summary = ''
         error = ''
+        result_files: list[dict[str, Any]] = []
         cancelled = False
         task_started_at = time.monotonic()
         ledger_event('task_execution_started', session_id=run['session_id'])
@@ -774,6 +777,11 @@ async def start_tater_task(
                 ((completed_task_chat.chat or {}).get('taterAgentContext') if completed_task_chat else None) or {}
             )
             summary = str(completed_context.get('execution_summary') or '').strip() or _message_text(message)
+            result_files = [
+                copy.deepcopy(item)
+                for item in ((message or {}).get('files') or [])
+                if isinstance(item, dict)
+            ]
             message_error = (message or {}).get('error')
             agent_stop_reason = str(getattr(child_request.state, 'tater_agent_stop_reason', '') or '').strip()
             if agent_stop_reason:
@@ -843,6 +851,7 @@ async def start_tater_task(
                         summary=summary,
                         error=error,
                         model_id=run['model_id'],
+                        files=result_files,
                     )
                     delivery_error = None
                     ledger_event(

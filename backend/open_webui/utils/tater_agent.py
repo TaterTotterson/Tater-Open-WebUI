@@ -776,10 +776,44 @@ def completed_hydra_delegation_answer(records: Any) -> str:
         if not isinstance(result, dict) or result.get('status') != 'completed':
             return ''
         response = str(result.get('response') or '').strip()
-        if not response:
+        artifacts = [item for item in result.get('artifacts', []) if isinstance(item, dict)]
+        if response:
+            responses.append(response)
+        elif artifacts:
+            media_types = sorted(
+                {
+                    str(item.get('type') or 'media').strip().lower() or 'media'
+                    for item in artifacts
+                }
+            )
+            label = ', '.join(media_types) if media_types else 'media'
+            responses.append(
+                f'Tater Hydra generated {len(artifacts)} {label} artifact'
+                f'{"s" if len(artifacts) != 1 else ""}. The generated media is attached.'
+            )
+        else:
             return ''
-        responses.append(response)
     return '\n\n'.join(responses)
+
+
+def terminal_command_is_obviously_read_only(command: Any) -> bool:
+    """Return true only when a shell command cannot reasonably change task state."""
+
+    command = str(command or '').strip()
+    if not command or re.search(r'[\n;&|><`]|\$\(', command):
+        return False
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return False
+    if not arguments:
+        return False
+    if any(argument == '--output' or argument.startswith('--output=') for argument in arguments[1:]):
+        return False
+    executable = arguments[0].rsplit('/', 1)[-1]
+    if executable in _FAST_READ_ONLY_COMMANDS:
+        return True
+    return bool(executable == 'git' and len(arguments) > 1 and arguments[1] in _FAST_READ_ONLY_GIT_COMMANDS)
 
 
 def simple_read_only_terminal_history(records: Any) -> bool:
@@ -791,23 +825,8 @@ def simple_read_only_terminal_history(records: Any) -> bool:
         if not isinstance(record, dict) or record.get('tool') != 'terminal' or record.get('status') != 'completed':
             return False
         parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '').strip()
-        if not command or re.search(r'[\n;&|><`]|\$\(', command):
+        if not terminal_command_is_obviously_read_only(parameters.get('command')):
             return False
-        try:
-            arguments = shlex.split(command)
-        except ValueError:
-            return False
-        if not arguments:
-            return False
-        if any(argument == '--output' or argument.startswith('--output=') for argument in arguments[1:]):
-            return False
-        executable = arguments[0].rsplit('/', 1)[-1]
-        if executable in _FAST_READ_ONLY_COMMANDS:
-            continue
-        if executable == 'git' and len(arguments) > 1 and arguments[1] in _FAST_READ_ONLY_GIT_COMMANDS:
-            continue
-        return False
     return True
 
 
@@ -1419,3 +1438,115 @@ def tool_outcome_signature(name: str, parameters: dict[str, Any], result: Any) -
         separators=(',', ':'),
     )
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def tool_call_signature(name: str, parameters: dict[str, Any], *, cwd: str = '') -> str:
+    """Return a stable signature for a proposed tool call before it executes."""
+
+    name = str(name or '').strip()
+    normalized_parameters = dict(parameters) if isinstance(parameters, dict) else {}
+    if name == 'terminal' and not str(normalized_parameters.get('cwd') or '').strip() and cwd:
+        normalized_parameters['cwd'] = cwd
+    payload = json.dumps(
+        {'name': name, 'parameters': normalized_parameters},
+        ensure_ascii=False,
+        default=str,
+        sort_keys=True,
+        separators=(',', ':'),
+    )
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
+    """Reject unchanged calls from the latest execution step before rerunning them."""
+
+    if not isinstance(tool_calls, list) or not tool_calls or not isinstance(records, list):
+        return ''
+
+    execution_records = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        tool = str(record.get('tool') or '').strip()
+        if (
+            not tool
+            or tool.startswith('agent_')
+            or tool in {'foreground_task_scope', 'user_steering'}
+            or not isinstance(record.get('parameters'), dict)
+        ):
+            continue
+        execution_records.append(record)
+    if not execution_records:
+        return ''
+
+    def terminal_result_cwd(record: dict[str, Any]) -> str:
+        result = record.get('result')
+        if isinstance(result, str) and result[:1] in {'{', '['}:
+            try:
+                result = json.loads(result)
+            except json.JSONDecodeError:
+                return ''
+        return str(result.get('cwd') or '').strip() if isinstance(result, dict) else ''
+
+    active_terminal_cwd = ''
+    for record in reversed(execution_records):
+        if record.get('tool') == 'terminal':
+            active_terminal_cwd = terminal_result_cwd(record)
+            if active_terminal_cwd:
+                break
+
+    latest_iteration = execution_records[-1].get('iteration')
+    proposed_signatures: set[str] = set()
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get('name') or '').strip()
+        parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
+        signature = tool_call_signature(name, parameters, cwd=active_terminal_cwd)
+        if signature in proposed_signatures:
+            return (
+                f'The plan contains the identical {name or "tool"} call more than once. Keep one copy and use '
+                'a different focused call for any additional evidence.'
+            )
+        proposed_signatures.add(signature)
+
+        previous = None
+        for record_index in range(len(execution_records) - 1, -1, -1):
+            record = execution_records[record_index]
+            record_signature = tool_call_signature(
+                str(record.get('tool') or ''),
+                record.get('parameters') or {},
+                cwd=terminal_result_cwd(record),
+            )
+            if record_signature != signature:
+                continue
+            calls_since = execution_records[record_index + 1 :]
+            unchanged_since = bool(
+                name == 'terminal'
+                and all(
+                    str(item.get('tool') or '') == 'terminal'
+                    and terminal_command_is_obviously_read_only(
+                        (item.get('parameters') or {}).get('command')
+                    )
+                    for item in calls_since
+                )
+            )
+            if record.get('iteration') == latest_iteration or unchanged_since:
+                previous = record
+            break
+        if not previous:
+            continue
+        previous_status = str(previous.get('status') or '').strip().casefold()
+        if previous_status == 'completed':
+            return (
+                f'The identical {name or "tool"} call already completed and no intervening action changed its '
+                'inputs. Its result is in the history. Do not repeat it. A successful command only proves that it '
+                'ran; if its output did not answer the task, choose a different command, path, search, or line range. '
+                'Otherwise continue from that evidence or finish.'
+            )
+        return (
+            f'The identical {name or "tool"} call already failed and no intervening action corrected its inputs. '
+            'Retrying it unchanged cannot correct the failure. Inspect the recorded error and change the command or '
+            'parameters, use another approach, or report the concrete blocker.'
+        )
+    return ''
