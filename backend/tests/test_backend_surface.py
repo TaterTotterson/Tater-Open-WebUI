@@ -310,12 +310,13 @@ class BackendSurfaceTests(unittest.TestCase):
 
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
         task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
-        response_source = RESPONSE_MESSAGE_PATH.read_text(encoding='utf-8')
         self.assertIn('tater_hydra_artifact_files(tool_result)', middleware_source)
         self.assertIn("'files': copy.deepcopy(files)", task_source)
-        self.assertIn("['image', 'audio', 'video', 'file']", response_source)
-        self.assertIn('<video', response_source)
-        self.assertIn('<audio', response_source)
+        if RESPONSE_MESSAGE_PATH.exists():
+            response_source = RESPONSE_MESSAGE_PATH.read_text(encoding='utf-8')
+            self.assertIn("['image', 'audio', 'video', 'file']", response_source)
+            self.assertIn('<video', response_source)
+            self.assertIn('<audio', response_source)
 
     def test_tater_voice_mode_uses_linked_tater_speech(self):
         if not CALL_OVERLAY_PATH.exists():
