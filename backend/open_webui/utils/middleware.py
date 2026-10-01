@@ -157,7 +157,7 @@ from open_webui.utils.tater_steering import (
 from open_webui.utils.tater_hydra import (
     TATER_HYDRA_TOOL_NAME,
     get_tater_hydra_tools,
-    tater_hydra_artifact_files,
+    persist_tater_hydra_artifact_files,
 )
 from open_webui.utils.tools import (
     get_terminal_tools,
@@ -1193,7 +1193,14 @@ async def process_tool_result(
     tool_result_files = []
 
     if tool_function_name == TATER_HYDRA_TOOL_NAME and isinstance(tool_result, dict):
-        tool_result_files.extend(tater_hydra_artifact_files(tool_result))
+        tool_result_files.extend(
+            await persist_tater_hydra_artifact_files(
+                request,
+                tool_result,
+                metadata,
+                user,
+            )
+        )
 
     # Detect base64 image data URIs from tool results (e.g. binary image
     # responses from execute_tool_server).  Move the data URI to

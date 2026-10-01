@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import json
+import logging
+import mimetypes
 import os
+import tempfile
 from typing import Any
 from urllib.parse import quote, urlencode, urljoin
+
+log = logging.getLogger(__name__)
 
 TATER_HYDRA_TOOL_NAME = 'tater_hydra'
 DEFAULT_TATER_HYDRA_TIMEOUT_SECONDS = 600
 MAX_TATER_HYDRA_TIMEOUT_SECONDS = 3600
 MAX_TATER_HYDRA_RESPONSE_BYTES = 4_000_000
+TATER_HYDRA_ARTIFACT_SPOOL_BYTES = 8 * 1024 * 1024
+DEFAULT_TATER_HYDRA_ARTIFACT_MAX_MB = 1024
 
 TATER_HYDRA_TOOL_SPEC = {
     'name': TATER_HYDRA_TOOL_NAME,
@@ -192,6 +199,200 @@ def tater_hydra_artifact_files(result: Any) -> list[dict[str, Any]]:
         if artifact.get('size') is not None:
             file_item['size'] = artifact.get('size')
         files.append(file_item)
+    return files
+
+
+def _artifact_max_bytes() -> int:
+    raw = os.getenv('TATER_HYDRA_ARTIFACT_MAX_MB', str(DEFAULT_TATER_HYDRA_ARTIFACT_MAX_MB))
+    try:
+        megabytes = int(raw)
+    except (TypeError, ValueError):
+        megabytes = DEFAULT_TATER_HYDRA_ARTIFACT_MAX_MB
+    return max(1, min(megabytes, 4096)) * 1024 * 1024
+
+
+def _artifact_name(artifact: dict[str, Any], *, index: int, mimetype: str) -> str:
+    raw_name = str(artifact.get('name') or artifact.get('filename') or '').strip()
+    name = os.path.basename(raw_name.replace('\\', '/')).strip()
+    if not name:
+        extension = mimetypes.guess_extension(mimetype or '') or ''
+        name = f'tater-hydra-artifact-{index}{extension}'
+    return name[:255]
+
+
+async def _upload_tater_hydra_artifact(
+    request: Any,
+    *,
+    file_obj: Any,
+    name: str,
+    mimetype: str,
+    media_type: str,
+    size: int,
+    metadata: dict[str, Any],
+    user: Any,
+    artifact_id: str,
+) -> dict[str, Any]:
+    from fastapi import UploadFile
+    from open_webui.routers.files import upload_file_handler
+
+    upload = UploadFile(
+        file=file_obj,
+        filename=name,
+        headers={'content-type': mimetype},
+    )
+    file_metadata = {
+        key: metadata.get(key)
+        for key in ('chat_id', 'message_id', 'session_id')
+        if metadata.get(key)
+    }
+    file_metadata.update(
+        {
+            'source': TATER_HYDRA_TOOL_NAME,
+            'tater_artifact_id': artifact_id,
+            'tater_artifact_type': media_type,
+        }
+    )
+    stored = await upload_file_handler(
+        request,
+        file=upload,
+        metadata=file_metadata,
+        process=False,
+        user=user,
+    )
+    stored_id = str(stored.get('id') if isinstance(stored, dict) else getattr(stored, 'id', '')).strip()
+    if not stored_id:
+        raise RuntimeError('Open WebUI did not return a stored file id')
+    return {
+        'id': stored_id,
+        'type': media_type,
+        'url': str(request.app.url_path_for('get_file_content_by_id', id=stored_id)),
+        'name': name,
+        'content_type': mimetype,
+        'size': size,
+    }
+
+
+async def persist_tater_hydra_artifact_files(
+    request: Any,
+    result: Any,
+    metadata: dict[str, Any] | None,
+    user: Any,
+) -> list[dict[str, Any]]:
+    """Copy Hydra artifacts into Open WebUI storage before attaching them to chat."""
+
+    if not isinstance(result, dict) or not isinstance(result.get('artifacts'), list):
+        return []
+
+    artifacts = [item for item in result['artifacts'] if isinstance(item, dict)]
+    if not artifacts:
+        return []
+
+    try:
+        api_base_url, api_key, _hydra_model = await get_tater_hydra_connection()
+    except Exception as exc:
+        log.warning('Could not load the Tater link for Hydra artifact persistence: %s', exc)
+        return tater_hydra_artifact_files(result)
+
+    import aiohttp
+
+    user_id = str(getattr(user, 'id', '') or '').strip()
+    user_name = str(getattr(user, 'name', '') or getattr(user, 'email', '') or '').strip()
+    headers = {
+        'Accept-Encoding': 'identity',
+        'X-SpudLink-Client': 'tater-open-webui',
+        'X-SpudLink-Device': 'Tater Open WebUI',
+    }
+    if api_key:
+        headers['Authorization'] = f'Bearer {api_key}'
+    if user_id:
+        headers['X-SpudLink-User-ID'] = user_id[:128]
+    if user_name:
+        headers['X-SpudLink-User'] = user_name[:80]
+
+    max_bytes = _artifact_max_bytes()
+    timeout = aiohttp.ClientTimeout(total=MAX_TATER_HYDRA_TIMEOUT_SECONDS, connect=30)
+    files: list[dict[str, Any]] = []
+    async with aiohttp.ClientSession(timeout=timeout, trust_env=True, auto_decompress=False) as session:
+        for index, artifact in enumerate(artifacts, start=1):
+            fallback = tater_hydra_artifact_files({'artifacts': [artifact]})
+            fallback_file = fallback[0] if fallback else None
+            file_id = str(artifact.get('id') or artifact.get('file_id') or '').strip()
+            if not file_id:
+                if fallback_file:
+                    files.append(fallback_file)
+                continue
+
+            mimetype = str(
+                artifact.get('mimetype') or artifact.get('mime_type') or artifact.get('content_type') or ''
+            ).strip().lower()
+            media_type = str(artifact.get('type') or '').strip().lower()
+            if media_type not in {'image', 'audio', 'video', 'file'}:
+                if mimetype.startswith('image/'):
+                    media_type = 'image'
+                elif mimetype.startswith('audio/'):
+                    media_type = 'audio'
+                elif mimetype.startswith('video/'):
+                    media_type = 'video'
+                else:
+                    media_type = 'file'
+            name = _artifact_name(artifact, index=index, mimetype=mimetype)
+            query = urlencode({'mimetype': mimetype or 'application/octet-stream'})
+            artifact_url = urljoin(
+                f'{api_base_url.rstrip("/")}/',
+                f'/api/spudlink/v1/files/{quote(file_id, safe="")}?{query}',
+            )
+
+            try:
+                request_headers = {**headers, 'Accept': mimetype or 'application/octet-stream'}
+                async with session.get(artifact_url, headers=request_headers) as response:
+                    if response.status >= 400:
+                        detail = (await response.text())[:500]
+                        raise RuntimeError(f'Tater returned HTTP {response.status}: {detail or "artifact unavailable"}')
+                    if response.content_length is not None and response.content_length > max_bytes:
+                        raise RuntimeError(
+                            f'artifact is larger than the configured {max_bytes // (1024 * 1024)} MB limit'
+                        )
+                    response_mimetype = str(response.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
+                    if not mimetype or mimetype == 'application/octet-stream':
+                        mimetype = response_mimetype or 'application/octet-stream'
+                    if media_type == 'file':
+                        if mimetype.startswith('image/'):
+                            media_type = 'image'
+                        elif mimetype.startswith('audio/'):
+                            media_type = 'audio'
+                        elif mimetype.startswith('video/'):
+                            media_type = 'video'
+
+                    with tempfile.SpooledTemporaryFile(max_size=TATER_HYDRA_ARTIFACT_SPOOL_BYTES, mode='w+b') as file_obj:
+                        size = 0
+                        async for chunk in response.content.iter_chunked(64 * 1024):
+                            size += len(chunk)
+                            if size > max_bytes:
+                                raise RuntimeError(
+                                    f'artifact is larger than the configured {max_bytes // (1024 * 1024)} MB limit'
+                                )
+                            file_obj.write(chunk)
+                        if size <= 0:
+                            raise RuntimeError('Tater returned an empty artifact')
+                        file_obj.seek(0)
+                        files.append(
+                            await _upload_tater_hydra_artifact(
+                                request,
+                                file_obj=file_obj,
+                                name=name,
+                                mimetype=mimetype or 'application/octet-stream',
+                                media_type=media_type,
+                                size=size,
+                                metadata=metadata or {},
+                                user=user,
+                                artifact_id=file_id,
+                            )
+                        )
+            except Exception as exc:
+                log.warning('Could not persist Tater Hydra artifact %s (%s): %s', file_id, name, exc)
+                if fallback_file:
+                    files.append(fallback_file)
+
     return files
 
 

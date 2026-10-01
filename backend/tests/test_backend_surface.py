@@ -310,7 +310,7 @@ class BackendSurfaceTests(unittest.TestCase):
 
         middleware_source = MIDDLEWARE_PATH.read_text(encoding='utf-8')
         task_source = TATER_TASKS_PATH.read_text(encoding='utf-8')
-        self.assertIn('tater_hydra_artifact_files(tool_result)', middleware_source)
+        self.assertIn('await persist_tater_hydra_artifact_files(', middleware_source)
         self.assertIn("'files': copy.deepcopy(files)", task_source)
         if RESPONSE_MESSAGE_PATH.exists():
             response_source = RESPONSE_MESSAGE_PATH.read_text(encoding='utf-8')

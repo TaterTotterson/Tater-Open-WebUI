@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from aiohttp import web
 
@@ -115,6 +117,13 @@ class TaterHydraTests(unittest.TestCase):
 class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.received = {}
+        self.artifact_requests = {}
+        self.artifact_payloads = {
+            'image-1': (b'\x89PNG\r\n\x1a\nimage', 'image/png'),
+            'audio-1': (b'ID3audio', 'audio/mpeg'),
+            'video-1': (b'\x00\x00\x00\x18ftypmp42video', 'video/mp4'),
+            'file-1': (b'%PDF-file', 'application/pdf'),
+        }
 
         async def completion(request):
             self.received['authorization'] = request.headers.get('Authorization')
@@ -129,8 +138,22 @@ class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
+        async def artifact(request):
+            file_id = request.match_info['file_id']
+            self.artifact_requests[file_id] = {
+                'authorization': request.headers.get('Authorization'),
+                'user_id': request.headers.get('X-SpudLink-User-ID'),
+                'user_name': request.headers.get('X-SpudLink-User'),
+            }
+            payload = self.artifact_payloads.get(file_id)
+            if payload is None:
+                return web.Response(status=404, text='Attachment not found or expired.')
+            body, content_type = payload
+            return web.Response(body=body, content_type=content_type)
+
         app = web.Application()
         app.router.add_post('/v1/chat/completions', completion)
+        app.router.add_get('/api/spudlink/v1/files/{file_id}', artifact)
         self.runner = web.AppRunner(app)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, '127.0.0.1', 0)
@@ -159,6 +182,101 @@ class TaterHydraHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.received['user_id'], 'user-1')
         self.assertEqual(self.received['user_name'], 'Ada')
         self.assertEqual(self.received['payload']['model'], 'tater/hydra')
+
+    async def test_persists_every_hydra_media_type_in_open_webui_storage(self):
+        persisted = []
+
+        async def connection():
+            return self.api_base_url, 'secret-token', 'tater/hydra'
+
+        async def upload(_request, **kwargs):
+            body = kwargs['file_obj'].read()
+            artifact_id = kwargs['artifact_id']
+            persisted.append({**kwargs, 'body': body})
+            return {
+                'id': f'local-{artifact_id}',
+                'type': kwargs['media_type'],
+                'url': f'/api/v1/files/local-{artifact_id}/content',
+                'name': kwargs['name'],
+                'content_type': kwargs['mimetype'],
+                'size': kwargs['size'],
+            }
+
+        result = {
+            'artifacts': [
+                {'id': 'image-1', 'type': 'image', 'name': '../potato.png', 'mimetype': 'image/png'},
+                {'id': 'audio-1', 'type': 'audio', 'name': 'song.mp3', 'mimetype': 'audio/mpeg'},
+                {'id': 'video-1', 'type': 'video', 'name': 'clip.mp4', 'mimetype': 'video/mp4'},
+                {'id': 'file-1', 'type': 'file', 'name': 'notes.pdf', 'mimetype': 'application/pdf'},
+            ]
+        }
+        user = SimpleNamespace(id='user-1', name='Ada', email='ada@example.test')
+        metadata = {'chat_id': 'chat-1', 'message_id': 'message-1'}
+
+        with (
+            patch.object(tater_hydra, 'get_tater_hydra_connection', connection),
+            patch.object(tater_hydra, '_upload_tater_hydra_artifact', upload),
+        ):
+            files = await tater_hydra.persist_tater_hydra_artifact_files(
+                SimpleNamespace(),
+                result,
+                metadata,
+                user,
+            )
+
+        self.assertEqual([item['type'] for item in files], ['image', 'audio', 'video', 'file'])
+        self.assertEqual(
+            [item['url'] for item in files],
+            [
+                '/api/v1/files/local-image-1/content',
+                '/api/v1/files/local-audio-1/content',
+                '/api/v1/files/local-video-1/content',
+                '/api/v1/files/local-file-1/content',
+            ],
+        )
+        self.assertEqual(persisted[0]['name'], 'potato.png')
+        self.assertEqual([item['body'] for item in persisted], [value[0] for value in self.artifact_payloads.values()])
+        self.assertEqual(persisted[0]['metadata'], metadata)
+        for request_headers in self.artifact_requests.values():
+            self.assertEqual(request_headers['authorization'], 'Bearer secret-token')
+            self.assertEqual(request_headers['user_id'], 'user-1')
+            self.assertEqual(request_headers['user_name'], 'Ada')
+
+    async def test_failed_persistence_keeps_the_protected_proxy_fallback(self):
+        async def connection():
+            return self.api_base_url, 'secret-token', 'tater/hydra'
+
+        result = {
+            'artifacts': [
+                {
+                    'id': 'missing',
+                    'type': 'image',
+                    'name': 'missing.png',
+                    'mimetype': 'image/png',
+                    'url': f'{self.api_base_url.removesuffix("/v1")}/api/spudlink/v1/files/missing',
+                }
+            ]
+        }
+
+        with patch.object(tater_hydra, 'get_tater_hydra_connection', connection):
+            files = await tater_hydra.persist_tater_hydra_artifact_files(
+                SimpleNamespace(),
+                result,
+                {},
+                SimpleNamespace(id='user-1', name='Ada', email='ada@example.test'),
+            )
+
+        self.assertEqual(
+            files,
+            [
+                {
+                    'type': 'image',
+                    'url': '/api/v1/tater/artifacts/missing?mimetype=image%2Fpng',
+                    'name': 'missing.png',
+                    'content_type': 'image/png',
+                }
+            ],
+        )
 
 
 if __name__ == '__main__':
