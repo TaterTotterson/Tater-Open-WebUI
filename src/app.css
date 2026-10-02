@@ -15,6 +15,31 @@
 /* --app-text-scale is updated via the UI Scale slider (Interface.svelte) */
 :root {
 	--app-text-scale: 1;
+	--tater-accent: #d86118;
+	--tater-accent-strong: #a9440b;
+	--tater-accent-soft: rgba(216, 97, 24, 0.1);
+	--tater-accent-softer: rgba(216, 97, 24, 0.055);
+	--tater-sidebar-bg: #faf8f4;
+	--tater-sidebar-surface: rgba(255, 253, 249, 0.88);
+	--tater-sidebar-surface-strong: rgba(255, 255, 255, 0.95);
+	--tater-sidebar-border: rgba(128, 86, 54, 0.16);
+	--tater-sidebar-text: #3f342d;
+	--tater-sidebar-muted: #74665c;
+	--tater-sidebar-branch: rgba(216, 97, 24, 0.2);
+}
+
+html.dark {
+	--tater-accent: #f38a42;
+	--tater-accent-strong: #ffad70;
+	--tater-accent-soft: rgba(243, 138, 66, 0.14);
+	--tater-accent-softer: rgba(243, 138, 66, 0.07);
+	--tater-sidebar-bg: #171411;
+	--tater-sidebar-surface: rgba(38, 31, 26, 0.9);
+	--tater-sidebar-surface-strong: rgba(43, 35, 29, 0.96);
+	--tater-sidebar-border: rgba(255, 179, 117, 0.13);
+	--tater-sidebar-text: #f1e8e1;
+	--tater-sidebar-muted: #baaaa0;
+	--tater-sidebar-branch: rgba(243, 138, 66, 0.24);
 }
 
 html {
@@ -40,6 +65,279 @@ html {
 #sidebar-chat-item input {
 	/* editing state input height is kept in sync */
 	min-height: calc(20px * var(--app-text-scale, 1));
+}
+
+/* Tater sidebar visual hierarchy -------------------------------------------------
+   The navigation intentionally uses warm surfaces and strong type contrast so
+   projects, chats, and their running tasks read as separate levels at a glance. */
+.tater-sidebar-panel {
+	color: var(--tater-sidebar-text);
+	background:
+		radial-gradient(circle at 18% -8%, var(--tater-accent-soft), transparent 34%),
+		linear-gradient(180deg, var(--tater-sidebar-surface) 0, var(--tater-sidebar-bg) 28%);
+	border-color: var(--tater-sidebar-border) !important;
+	box-shadow: 12px 0 32px rgba(65, 42, 24, 0.035);
+}
+
+html.dark .tater-sidebar-panel {
+	box-shadow: 12px 0 34px rgba(0, 0, 0, 0.2);
+}
+
+.tater-sidebar-brand,
+.tater-sidebar-footer {
+	background: var(--tater-sidebar-surface-strong);
+	border: 1px solid var(--tater-sidebar-border);
+	border-radius: 0.9rem;
+	box-shadow:
+		0 1px 2px rgba(63, 38, 18, 0.04),
+		0 8px 24px rgba(63, 38, 18, 0.035);
+	backdrop-filter: blur(16px);
+}
+
+.tater-sidebar-brand::before {
+	position: absolute;
+	inset-block: 0.55rem;
+	inset-inline-start: -1px;
+	width: 3px;
+	content: '';
+	border-radius: 0 999px 999px 0;
+	background: linear-gradient(180deg, #f6a34d, var(--tater-accent));
+}
+
+.tater-sidebar-logo-button img {
+	box-shadow:
+		0 0 0 2px var(--tater-sidebar-surface-strong),
+		0 0 0 3px rgba(216, 97, 24, 0.2);
+}
+
+.tater-sidebar-name {
+	color: var(--tater-sidebar-text) !important;
+	font-size: 0.875rem;
+	font-weight: 680;
+	letter-spacing: -0.012em;
+}
+
+.tater-sidebar-collapse {
+	color: var(--tater-sidebar-muted);
+}
+
+.tater-sidebar-header-fade {
+	background: linear-gradient(to bottom, var(--tater-sidebar-bg) 45%, transparent);
+}
+
+.tater-sidebar-scroll {
+	scroll-padding-block: 0.75rem;
+}
+
+.tater-sidebar-primary-action {
+	color: var(--tater-accent-strong);
+	font-weight: 650;
+	background: linear-gradient(135deg, var(--tater-accent-soft), var(--tater-accent-softer));
+	border: 1px solid rgba(216, 97, 24, 0.2);
+	box-shadow: inset 0 1px rgba(255, 255, 255, 0.42);
+}
+
+.tater-sidebar-primary-action:hover,
+.tater-sidebar-primary-action:focus-visible {
+	color: var(--tater-accent-strong);
+	background: rgba(216, 97, 24, 0.15) !important;
+	border-color: rgba(216, 97, 24, 0.3);
+	transform: translateY(-1px);
+}
+
+html.dark .tater-sidebar-primary-action {
+	border-color: rgba(243, 138, 66, 0.22);
+	box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+html.dark .tater-sidebar-primary-action:hover,
+html.dark .tater-sidebar-primary-action:focus-visible {
+	background: rgba(243, 138, 66, 0.18) !important;
+	border-color: rgba(243, 138, 66, 0.34);
+}
+
+.tater-sidebar-secondary-action {
+	margin-top: 0.2rem;
+	color: var(--tater-sidebar-muted);
+}
+
+.tater-sidebar-secondary-action:hover,
+.tater-sidebar-secondary-action:focus-visible {
+	color: var(--tater-sidebar-text);
+	background: var(--tater-sidebar-surface-strong) !important;
+}
+
+.tater-sidebar-section {
+	margin-inline: 0.5rem;
+}
+
+.tater-sidebar-section-header {
+	border-top: 1px solid var(--tater-sidebar-border);
+}
+
+.tater-sidebar-section:first-of-type .tater-sidebar-section-header {
+	border-top-color: transparent;
+}
+
+.tater-sidebar-section-header > button:first-child {
+	color: var(--tater-sidebar-muted);
+}
+
+.tater-sidebar-section-header > button:first-child:hover,
+.tater-sidebar-section-header > button:first-child:focus-visible {
+	color: var(--tater-sidebar-text);
+}
+
+.tater-sidebar-section-marker {
+	width: 3px;
+	height: 0.8rem;
+	flex: none;
+	border-radius: 999px;
+	background: linear-gradient(180deg, #f5a04a, var(--tater-accent));
+	box-shadow: 0 0 0 3px var(--tater-accent-softer);
+}
+
+.tater-sidebar-section-chevron {
+	color: var(--tater-accent);
+}
+
+.tater-sidebar-section-add:hover,
+.tater-sidebar-section-add:focus-visible {
+	color: var(--tater-accent-strong) !important;
+	background: var(--tater-accent-soft);
+}
+
+.tater-project-row {
+	min-height: 2.15rem;
+	color: var(--tater-sidebar-text);
+	border: 1px solid transparent;
+}
+
+.tater-project-row:hover {
+	background: var(--tater-sidebar-surface-strong) !important;
+	border-color: var(--tater-sidebar-border);
+}
+
+.tater-project-row[aria-current='page'] {
+	color: var(--tater-accent-strong);
+	background: var(--tater-accent-soft) !important;
+	border-color: rgba(216, 97, 24, 0.22);
+	box-shadow: inset 3px 0 var(--tater-accent);
+}
+
+.tater-project-icon {
+	color: var(--tater-accent-strong) !important;
+	background: var(--tater-accent-soft);
+}
+
+.tater-project-name {
+	font-size: 0.8125rem;
+	letter-spacing: -0.006em;
+}
+
+.tater-sidebar-branch {
+	border-color: var(--tater-sidebar-branch) !important;
+}
+
+.tater-chat-row {
+	position: relative;
+	color: var(--tater-sidebar-muted);
+	border: 1px solid transparent;
+}
+
+.tater-chat-row:hover {
+	color: var(--tater-sidebar-text);
+	background: var(--tater-sidebar-surface-strong) !important;
+}
+
+.tater-chat-row[aria-current='page'],
+.tater-chat-row.selected {
+	color: var(--tater-sidebar-text);
+	font-weight: 590;
+	background: var(--tater-accent-soft) !important;
+	border-color: rgba(216, 97, 24, 0.14);
+	box-shadow: inset 3px 0 var(--tater-accent);
+}
+
+.tater-chat-time-label {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	color: var(--tater-sidebar-muted) !important;
+	font-size: 0.625rem;
+	font-weight: 650;
+	line-height: 1rem;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+}
+
+.tater-chat-time-label::after {
+	height: 1px;
+	min-width: 1rem;
+	flex: 1;
+	content: '';
+	background: linear-gradient(to right, var(--tater-sidebar-border), transparent);
+}
+
+.tater-pinned-group-button #sidebar-folder-button,
+.tater-pinned-group #sidebar-folder-button {
+	color: var(--tater-sidebar-muted);
+}
+
+.tater-pinned-group #sidebar-folder-button button {
+	font-weight: 620;
+	letter-spacing: 0.015em;
+}
+
+.tater-task-connector::before,
+.tater-task-connector::after {
+	border-color: var(--tater-sidebar-branch) !important;
+}
+
+.tater-task-row {
+	margin-block: 0.08rem;
+	color: var(--tater-sidebar-text);
+	background: var(--tater-accent-softer);
+	border: 1px solid rgba(216, 97, 24, 0.1);
+}
+
+.tater-task-row:hover {
+	background: var(--tater-accent-soft) !important;
+	border-color: rgba(216, 97, 24, 0.2);
+}
+
+.tater-task-row > button > span:nth-child(2) > span:first-child {
+	color: var(--tater-sidebar-text) !important;
+	font-weight: 560;
+}
+
+.tater-task-row > button > span:nth-child(2) > span:last-child {
+	color: var(--tater-sidebar-muted) !important;
+}
+
+.tater-sidebar-footer {
+	color: var(--tater-sidebar-text);
+}
+
+.tater-sidebar-footer-fade {
+	background: linear-gradient(to top, var(--tater-sidebar-bg) 42%, transparent);
+}
+
+.tater-sidebar-user:hover,
+.tater-sidebar-user:focus-visible {
+	background: var(--tater-accent-soft) !important;
+}
+
+html.high-contrast .tater-sidebar-panel {
+	--tater-sidebar-border: currentColor;
+	--tater-sidebar-muted: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tater-sidebar-primary-action:hover,
+	.tater-sidebar-primary-action:focus-visible {
+		transform: none;
+	}
 }
 
 code {

@@ -140,7 +140,7 @@
 		(effectiveReadAt === null || (updatedAt !== null && updatedAt > effectiveReadAt));
 	$: showInlineActions =
 		id === $chatId || confirmEdit || mouseOver || focusWithin || menuOpen || selected;
-	$: chatItemClass = ` w-full flex justify-between rounded-xl px-2 py-1.5 ${
+	$: chatItemClass = `tater-chat-row w-full flex justify-between rounded-xl px-2 py-1.5 ${
 		id === $chatId || confirmEdit
 			? ($settings?.highContrastMode ?? false)
 				? 'bg-black/[0.035] dark:bg-white/[0.06] selected'
@@ -613,7 +613,8 @@
 	{#if confirmEdit}
 		<div
 			id="sidebar-chat-item"
-			class=" w-full flex justify-between rounded-xl px-2 py-1.5 {id === $chatId || confirmEdit
+			class="tater-chat-row w-full flex justify-between rounded-xl px-2 py-1.5 {id === $chatId ||
+			confirmEdit
 				? ($settings?.highContrastMode ?? false)
 					? 'bg-black/[0.035] dark:bg-white/[0.06] selected'
 					: 'bg-black/[0.035] dark:bg-white/[0.045] selected'
@@ -793,10 +794,13 @@
 </div>
 
 {#if tasks.length > 0}
-	<div class="ml-3 mt-[0.0625rem] flex flex-col" aria-label={`Tasks for ${title}`}>
+	<div
+		class="tater-task-branch ml-3 mt-[0.0625rem] flex flex-col"
+		aria-label={`Tasks for ${title}`}
+	>
 		{#each tasks as task, index (task.id)}
 			<div
-				class="relative pl-2 after:absolute after:left-0 after:top-1/2 after:w-2 after:border-t after:border-gray-200 dark:after:border-gray-800 {index <
+				class="tater-task-connector relative pl-2 after:absolute after:left-0 after:top-1/2 after:w-2 after:border-t after:border-gray-200 dark:after:border-gray-800 {index <
 				tasks.length - 1
 					? 'before:absolute before:inset-y-0 before:left-0 before:border-s before:border-gray-200 dark:before:border-gray-800'
 					: 'before:absolute before:left-0 before:top-0 before:h-1/2 before:border-s before:border-gray-200 dark:before:border-gray-800'}"

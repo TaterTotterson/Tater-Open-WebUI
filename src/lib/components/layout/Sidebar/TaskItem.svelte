@@ -35,7 +35,7 @@
 </script>
 
 <div
-	class="group flex min-w-0 items-center rounded-xl px-2 py-1.5 transition {isSelected
+	class="tater-task-row group flex min-w-0 items-center rounded-xl px-2 py-1.5 transition {isSelected
 		? 'bg-black/[0.035] dark:bg-white/[0.045]'
 		: 'hover:bg-gray-100 dark:hover:bg-gray-900'}"
 >

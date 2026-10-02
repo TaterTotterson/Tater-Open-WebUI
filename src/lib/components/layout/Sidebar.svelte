@@ -904,7 +904,7 @@
 			aria-label={$i18n.t('Chat history')}
 			aria-hidden={!$showSidebar}
 			inert={!$showSidebar}
-			class="h-screen max-h-[100dvh] min-h-screen select-none {$mobile
+			class="tater-sidebar-shell h-screen max-h-[100dvh] min-h-screen select-none {$mobile
 				? visible
 					? 'bg-gray-50 dark:bg-gray-950 z-50'
 					: 'bg-transparent z-0 pointer-events-none'
@@ -920,13 +920,13 @@
 			data-state={$showSidebar}
 		>
 			<div
-				class=" my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[var(--sidebar-width)] overflow-x-hidden scrollbar-hidden z-50 border-e border-gray-50 dark:border-gray-850/30"
+				class="tater-sidebar-panel my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[var(--sidebar-width)] overflow-x-hidden scrollbar-hidden z-50 border-e border-gray-50 dark:border-gray-850/30"
 			>
 				<div
-					class="sidebar px-1 pt-1.5 pb-1 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10 -mb-2"
+					class="tater-sidebar-brand sidebar mx-2 mt-2 px-1.5 py-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-2 z-10"
 				>
 					<a
-						class="flex items-center rounded-xl size-8.5 h-full justify-center hover:bg-gray-100 dark:hover:bg-gray-900 transition no-drag-region"
+						class="tater-sidebar-logo-button flex items-center rounded-xl size-8.5 h-full justify-center hover:bg-gray-100 dark:hover:bg-gray-900 transition no-drag-region"
 						href="/"
 						draggable="false"
 						on:click={newChatHandler}
@@ -948,7 +948,7 @@
 					https://docs.openwebui.com/license. -->
 						<div
 							id="sidebar-webui-name"
-							class=" self-center font-normal text-gray-700 dark:text-gray-200"
+							class="tater-sidebar-name self-center font-semibold text-gray-700 dark:text-gray-200"
 						>
 							{$WEBUI_NAME}
 						</div>
@@ -958,7 +958,7 @@
 						placement="bottom"
 					>
 						<button
-							class="flex size-[1.875rem] justify-center items-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 transition {isWindows
+							class="tater-sidebar-collapse flex size-[1.875rem] justify-center items-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 transition {isWindows
 								? 'cursor-pointer'
 								: 'cursor-[w-resize]'}"
 							on:click={() => {
@@ -975,12 +975,12 @@
 					<div
 						class="{scrollTop > 0
 							? 'visible'
-							: 'invisible'} sidebar-bg-gradient-to-b bg-linear-to-b from-gray-50 dark:from-gray-950 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mb-6"
+							: 'invisible'} tater-sidebar-header-fade sidebar-bg-gradient-to-b pointer-events-none absolute inset-0 -z-10 -mb-6"
 					></div>
 				</div>
 
 				<div
-					class="relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden space-y-1.5 pt-2.5 pb-2.5"
+					class="tater-sidebar-scroll relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden space-y-2 pt-3 pb-3"
 					on:scroll={(e) => {
 						if (e.target.scrollTop === 0) {
 							scrollTop = 0;
@@ -989,11 +989,11 @@
 						}
 					}}
 				>
-					<div class="pb-1">
+					<div class="tater-sidebar-quick-actions px-2 pb-1">
 						<div class="px-1 flex justify-center text-gray-700 dark:text-gray-300">
 							<a
 								id="sidebar-new-chat-button"
-								class="group grow flex items-center space-x-2 rounded-xl px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+								class="tater-sidebar-primary-action group grow flex items-center space-x-2 rounded-xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
 								href="/"
 								draggable="false"
 								on:click={newChatHandler}
@@ -1014,7 +1014,7 @@
 						<div class="px-1 flex justify-center text-gray-700 dark:text-gray-300">
 							<button
 								id="sidebar-search-button"
-								class="group grow flex items-center space-x-2 rounded-xl px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+								class="tater-sidebar-secondary-action group grow flex items-center space-x-2 rounded-xl px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
 								on:click={() => {
 									showSearch.set(true);
 								}}
@@ -1169,7 +1169,8 @@
 								<div class="flex flex-col space-y-1 rounded-xl">
 									<Folder
 										id="sidebar-pinned-chats"
-										buttonClassName=" text-gray-500"
+										className="tater-pinned-group"
+										buttonClassName="tater-pinned-group-button text-gray-500"
 										on:import={(e) => {
 											importChatHandler(e.detail, true);
 										}}
@@ -1225,7 +1226,7 @@
 										name={$i18n.t('Pinned')}
 									>
 										<div
-											class="ml-3 pl-1 mt-[0.0625rem] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-900 text-gray-700 dark:text-gray-300"
+											class="tater-sidebar-branch ml-3 pl-1 mt-[0.0625rem] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-900 text-gray-700 dark:text-gray-300"
 										>
 											{#each $pinnedChats as chat, idx (`pinned-chat-${chat?.id ?? idx}`)}
 												<ChatItem
@@ -1268,7 +1269,7 @@
 									{#each $chats as chat, idx (`chat-${chat?.id ?? idx}`)}
 										{#if idx === 0 || (idx > 0 && chat.time_range !== $chats[idx - 1].time_range)}
 											<div
-												class="w-full pl-2.5 text-xs text-gray-500 dark:text-gray-500 font-normal {idx ===
+												class="tater-chat-time-label w-full pl-2.5 text-xs text-gray-500 dark:text-gray-500 font-normal {idx ===
 												0
 													? ''
 													: 'pt-4'} pb-1"
@@ -1353,9 +1354,9 @@
 					</SidebarSection>
 				</div>
 
-				<div class="px-1 pt-1 pb-1.5 sticky bottom-0 z-10 -mt-2 sidebar">
+				<div class="tater-sidebar-footer mx-2 mb-2 px-1 py-1 sticky bottom-2 z-10 sidebar">
 					<div
-						class=" sidebar-bg-gradient-to-t bg-linear-to-t from-gray-50 dark:from-gray-950 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mt-6"
+						class="tater-sidebar-footer-fade sidebar-bg-gradient-to-t pointer-events-none absolute inset-0 -z-10 -mt-6"
 					></div>
 					<div class="flex flex-col">
 						{#if $user !== undefined && $user !== null}
@@ -1366,7 +1367,7 @@
 							>
 								<button
 									type="button"
-									class=" flex items-center rounded-xl py-1.5 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+									class="tater-sidebar-user flex items-center rounded-xl py-1.5 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
 									aria-label={$i18n.t('User menu')}
 								>
 									<div class=" self-center mr-3 relative flex-shrink-0">

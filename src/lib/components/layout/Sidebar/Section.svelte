@@ -115,7 +115,7 @@
 	});
 </script>
 
-<div bind:this={sectionElement} class="relative {className}">
+<div bind:this={sectionElement} class="tater-sidebar-section relative {className}">
 	{#if loaded}
 		{#if draggedOver}
 			<div
@@ -125,16 +125,19 @@
 
 		{#if collapsible}
 			<Collapsible bind:open className="w-full" buttonClassName="w-full" onChange={setOpen}>
-				<div class="flex items-center justify-between h-6 w-full pl-3.5 pr-1.5 shrink-0">
+				<div
+					class="tater-sidebar-section-header flex items-center justify-between h-8 w-full pl-3 pr-2 shrink-0"
+				>
 					<button
 						type="button"
-						class="group flex flex-1 h-full items-center gap-1 text-left text-xs text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 transition-colors duration-100 {buttonClassName}"
+						class="group flex flex-1 h-full items-center gap-2 text-left text-[0.6875rem] font-semibold uppercase tracking-[0.11em] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors duration-100 {buttonClassName}"
 						aria-expanded={open}
 						aria-controls="{id}-content"
 					>
+						<span class="tater-sidebar-section-marker" aria-hidden="true"></span>
 						<span>{name}</span>
 						<span
-							class="flex opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-100"
+							class="tater-sidebar-section-chevron flex opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-100"
 							style="transform: rotate({open ? '90deg' : '0deg'})"
 						>
 							<ChevronRight className="size-[0.6875rem]" />
@@ -149,7 +152,7 @@
 					{#if onAdd}
 						<button
 							type="button"
-							class="flex items-center justify-center w-7 h-7 rounded-lg text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 transition-colors duration-100"
+							class="tater-sidebar-section-add flex items-center justify-center w-7 h-7 rounded-lg text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors duration-100"
 							aria-label={onAddLabel}
 							on:click={(e) => {
 								e.stopPropagation();
