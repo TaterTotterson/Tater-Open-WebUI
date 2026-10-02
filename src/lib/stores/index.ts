@@ -176,6 +176,7 @@ export interface OpenAIModel extends BaseModel {
 }
 
 type Settings = {
+	taterActivityAnimation?: 'fade' | 'matrix' | 'ghost';
 	pinnedModels?: string[];
 	toolServers?: never[];
 	detectArtifacts?: boolean;

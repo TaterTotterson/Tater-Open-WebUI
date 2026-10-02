@@ -49,12 +49,34 @@
 			(() => {
 				const metaThemeColorTag = document.querySelector('meta[name="theme-color"]');
 				const prefersDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+				const taterThemes = new Set([
+					'tater',
+					'tater-light',
+					'blueberry',
+					'mint',
+					'grape',
+					'strawberry'
+				]);
+				const themeColors = {
+					tater: '#111213',
+					'tater-light': '#f6f1e8',
+					blueberry: '#0b1019',
+					mint: '#0a1210',
+					grape: '#120e19',
+					strawberry: '#160e13'
+				};
 
 				if (!localStorage?.theme) {
 					localStorage.theme = 'system';
 				}
 
-				if (localStorage.theme === 'system') {
+				if (taterThemes.has(localStorage.theme)) {
+					document.documentElement.dataset.taterTheme = localStorage.theme;
+					document.documentElement.classList.add(
+						localStorage.theme === 'tater-light' ? 'light' : 'dark'
+					);
+					metaThemeColorTag.setAttribute('content', themeColors[localStorage.theme]);
+				} else if (localStorage.theme === 'system') {
 					document.documentElement.classList.add(prefersDarkTheme ? 'dark' : 'light');
 					metaThemeColorTag.setAttribute('content', prefersDarkTheme ? '#171717' : '#ffffff');
 				} else if (localStorage.theme === 'oled-dark') {

@@ -2,6 +2,11 @@
 	import { getContext } from 'svelte';
 	const i18n: any = getContext('i18n');
 	import { fade } from 'svelte/transition';
+	import { settings } from '$lib/stores';
+	import {
+		normalizeActivityAnimation,
+		type TaterActivityAnimation
+	} from '$lib/utils/taterAppearance';
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
 	import equal from 'fast-deep-equal';
@@ -19,6 +24,7 @@
 	let history: any[] = [];
 	let status: any = null;
 	let statusKey = '';
+	let activityAnimation: TaterActivityAnimation = 'fade';
 
 	$: if (history && history.length > 0) {
 		status = history.at(-1);
@@ -28,7 +34,8 @@
 		history = statusHistory;
 	}
 
-	$: statusKey = `${status?.id ?? ''}:${status?.description ?? ''}:${status?.detail ?? ''}:${status?.done ?? ''}`;
+	$: activityAnimation = normalizeActivityAnimation($settings?.taterActivityAnimation);
+	$: statusKey = `${activityAnimation}:${status?.id ?? ''}:${status?.description ?? ''}:${status?.detail ?? ''}:${status?.done ?? ''}`;
 </script>
 
 {#if history && history.length > 0}
@@ -43,13 +50,19 @@
 				}}
 			>
 				{#key statusKey}
-					<div
-						class="flex items-start gap-2"
-						in:fade={{ duration: 220 }}
-						out:fade={{ duration: 100 }}
-					>
-						<StatusItem {status} />
-					</div>
+					{#if activityAnimation === 'fade'}
+						<div
+							class="flex items-start gap-2"
+							in:fade={{ duration: 220 }}
+							out:fade={{ duration: 100 }}
+						>
+							<StatusItem {status} />
+						</div>
+					{:else}
+						<div class="flex items-start gap-2">
+							<StatusItem {status} animate={true} animation={activityAnimation} />
+						</div>
+					{/if}
 				{/key}
 			</button>
 

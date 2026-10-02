@@ -1,11 +1,30 @@
-<script>
+<script lang="ts">
 	import { getContext } from 'svelte';
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 	import Search from '$lib/components/icons/Search.svelte';
-	import { t } from 'i18next';
+	import ActivityText from '../ActivityText.svelte';
+	import type { TaterActivityAnimation } from '$lib/utils/taterAppearance';
 
-	export let status = null;
+	export let status: any = null;
 	export let done = false;
+	export let animate = false;
+	export let animation: TaterActivityAnimation = 'fade';
+
+	const descriptionText = () => {
+		if (status?.description?.includes('{{searchQuery}}')) {
+			return $i18n.t(status.description, { searchQuery: status?.query });
+		}
+		if (status?.description === 'No search query generated') {
+			return $i18n.t('No search query generated');
+		}
+		if (status?.description === 'Generating search query') {
+			return $i18n.t('Generating search query');
+		}
+		if (status?.description === 'Searching the web') {
+			return $i18n.t('Searching the web');
+		}
+		return status?.description ?? '';
+	};
 </script>
 
 {#if !status?.hidden}
@@ -65,19 +84,10 @@
 						? 'shimmer'
 						: ''} text-gray-500 dark:text-gray-500 text-[0.9375rem] line-clamp-1 text-wrap"
 				>
-					<!-- $i18n.t(`Searching "{{searchQuery}}"`) -->
-					{#if status?.description?.includes('{{searchQuery}}')}
-						{$i18n.t(status?.description, {
-							searchQuery: status?.query
-						})}
-					{:else if status?.description === 'No search query generated'}
-						{$i18n.t('No search query generated')}
-					{:else if status?.description === 'Generating search query'}
-						{$i18n.t('Generating search query')}
-					{:else if status?.description === 'Searching the web'}
-						{$i18n.t('Searching the web')}
+					{#if animate}
+						<ActivityText text={descriptionText()} mode={animation} />
 					{:else}
-						{status?.description}
+						{descriptionText()}
 					{/if}
 				</div>
 				{#if status?.detail}
@@ -85,7 +95,11 @@
 						class="max-w-full truncate font-mono text-[0.75rem] text-gray-400 dark:text-gray-600"
 						title={status.detail}
 					>
-						{status.detail}
+						{#if animate}
+							<ActivityText text={status.detail} mode={animation} />
+						{:else}
+							{status.detail}
+						{/if}
 					</div>
 				{/if}
 			</div>

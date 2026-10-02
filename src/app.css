@@ -42,6 +42,189 @@ html.dark {
 	--tater-sidebar-branch: rgba(243, 138, 66, 0.24);
 }
 
+/* Tater color themes ------------------------------------------------------------
+   These palettes mirror the main Tater app while continuing to use Open WebUI's
+   existing utility colors and components. */
+html[data-tater-theme='tater'] {
+	--color-gray-50: #f7f4ef;
+	--color-gray-100: #eee8e1;
+	--color-gray-200: #ded4c9;
+	--color-gray-300: #c8b9aa;
+	--color-gray-400: #ae9d8d;
+	--color-gray-500: #938274;
+	--color-gray-600: #6f6258;
+	--color-gray-700: #4c443e;
+	--color-gray-800: #33302d;
+	--color-gray-850: #282522;
+	--color-gray-900: #1c1b1a;
+	--color-gray-950: #111213;
+	--color-blue-400: #f39a5d;
+	--color-blue-500: #e9742c;
+	--color-blue-600: #d65a1f;
+	--color-blue-700: #aa4317;
+	--tater-accent: #f08345;
+	--tater-accent-strong: #ffad70;
+	--tater-accent-soft: rgb(240 131 69 / 14%);
+	--tater-accent-softer: rgb(240 131 69 / 7%);
+	--tater-sidebar-bg: #111213;
+	--tater-sidebar-surface: rgb(32 34 37 / 92%);
+	--tater-sidebar-surface-strong: rgb(38 41 45 / 96%);
+	--tater-sidebar-border: rgb(240 131 69 / 15%);
+	--tater-sidebar-text: #f1eee8;
+	--tater-sidebar-muted: #a8a096;
+	--tater-sidebar-branch: rgb(240 131 69 / 26%);
+}
+
+html[data-tater-theme='tater-light'] {
+	--color-gray-50: #fffaf3;
+	--color-gray-100: #f8efe4;
+	--color-gray-200: #eee1d2;
+	--color-gray-300: #ddcbbb;
+	--color-gray-400: #bda795;
+	--color-gray-500: #8f7b6b;
+	--color-gray-600: #75695f;
+	--color-gray-700: #574a40;
+	--color-gray-800: #40352d;
+	--color-gray-850: #352b25;
+	--color-gray-900: #2c241e;
+	--color-gray-950: #211a16;
+	--color-blue-400: #e27c45;
+	--color-blue-500: #d96427;
+	--color-blue-600: #c8531d;
+	--color-blue-700: #9f3e13;
+	--tater-accent: #c8531d;
+	--tater-accent-strong: #9f3e13;
+	--tater-accent-soft: rgb(200 83 29 / 11%);
+	--tater-accent-softer: rgb(200 83 29 / 6%);
+	--tater-sidebar-bg: #f6f1e8;
+	--tater-sidebar-surface: rgb(255 250 243 / 92%);
+	--tater-sidebar-surface-strong: rgb(255 253 249 / 97%);
+	--tater-sidebar-border: rgb(200 83 29 / 17%);
+	--tater-sidebar-text: #2c241e;
+	--tater-sidebar-muted: #75695f;
+	--tater-sidebar-branch: rgb(200 83 29 / 22%);
+}
+
+html[data-tater-theme='blueberry'] {
+	--color-gray-50: #f4f8ff;
+	--color-gray-100: #e7f0ff;
+	--color-gray-200: #d0e2f8;
+	--color-gray-300: #aac8e8;
+	--color-gray-400: #7da4c9;
+	--color-gray-500: #607f9f;
+	--color-gray-600: #46627f;
+	--color-gray-700: #324b66;
+	--color-gray-800: #223246;
+	--color-gray-850: #1b2635;
+	--color-gray-900: #151d29;
+	--color-gray-950: #0b1019;
+	--color-blue-400: #70b7ff;
+	--color-blue-500: #559cff;
+	--color-blue-600: #4285f4;
+	--color-blue-700: #3268c5;
+	--tater-accent: #70b7ff;
+	--tater-accent-strong: #9bceff;
+	--tater-accent-soft: rgb(66 133 244 / 16%);
+	--tater-accent-softer: rgb(66 133 244 / 8%);
+	--tater-sidebar-bg: #0b1019;
+	--tater-sidebar-surface: rgb(21 29 41 / 92%);
+	--tater-sidebar-surface-strong: rgb(27 38 53 / 96%);
+	--tater-sidebar-border: rgb(112 183 255 / 16%);
+	--tater-sidebar-text: #edf5ff;
+	--tater-sidebar-muted: #9cabbf;
+	--tater-sidebar-branch: rgb(112 183 255 / 25%);
+}
+
+html[data-tater-theme='mint'] {
+	--color-gray-50: #effbf7;
+	--color-gray-100: #def5ed;
+	--color-gray-200: #c4e8db;
+	--color-gray-300: #9fd3c0;
+	--color-gray-400: #78b6a0;
+	--color-gray-500: #5b917e;
+	--color-gray-600: #42715f;
+	--color-gray-700: #315446;
+	--color-gray-800: #20352e;
+	--color-gray-850: #182923;
+	--color-gray-900: #14201c;
+	--color-gray-950: #0a1210;
+	--color-blue-400: #67d6b1;
+	--color-blue-500: #47c59d;
+	--color-blue-600: #32b58d;
+	--color-blue-700: #258c6c;
+	--tater-accent: #67d6b1;
+	--tater-accent-strong: #8de5c7;
+	--tater-accent-soft: rgb(50 181 141 / 16%);
+	--tater-accent-softer: rgb(50 181 141 / 8%);
+	--tater-sidebar-bg: #0a1210;
+	--tater-sidebar-surface: rgb(20 32 28 / 92%);
+	--tater-sidebar-surface-strong: rgb(24 41 35 / 96%);
+	--tater-sidebar-border: rgb(103 214 177 / 16%);
+	--tater-sidebar-text: #edf8f4;
+	--tater-sidebar-muted: #97aaa3;
+	--tater-sidebar-branch: rgb(103 214 177 / 25%);
+}
+
+html[data-tater-theme='grape'] {
+	--color-gray-50: #faf5ff;
+	--color-gray-100: #f0e7fb;
+	--color-gray-200: #dfd0f0;
+	--color-gray-300: #c8afe0;
+	--color-gray-400: #ad8bc9;
+	--color-gray-500: #8f70a8;
+	--color-gray-600: #6e527f;
+	--color-gray-700: #513d60;
+	--color-gray-800: #352944;
+	--color-gray-850: #292036;
+	--color-gray-900: #21192c;
+	--color-gray-950: #120e19;
+	--color-blue-400: #c18aff;
+	--color-blue-500: #ab79fa;
+	--color-blue-600: #9b6cf4;
+	--color-blue-700: #774fc2;
+	--tater-accent: #c18aff;
+	--tater-accent-strong: #d4adff;
+	--tater-accent-soft: rgb(155 108 244 / 16%);
+	--tater-accent-softer: rgb(155 108 244 / 8%);
+	--tater-sidebar-bg: #120e19;
+	--tater-sidebar-surface: rgb(33 25 44 / 92%);
+	--tater-sidebar-surface-strong: rgb(41 32 54 / 96%);
+	--tater-sidebar-border: rgb(193 138 255 / 16%);
+	--tater-sidebar-text: #f6f0ff;
+	--tater-sidebar-muted: #aea0bd;
+	--tater-sidebar-branch: rgb(193 138 255 / 25%);
+}
+
+html[data-tater-theme='strawberry'] {
+	--color-gray-50: #fff5f8;
+	--color-gray-100: #fbe7ee;
+	--color-gray-200: #f1cedb;
+	--color-gray-300: #ddaabf;
+	--color-gray-400: #c4849e;
+	--color-gray-500: #a46880;
+	--color-gray-600: #7d4d61;
+	--color-gray-700: #5c3949;
+	--color-gray-800: #3e2935;
+	--color-gray-850: #30202a;
+	--color-gray-900: #281a22;
+	--color-gray-950: #160e13;
+	--color-blue-400: #ff8fb6;
+	--color-blue-500: #f575a3;
+	--color-blue-600: #e75f91;
+	--color-blue-700: #b94770;
+	--tater-accent: #ff8fb6;
+	--tater-accent-strong: #ffb0cb;
+	--tater-accent-soft: rgb(231 95 145 / 16%);
+	--tater-accent-softer: rgb(231 95 145 / 8%);
+	--tater-sidebar-bg: #160e13;
+	--tater-sidebar-surface: rgb(40 26 34 / 92%);
+	--tater-sidebar-surface-strong: rgb(48 32 42 / 96%);
+	--tater-sidebar-border: rgb(255 143 182 / 16%);
+	--tater-sidebar-text: #fff1f6;
+	--tater-sidebar-muted: #b8a0aa;
+	--tater-sidebar-branch: rgb(255 143 182 / 25%);
+}
+
 html {
 	word-break: break-word;
 	font-variant-ligatures: no-contextual;

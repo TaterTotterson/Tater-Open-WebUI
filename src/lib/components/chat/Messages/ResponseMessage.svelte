@@ -63,6 +63,7 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import RegenerateMenu from './ResponseMessage/RegenerateMenu.svelte';
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
+	import ActivityText from './ResponseMessage/ActivityText.svelte';
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
 	import OutputEditView from './OutputEditView.svelte';
 	import { getOutputText, replaceOutputMessageText, type OutputItem } from './structuredOutput';
@@ -96,6 +97,7 @@
 			query?: string;
 		};
 		taterProgressRevision?: number;
+		taterProgressActive?: boolean;
 		done: boolean;
 		error?: boolean | { content: string };
 		sources?: string[];
@@ -904,8 +906,15 @@
 							{#if hasResponseContent && message.error !== true}
 								<!-- always show message contents even if there's an error -->
 								<!-- unless message.error === true which is legacy error handling, where the error message is stored in message.content -->
-								{#key message.taterProgressRevision ?? 0}
-									<div in:fade={{ duration: 220 }} out:fade={{ duration: 100 }}>
+								{#key `${message.taterProgressRevision ?? 0}:${$settings?.taterActivityAnimation ?? 'fade'}`}
+									{#if message.taterProgressActive}
+										<div class="markdown-prose">
+											<ActivityText
+												text={renderedContent}
+												mode={$settings?.taterActivityAnimation ?? 'fade'}
+											/>
+										</div>
+									{:else}
 										<ContentRenderer
 											id={`${chatId}-${message.id}`}
 											{chatId}
@@ -964,7 +973,7 @@
 												updateChat();
 											}}
 										/>
-									</div>
+									{/if}
 								{/key}
 							{/if}
 

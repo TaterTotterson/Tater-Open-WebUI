@@ -17,12 +17,19 @@
 	import UserSettingRow from './UserSettingRow.svelte';
 	import UserSettingSection from './UserSettingSection.svelte';
 	import SettingsSelect from '$lib/components/common/SettingsSelect.svelte';
+	import ActivityText from '../Messages/ResponseMessage/ActivityText.svelte';
+	import {
+		applyInterfaceTheme,
+		normalizeActivityAnimation,
+		TATER_THEME_OPTIONS,
+		type TaterActivityAnimation
+	} from '$lib/utils/taterAppearance';
 	export let saveSettings: Function;
 	export let getModels: Function;
 
 	// General
-	let themes = ['dark', 'light', 'oled-dark'];
 	let selectedTheme = 'system';
+	let activityAnimation: TaterActivityAnimation = 'fade';
 
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
 	let lang = $i18n.language;
@@ -130,6 +137,7 @@
 
 	onMount(async () => {
 		selectedTheme = localStorage.theme ?? 'system';
+		activityAnimation = normalizeActivityAnimation($settings?.taterActivityAnimation);
 
 		languages = await getLanguages();
 
@@ -143,74 +151,15 @@
 		params.stop = $settings?.params?.stop ? ($settings?.params?.stop ?? []).join(',') : null;
 	});
 
-	const applyTheme = (_theme: string) => {
-		let themeToApply = _theme === 'oled-dark' ? 'dark' : _theme === 'her' ? 'light' : _theme;
-
-		if (_theme === 'system') {
-			themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-		}
-
-		if (themeToApply === 'dark' && !_theme.includes('oled')) {
-			document.documentElement.style.setProperty('--color-gray-800', '#333');
-			document.documentElement.style.setProperty('--color-gray-850', '#262626');
-			document.documentElement.style.setProperty('--color-gray-900', '#171717');
-			document.documentElement.style.setProperty('--color-gray-950', '#0d0d0d');
-		}
-
-		themes
-			.filter((e) => e !== themeToApply)
-			.forEach((e) => {
-				e.split(' ').forEach((e) => {
-					document.documentElement.classList.remove(e);
-				});
-			});
-
-		themeToApply.split(' ').forEach((e) => {
-			document.documentElement.classList.add(e);
-		});
-
-		const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-		if (metaThemeColor) {
-			if (_theme.includes('system')) {
-				const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-					? 'dark'
-					: 'light';
-				console.log('Setting system meta theme color: ' + systemTheme);
-				metaThemeColor.setAttribute('content', systemTheme === 'light' ? '#ffffff' : '#171717');
-			} else {
-				console.log('Setting meta theme color: ' + _theme);
-				metaThemeColor.setAttribute(
-					'content',
-					_theme === 'dark'
-						? '#171717'
-						: _theme === 'oled-dark'
-							? '#000000'
-							: _theme === 'her'
-								? '#983724'
-								: '#ffffff'
-				);
-			}
-		}
-
-		if (typeof window !== 'undefined' && window.applyTheme) {
-			window.applyTheme();
-		}
-
-		if (_theme.includes('oled')) {
-			document.documentElement.style.setProperty('--color-gray-800', '#101010');
-			document.documentElement.style.setProperty('--color-gray-850', '#050505');
-			document.documentElement.style.setProperty('--color-gray-900', '#000000');
-			document.documentElement.style.setProperty('--color-gray-950', '#000000');
-			document.documentElement.classList.add('dark');
-		}
-
-		console.log(_theme);
-	};
-
 	const themeChangeHandler = (_theme: string) => {
 		theme.set(_theme);
 		localStorage.setItem('theme', _theme);
-		applyTheme(_theme);
+		applyInterfaceTheme(_theme);
+	};
+
+	const activityAnimationChangeHandler = async () => {
+		activityAnimation = normalizeActivityAnimation(activityAnimation);
+		await saveSettings({ taterActivityAnimation: activityAnimation });
 	};
 </script>
 
@@ -224,24 +173,86 @@
 			title={$i18n.t('settings.personal.general.sections.webuiSettings.title')}
 			first
 		>
-			<UserSettingRow
-				label={$i18n.t('settings.personal.general.theme.label')}
-				description={$i18n.t('settings.personal.general.theme.description')}
-			>
-				<SettingsSelect
-					bind:value={selectedTheme}
-					ariaLabel={$i18n.t('settings.personal.general.theme.label')}
-					placeholder={$i18n.t('Select a theme')}
-					on:change={() => themeChangeHandler(selectedTheme)}
+			<div class="space-y-2">
+				<div>
+					<div class="text-xs text-gray-600 dark:text-gray-400">
+						{$i18n.t('settings.personal.general.theme.label')}
+					</div>
+					<p class="mt-0.5 text-[0.6875rem] text-gray-400 dark:text-gray-600">
+						Choose a Tater palette or one of the original Open WebUI appearances.
+					</p>
+				</div>
+
+				<div
+					class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
+					role="radiogroup"
+					aria-label="Color theme"
 				>
-					<option value="system">⚙️ {$i18n.t('System')}</option>
-					<option value="dark">🌑 {$i18n.t('Dark')}</option>
-					<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
-					<option value="light">☀️ {$i18n.t('Light')}</option>
-					{#if $config?.features?.enable_easter_eggs}
-						<option value="her">🌷 Her</option>
-					{/if}
-				</SettingsSelect>
+					{#each TATER_THEME_OPTIONS as themeOption}
+						<button
+							type="button"
+							role="radio"
+							aria-checked={selectedTheme === themeOption.id}
+							class="group min-w-0 rounded-xl border p-2 text-left transition duration-150 hover:-translate-y-px {selectedTheme ===
+							themeOption.id
+								? 'border-[var(--tater-accent)] bg-[var(--tater-accent-soft)] shadow-sm'
+								: 'border-gray-100/70 bg-gray-50/40 hover:border-gray-300 dark:border-white/[0.06] dark:bg-white/[0.025] dark:hover:border-white/[0.14]'}"
+							on:click={() => {
+								selectedTheme = themeOption.id;
+								themeChangeHandler(selectedTheme);
+							}}
+						>
+							<span
+								class="mb-2 grid h-6 grid-cols-3 overflow-hidden rounded-md border border-black/5 dark:border-white/10"
+							>
+								{#each themeOption.colors as color}
+									<i style={`background: ${color}`}></i>
+								{/each}
+							</span>
+							<span class="flex items-center justify-between gap-1">
+								<strong
+									class="truncate text-[0.6875rem] font-medium text-gray-700 dark:text-gray-200"
+								>
+									{themeOption.name}
+								</strong>
+								<span class="text-xs text-[var(--tater-accent)]" aria-hidden="true">
+									{selectedTheme === themeOption.id ? '✓' : ''}
+								</span>
+							</span>
+							<span
+								class="mt-0.5 line-clamp-2 text-[0.6rem] leading-tight text-gray-400 dark:text-gray-600"
+							>
+								{themeOption.description}
+							</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			<UserSettingRow
+				label="Activity animation"
+				description="Controls how terminal commands and live progress summaries change."
+			>
+				<div class="flex flex-col items-end gap-1.5">
+					<SettingsSelect
+						bind:value={activityAnimation}
+						ariaLabel="Activity animation"
+						placeholder="Select an activity animation"
+						on:change={activityAnimationChangeHandler}
+					>
+						<option value="fade">Smooth Fade</option>
+						<option value="matrix">Matrix Glyph</option>
+						<option value="ghost">Ghost Reveal</option>
+					</SettingsSelect>
+					<div
+						class="min-w-40 rounded-lg border border-gray-100/70 bg-gray-50/40 px-2.5 py-1 text-right text-[0.6875rem] text-gray-500 dark:border-white/[0.06] dark:bg-white/[0.025] dark:text-gray-400"
+						aria-hidden="true"
+					>
+						{#key activityAnimation}
+							<ActivityText text="Updating project files" mode={activityAnimation} />
+						{/key}
+					</div>
+				</div>
 			</UserSettingRow>
 
 			<UserSettingRow

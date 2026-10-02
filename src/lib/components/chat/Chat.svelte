@@ -1211,6 +1211,7 @@
 						}
 					}
 				} else if (type === 'response:completion' || type === 'chat:completion') {
+					message.taterProgressActive = false;
 					if (type === 'response:completion') {
 						responseCompletionEventHandler(data, message);
 					} else {
@@ -1233,12 +1234,16 @@
 						message.done = true;
 					}
 				} else if (type === 'chat:message:delta' || type === 'message') {
+					message.taterProgressActive = false;
 					message.content += data.content;
 					autoScrollToBottom();
 				} else if (type === 'chat:message' || type === 'replace') {
 					message.content = data.content;
 					if (data?.tater_progress === true) {
+						message.taterProgressActive = true;
 						message.taterProgressRevision = (message.taterProgressRevision ?? 0) + 1;
+					} else {
+						message.taterProgressActive = false;
 					}
 					autoScrollToBottom();
 				} else if (type === 'chat:message:files' || type === 'files') {

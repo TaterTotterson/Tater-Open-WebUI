@@ -61,6 +61,7 @@
 		removeAllDetails
 	} from '$lib/utils';
 	import { setTextScale } from '$lib/utils/text-scale';
+	import { applyInterfaceTheme, isDarkInterfaceTheme } from '$lib/utils/taterAppearance';
 
 	import NotificationToast from '$lib/components/NotificationToast.svelte';
 	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
@@ -601,20 +602,7 @@
 			const newTheme = event.data.theme;
 			localStorage.setItem('theme', newTheme);
 			theme.set(newTheme);
-
-			// Apply theme classes (mirrors logic from chat/Settings/General.svelte)
-			const themes = ['dark', 'light', 'oled-dark'];
-			let themeToApply =
-				newTheme === 'oled-dark' ? 'dark' : newTheme === 'her' ? 'light' : newTheme;
-			if (newTheme === 'system') {
-				themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-			}
-			themes
-				.filter((e) => e !== themeToApply)
-				.forEach((e) => {
-					e.split(' ').forEach((cls) => document.documentElement.classList.remove(cls));
-				});
-			themeToApply.split(' ').forEach((cls) => document.documentElement.classList.add(cls));
+			applyInterfaceTheme(newTheme);
 			return;
 		}
 		if (event.type === 'models:refresh') {
@@ -1014,13 +1002,9 @@
 {/if}
 
 <Toaster
-	theme={$theme.includes('dark')
+	theme={isDarkInterfaceTheme($theme, window.matchMedia('(prefers-color-scheme: dark)').matches)
 		? 'dark'
-		: $theme === 'system'
-			? window.matchMedia('(prefers-color-scheme: dark)').matches
-				? 'dark'
-				: 'light'
-			: 'light'}
+		: 'light'}
 	richColors
 	position="top-right"
 	closeButton
