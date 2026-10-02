@@ -939,6 +939,91 @@ EOF","cwd":"/projects/game"}
         self.assertIn('identify the still missing result', instruction)
         self.assertIn('start the HTTP server', instruction)
 
+    def test_retry_instruction_does_not_repeat_a_completed_heredoc_write(self):
+        instruction = tater_agent.tool_plan_retry_instruction(
+            'The identical terminal call already completed and no intervening action changed its inputs.',
+            json.dumps(
+                {
+                    'task_title': 'Launch Woodchuck Game',
+                    'progress': 'Writing the browser game.',
+                    'tool_calls': [
+                        {
+                            'name': 'terminal',
+                            'parameters': {
+                                'command': "cat <<'EOF' > web/script.js\nconst ready = true;\nEOF",
+                                'cwd': '/projects/woodchuck_game',
+                            },
+                        }
+                    ],
+                    'parallel_tasks': [],
+                    'final_answer': '',
+                    'context': {},
+                }
+            ),
+        )
+
+        self.assertIn('This exact file write already succeeded', instruction)
+        self.assertIn('Earlier reads of that file are now stale', instruction)
+        self.assertIn('run a syntax check or test', instruction)
+        self.assertNotIn('Preserve that write step', instruction)
+
+    def test_terminal_file_write_quotes_unquoted_heredoc(self):
+        command = (
+            'cat <<EOF > web/script.js\n'
+            'scoreElement.innerText = `Score: ${score}`;\n'
+            'EOF'
+        )
+
+        protected = tater_agent.protect_terminal_file_write_command(command)
+
+        self.assertIn("cat <<'EOF' > web/script.js", protected)
+        self.assertIn('`Score: ${score}`', protected)
+
+    def test_terminal_file_write_preserves_quoted_heredoc(self):
+        command = "cat <<'EOF' > web/script.js\nconst ready = true;\nEOF"
+
+        self.assertEqual(tater_agent.protect_terminal_file_write_command(command), command)
+
+    def test_terminal_tool_calls_normalize_before_repeat_signatures(self):
+        calls = [
+            {
+                'name': 'terminal',
+                'parameters': {
+                    'command': 'cat <<EOF > web/script.js\nconst ready = true;\nEOF',
+                    'cwd': '/projects/game',
+                },
+            }
+        ]
+
+        normalized = tater_agent.protect_terminal_tool_calls(calls)
+
+        self.assertIn("<<'EOF'", normalized[0]['parameters']['command'])
+        self.assertIn('<<EOF', calls[0]['parameters']['command'])
+
+    def test_non_file_heredoc_can_still_expand_shell_values(self):
+        command = 'ssh example.test <<EOF\necho "$PATH"\nEOF'
+
+        self.assertEqual(tater_agent.protect_terminal_file_write_command(command), command)
+
+    def test_shell_diagnostic_is_error_even_when_exit_code_is_zero(self):
+        result = {
+            'output': '/bin/sh: 1: Score:: not found\n',
+            'exit_code': 0,
+            'status': 'done',
+        }
+
+        self.assertTrue(tater_agent.terminal_result_has_shell_error(result))
+        self.assertFalse(
+            tater_agent._successful_terminal_record(
+                {'status': 'completed', 'result': result}
+            )
+        )
+
+    def test_normal_command_output_is_not_a_shell_error(self):
+        result = {'output': 'HTTP/1.0 200 OK\n', 'exit_code': 0, 'status': 'done'}
+
+        self.assertFalse(tater_agent.terminal_result_has_shell_error(result))
+
     def test_recent_history_keeps_latest_messages_within_budget(self):
         history = tater_agent.render_recent_chat_history(
             [

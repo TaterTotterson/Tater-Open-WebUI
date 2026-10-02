@@ -78,7 +78,7 @@
 				</div>
 			</div>
 		{:else}
-			<div class="flex min-w-0 flex-col justify-center gap-0.5">
+			<div class="flex w-full min-w-0 flex-1 flex-col justify-center gap-0.5">
 				<div
 					class="{(done || status?.done) === false
 						? 'shimmer'

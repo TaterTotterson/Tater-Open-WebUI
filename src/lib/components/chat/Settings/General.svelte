@@ -231,7 +231,7 @@
 
 			<UserSettingRow
 				label="Activity animation"
-				description="Controls how terminal commands and live progress summaries change."
+				description="Controls how assistant responses, terminal commands, and live progress summaries appear."
 			>
 				<div class="flex flex-col items-end gap-1.5">
 					<SettingsSelect

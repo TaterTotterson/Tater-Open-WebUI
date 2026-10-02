@@ -128,6 +128,8 @@ from open_webui.utils.tater_agent import (
     parse_completion_review,
     parse_tool_plan_response,
     partition_parallel_tasks,
+    protect_terminal_file_write_command,
+    protect_terminal_tool_calls,
     recent_history_char_limit,
     render_agent_context,
     render_recent_chat_history,
@@ -140,6 +142,7 @@ from open_webui.utils.tater_agent import (
     tool_calls_are_hydra_only,
     tool_plan_retry_instruction,
     tool_outcome_signature,
+    terminal_result_has_shell_error,
 )
 from open_webui.utils.tater_profile import DEFAULT_TATER_CONTEXT_WINDOW, normalize_tater_context_window
 from open_webui.utils.tater_projects import (
@@ -192,7 +195,11 @@ def _is_tool_result_error(value: Any, tool_name: str | None = None) -> bool:
 
     if tool_name == 'terminal':
         exit_code = parsed.get('exit_code')
-        if parsed.get('timed_out') is True or (isinstance(exit_code, int) and exit_code != 0):
+        if (
+            parsed.get('timed_out') is True
+            or (isinstance(exit_code, int) and exit_code != 0)
+            or terminal_result_has_shell_error(parsed)
+        ):
             return True
 
     error = parsed.get('error')
@@ -1808,6 +1815,10 @@ async def chat_completion_tools_handler(
         spec = tool.get('spec', {})
         allowed_params = spec.get('parameters', {}).get('properties', {}).keys()
         tool_function_params = {k: v for k, v in tool_function_params.items() if k in allowed_params}
+        if tool_function_name == 'terminal' and 'command' in tool_function_params:
+            tool_function_params['command'] = protect_terminal_file_write_command(
+                tool_function_params['command']
+            )
 
         tool_status_id = f'tater-tool-{iteration}-{uuid4()}'
         tool_started_at = time.monotonic()
@@ -2037,8 +2048,12 @@ async def chat_completion_tools_handler(
         planning_error = None
         if iteration == 1 and not history_records and isinstance(initial_task_plan, dict):
             plan = copy.deepcopy(initial_task_plan)
-            tool_calls = plan.get('tool_calls') or []
+            tool_calls = protect_terminal_tool_calls(plan.get('tool_calls') or [])
+            plan['tool_calls'] = tool_calls
             parallel_tasks = plan.get('parallel_tasks') or []
+            for task in parallel_tasks:
+                if isinstance(task, dict):
+                    task['tool_calls'] = protect_terminal_tool_calls(task.get('tool_calls') or [])
             ledger_event(
                 'planner_response_reused',
                 iteration=iteration,
@@ -2064,7 +2079,7 @@ async def chat_completion_tools_handler(
                                 'role': 'user',
                                 'content': tool_plan_retry_instruction(
                                     planning_error or 'invalid response',
-                                    '\n'.join(failed_planner_responses),
+                                    failed_planner_responses[-1] if failed_planner_responses else '',
                                     effective_agent_request(),
                                 ),
                             },
@@ -2094,8 +2109,12 @@ async def chat_completion_tools_handler(
                         allow_plain_final_answer=bool(history_records),
                         allow_parallel_tasks=not background_task_id and is_initial_execution_step(),
                     )
-                    tool_calls = plan['tool_calls']
+                    tool_calls = protect_terminal_tool_calls(plan['tool_calls'])
+                    plan['tool_calls'] = tool_calls
                     parallel_tasks = plan['parallel_tasks']
+                    for task in parallel_tasks:
+                        if isinstance(task, dict):
+                            task['tool_calls'] = protect_terminal_tool_calls(task.get('tool_calls') or [])
                     split_gap = (
                         parallel_browser_weather_plan_gap(effective_agent_request(), parallel_tasks)
                         if not background_task_id and is_initial_execution_step()

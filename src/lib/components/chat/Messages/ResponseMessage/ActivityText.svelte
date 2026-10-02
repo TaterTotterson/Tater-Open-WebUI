@@ -5,140 +5,143 @@
 
 	export let text = '';
 	export let mode: TaterActivityAnimation = 'fade';
+	export let incremental = false;
+	export let block = false;
 
 	type CharacterState = {
+		id: number;
 		actual: string;
 		display: string;
 		delay: number;
 		settled: boolean;
+		settleAt: number;
 	};
 
 	const MATRIX_GLYPHS = Array.from('ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽ01<>/*+=#');
+	let nextCharacterId = 1;
 	let characters: CharacterState[] = Array.from(text).map((actual) => ({
+		id: nextCharacterId++,
 		actual,
 		display: actual,
 		delay: 0,
-		settled: true
+		settled: true,
+		settleAt: 0
 	}));
-	let active = false;
-	let interval: ReturnType<typeof setInterval> | null = null;
-	let animationFrame: number | null = null;
+	let currentText = text;
+	let currentMode = mode;
+	let mounted = false;
+	let reducedMotion = true;
+	let matrixInterval: ReturnType<typeof setInterval> | null = null;
+	let matrixFrame = 0;
 
-	const seededValue = (index: number, salt = 0) => {
-		let value = 2166136261 ^ salt;
-		for (let offset = 0; offset < text.length; offset += 1) {
-			value ^= text.charCodeAt(offset) + index * 31;
-			value = Math.imul(value, 16777619);
+	const seededValue = (value: string, index: number, salt = 0) => {
+		let hash = 2166136261 ^ salt;
+		for (let offset = 0; offset < value.length; offset += 1) {
+			hash ^= value.charCodeAt(offset) + index * 31;
+			hash = Math.imul(hash, 16777619);
 		}
-		return (value >>> 0) / 4294967295;
+		return (hash >>> 0) / 4294967295;
 	};
 
-	const shuffledVisibleIndexes = () => {
-		const indexes = characters
-			.map((character, index) => ({ character, index }))
-			.filter(({ character }) => !/\s/.test(character.actual))
-			.map(({ index }) => index);
-		return indexes.sort((left, right) => seededValue(left, 17) - seededValue(right, 17));
+	const stopMatrixAnimation = () => {
+		if (matrixInterval) clearInterval(matrixInterval);
+		matrixInterval = null;
 	};
 
-	const stopAnimation = () => {
-		if (interval) clearInterval(interval);
-		if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-		interval = null;
-		animationFrame = null;
-	};
-
-	const showFinalText = () => {
-		characters = Array.from(text).map((actual) => ({
-			actual,
-			display: actual,
-			delay: 0,
-			settled: true
-		}));
-		active = true;
-	};
-
-	const startGhostReveal = () => {
-		const order = shuffledVisibleIndexes();
-		const rank = new Map(order.map((index, position) => [index, position]));
-		const divisor = Math.max(1, order.length - 1);
-		characters = characters.map((character, index) => ({
-			...character,
-			display: character.actual,
-			delay: /\s/.test(character.actual) ? 0 : Math.round(((rank.get(index) ?? 0) / divisor) * 230),
-			settled: true
-		}));
-		active = false;
-		animationFrame = requestAnimationFrame(() => {
-			animationFrame = requestAnimationFrame(() => {
-				active = true;
-			});
+	const updateMatrixCharacters = () => {
+		matrixFrame += 1;
+		const now = performance.now();
+		let unfinished = false;
+		characters = characters.map((character, index) => {
+			if (character.settled || now >= character.settleAt) {
+				return { ...character, display: character.actual, settled: true };
+			}
+			unfinished = true;
+			return {
+				...character,
+				display:
+					MATRIX_GLYPHS[
+						Math.floor(
+							seededValue(character.actual, index + matrixFrame * 13, 97) * MATRIX_GLYPHS.length
+						)
+					]
+			};
 		});
+		if (!unfinished) stopMatrixAnimation();
 	};
 
-	const startMatrixReveal = () => {
-		const order = shuffledVisibleIndexes();
-		const rank = new Map(order.map((index, position) => [index, position]));
-		const divisor = Math.max(1, order.length - 1);
-		const settleTimes = characters.map((character, index) =>
-			/\s/.test(character.actual)
-				? 0
-				: 105 + Math.round(((rank.get(index) ?? 0) / divisor) * 285 + seededValue(index, 41) * 35)
-		);
-		const startedAt = performance.now();
-		let frame = 0;
+	const ensureMatrixAnimation = () => {
+		if (matrixInterval || !characters.some((character) => !character.settled)) return;
+		matrixInterval = setInterval(updateMatrixCharacters, 38);
+	};
 
-		characters = characters.map((character, index) => ({
-			...character,
-			display: /\s/.test(character.actual)
-				? character.actual
-				: MATRIX_GLYPHS[Math.floor(seededValue(index, 71) * MATRIX_GLYPHS.length)],
-			settled: /\s/.test(character.actual)
-		}));
+	const matchingPrefixLength = (left: string[], right: string[]) => {
+		let length = 0;
+		while (length < left.length && length < right.length && left[length] === right[length]) {
+			length += 1;
+		}
+		return length;
+	};
 
-		interval = setInterval(() => {
-			frame += 1;
-			const elapsed = performance.now() - startedAt;
-			let unfinished = false;
-			characters = characters.map((character, index) => {
-				if (character.settled || elapsed >= settleTimes[index]) {
-					return { ...character, display: character.actual, settled: true };
-				}
-				unfinished = true;
-				return {
-					...character,
-					display:
-						MATRIX_GLYPHS[Math.floor(seededValue(index + frame * 13, 97) * MATRIX_GLYPHS.length)]
-				};
-			});
-			if (!unfinished) stopAnimation();
-		}, 38);
+	const syncCharacters = (nextText: string, force = false) => {
+		const nextCharacters = Array.from(nextText);
+		const previousCharacters = Array.from(currentText);
+		const prefixLength =
+			incremental && !force ? matchingPrefixLength(previousCharacters, nextCharacters) : 0;
+		const preserved = characters.slice(0, prefixLength);
+		const now = typeof performance === 'undefined' ? 0 : performance.now();
+		const additions = nextCharacters.slice(prefixLength).map((actual, offset) => {
+			const index = prefixLength + offset;
+			const whitespace = /\s/.test(actual);
+			const delay = whitespace ? 0 : Math.round(seededValue(nextText, index, 17) * 190);
+			const matrix = mode === 'matrix' && !whitespace && !reducedMotion;
+			return {
+				id: nextCharacterId++,
+				actual,
+				display: matrix
+					? MATRIX_GLYPHS[Math.floor(seededValue(actual, index, 71) * MATRIX_GLYPHS.length)]
+					: actual,
+				delay,
+				settled: !matrix,
+				settleAt: matrix
+					? now + 105 + delay + Math.round(seededValue(nextText, index, 41) * 120)
+					: 0
+			};
+		});
+
+		characters = [...preserved, ...additions];
+		currentText = nextText;
+		currentMode = mode;
+		if (mode === 'matrix' && !reducedMotion) ensureMatrixAnimation();
+		else stopMatrixAnimation();
 	};
 
 	onMount(() => {
-		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-			showFinalText();
-			return;
-		}
-		if (mode === 'matrix') startMatrixReveal();
-		else if (mode === 'ghost') startGhostReveal();
-		else active = true;
+		mounted = true;
+		reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		syncCharacters(text, true);
 	});
 
-	onDestroy(stopAnimation);
+	$: if (mounted && (text !== currentText || mode !== currentMode)) {
+		syncCharacters(text, mode !== currentMode);
+	}
+
+	onDestroy(stopMatrixAnimation);
 </script>
 
-{#if mode === 'fade'}
-	<span class="activity-text" in:fade={{ duration: 220 }} out:fade={{ duration: 100 }}>{text}</span>
+{#if mode === 'fade' && !incremental}
+	<span class="activity-text" class:block in:fade={{ duration: 220 }} out:fade={{ duration: 100 }}
+		>{text}</span
+	>
 {:else}
-	<span class="activity-text character-reveal {mode}" class:active>
-		<span class="sr-only">{text}</span>
-		<span aria-hidden="true">
-			{#each characters as character}
+	<span class="activity-text character-reveal {mode}" class:block class:incremental>
+		<span class="screen-reader-copy">{text}</span>
+		<span class="animated-copy" aria-hidden="true">
+			{#each characters as character (character.id)}
 				{#if character.actual === '\n'}
 					<br />
 				{:else if /\s/.test(character.actual)}
-					<span>{character.actual === ' ' ? '\u00a0' : character.actual}</span>
+					<span class="activity-space">{character.actual}</span>
 				{:else}
 					<span class="activity-character" style={`--character-delay: ${character.delay}ms`}>
 						<span class="character-measure">{character.actual}</span>
@@ -152,11 +155,31 @@
 
 <style>
 	.activity-text {
+		min-width: 0;
 		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
-	.character-reveal {
+	.activity-text.block {
+		display: block;
+		width: 100%;
+	}
+
+	.character-reveal:not(.block),
+	.animated-copy {
 		display: inline;
+	}
+
+	.screen-reader-copy {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.activity-character {
@@ -178,29 +201,40 @@
 		font: inherit;
 	}
 
-	.ghost .character-face {
-		opacity: 0;
-		filter: blur(5px);
-		transform: translateY(2px) scale(0.98);
+	.fade.incremental .character-face {
+		animation: character-fade-in 190ms ease-out var(--character-delay) both;
 	}
 
-	.ghost.active .character-face {
-		opacity: 1;
-		filter: blur(0);
-		transform: translateY(0) scale(1);
-		transition:
-			opacity 180ms ease-out var(--character-delay),
-			filter 210ms ease-out var(--character-delay),
-			transform 210ms ease-out var(--character-delay);
+	.ghost .character-face {
+		animation: character-ghost-in 230ms ease-out var(--character-delay) both;
+	}
+
+	@keyframes character-fade-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes character-ghost-in {
+		from {
+			opacity: 0;
+			filter: blur(5px);
+			transform: translateY(2px) scale(0.98);
+		}
+		to {
+			opacity: 1;
+			filter: blur(0);
+			transform: translateY(0) scale(1);
+		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.ghost .character-face,
-		.ghost.active .character-face {
-			opacity: 1;
-			filter: none;
-			transform: none;
-			transition: none;
+		.fade.incremental .character-face,
+		.ghost .character-face {
+			animation: none;
 		}
 	}
 </style>

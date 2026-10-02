@@ -232,11 +232,17 @@ _CODE_VERIFICATION_COMMAND_RE = re.compile(
     r'\b(?:pytest|py\.test|unittest|vitest|jest|mocha|ava|playwright|cypress|rspec|rubocop|ruff|pylint|'
     r'mypy|eslint|biome|stylelint|shellcheck)\b|'
     r'\bpython(?:\d+(?:\.\d+)*)?\b[^\n;&|]*\s-m\s+(?:compileall|py_compile|pytest|unittest)\b|'
+    r'\bnode\b[^\n;&|]*\s--check\b|'
     r'\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:build|check|lint|test|typecheck|validate)\b|'
     r'\b(?:cargo\s+(?:build|check|clippy|test)|go\s+test|dotnet\s+(?:build|test)|'
     r'mvn\s+(?:test|verify)|gradle\w*\s+(?:build|check|test)|make\s+(?:build|check|lint|test)|'
     r'cmake\s+--build|ctest\b|swift\s+(?:build|test))',
     re.IGNORECASE,
+)
+_UNQUOTED_HEREDOC_RE = re.compile(r'(?m)(<<-?)[ \t]*([A-Za-z_][A-Za-z0-9_]*)\b')
+_SHELL_DIAGNOSTIC_RE = re.compile(
+    r'(?mi)^(?:/[^:\n]*sh|(?:ba|z|da|a|k)?sh):\s*(?:(?:line\s+)?\d+:\s*)?.*'
+    r'(?:not found|syntax error|bad substitution|unexpected|permission denied)\s*$'
 )
 _CODE_TEST_COMMAND_RE = re.compile(
     r'\b(?:pytest|py\.test|unittest|vitest|jest|mocha|ava|playwright|cypress|rspec)\b|'
@@ -628,12 +634,63 @@ def _terminal_result(record: dict[str, Any]) -> dict[str, Any]:
     return result if isinstance(result, dict) else {}
 
 
+def protect_terminal_file_write_command(command: Any) -> str:
+    """Quote simple heredoc delimiters used by terminal file writes.
+
+    The agent writes source files with literal heredocs. Leaving a delimiter
+    unquoted lets the shell execute backticks and expand ``${...}`` inside the
+    source body before it reaches the file.
+    """
+
+    command = str(command or '')
+    if not command or not _FILE_MUTATION_COMMAND_RE.search(command):
+        return command
+
+    return _UNQUOTED_HEREDOC_RE.sub(
+        lambda match: f"{match.group(1)}'{match.group(2)}'",
+        command,
+    )
+
+
+def protect_terminal_tool_calls(calls: Any) -> list[dict[str, Any]]:
+    """Normalize terminal writes before signatures, dispatch, and execution."""
+
+    if not isinstance(calls, list):
+        return []
+    normalized = []
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        call = dict(call)
+        parameters = call.get('parameters')
+        if call.get('name') == 'terminal' and isinstance(parameters, dict) and 'command' in parameters:
+            parameters = dict(parameters)
+            parameters['command'] = protect_terminal_file_write_command(parameters['command'])
+            call['parameters'] = parameters
+        normalized.append(call)
+    return normalized
+
+
+def terminal_result_has_shell_error(value: Any) -> bool:
+    """Detect shell diagnostics that can be hidden by a later zero exit code."""
+
+    parsed = value
+    if isinstance(parsed, str) and parsed[:1] in {'{', '['}:
+        try:
+            parsed = json.loads(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    output = parsed.get('output') if isinstance(parsed, dict) else parsed
+    return isinstance(output, str) and bool(_SHELL_DIAGNOSTIC_RE.search(output))
+
+
 def _successful_terminal_record(record: dict[str, Any]) -> bool:
     result = _terminal_result(record)
     return (
         record.get('status') == 'completed'
         and result.get('exit_code') == 0
         and result.get('timed_out') is not True
+        and not terminal_result_has_shell_error(result)
     )
 
 
@@ -1371,6 +1428,57 @@ def tool_plan_retry_instruction(
     reason = str(error).strip()[:300] or 'invalid tool-plan response'
     previous_response = str(previous_response or '')
     original_request = _safe_activity_preview(original_request, max_chars=500)
+    if 'identical' in reason.casefold() and 'call already' in reason.casefold():
+        completed_call = ''
+        requested_outcome = ''
+        repeated_file_write = False
+        try:
+            rejected_plan = parse_tool_plan_response(previous_response)
+            requested_outcome = _safe_activity_preview(rejected_plan.get('task_title'), max_chars=160)
+            rejected_calls = rejected_plan.get('tool_calls') or []
+            if rejected_calls:
+                rejected = rejected_calls[0]
+                rejected_name = str(rejected.get('name') or 'tool').strip()
+                rejected_parameters = (
+                    rejected.get('parameters')
+                    if isinstance(rejected.get('parameters'), dict)
+                    else {}
+                )
+                if rejected_name == 'terminal':
+                    raw_command = str(rejected_parameters.get('command') or '')
+                    repeated_file_write = bool(_FILE_MUTATION_COMMAND_RE.search(raw_command))
+                    command = _safe_activity_preview(raw_command, max_chars=300)
+                    cwd = _safe_activity_preview(rejected_parameters.get('cwd'), max_chars=120)
+                    completed_call = f'{cwd}$ {command}' if cwd else command
+                else:
+                    completed_call = _safe_activity_preview(rejected_parameters, max_chars=300)
+                if completed_call:
+                    completed_call = f' The completed action was {rejected_name}: {completed_call}.'
+        except ValueError:
+            pass
+
+        objective = requested_outcome or original_request
+        objective_instruction = f' The requested outcome is: {objective}.' if objective else ''
+        next_action_instruction = (
+            ' This exact file write already succeeded. Earlier reads of that file are now stale. Do not write it '
+            'again and do not try to repair an error from an older read. Inspect the current file with a focused '
+            'read, run a syntax check or test, work on a different missing file, or finish.'
+            if repeated_file_write
+            else ''
+        )
+        return (
+            f'The last plan repeated a completed call ({reason}). This does not mean the command failed; it means '
+            f'the command already succeeded and its evidence is still available.{completed_call}'
+            f'{objective_instruction}{next_action_instruction} '
+            'Compare the requested outcome with what that completed action actually accomplished, identify the still '
+            'missing result, and select the next action that closes that gap. Repeating the same read while its input '
+            'is unchanged would only return the same evidence. Return exactly one valid JSON object that either '
+            'contains a terminal call which concretely advances the unresolved outcome, or contains a final_answer '
+            'if the outcome is already complete. For a browser-app launch, inspecting existing entry files does not '
+            'launch them; if they are usable, start the HTTP server with '
+            'background=true; after it starts, use the next planning step to probe localhost. Do not include Markdown '
+            'or prose outside the JSON object.'
+        )
     attempted_multiline_write = bool(
         re.search(
             r'(?:<<\s*[\'\"]?[A-Za-z_][A-Za-z0-9_]*|\btee\s+[^\n]+|\b(?:cat|printf)\b[^\n]*>\s*[^\s])',
@@ -1386,46 +1494,6 @@ def tool_plan_retry_instruction(
             'with task_title, progress, tool_calls, parallel_tasks, final_answer, and context fields. Use one ordinary '
             'quoted heredoc command for the file and do not encode its contents as base64. Do not include '
             'Markdown, tool-call markup, or prose outside the JSON object.'
-        )
-    if 'identical' in reason.casefold() and 'call already' in reason.casefold():
-        completed_call = ''
-        requested_outcome = ''
-        try:
-            rejected_plan = parse_tool_plan_response(previous_response)
-            requested_outcome = _safe_activity_preview(rejected_plan.get('task_title'), max_chars=160)
-            rejected_calls = rejected_plan.get('tool_calls') or []
-            if rejected_calls:
-                rejected = rejected_calls[0]
-                rejected_name = str(rejected.get('name') or 'tool').strip()
-                rejected_parameters = (
-                    rejected.get('parameters')
-                    if isinstance(rejected.get('parameters'), dict)
-                    else {}
-                )
-                if rejected_name == 'terminal':
-                    command = _safe_activity_preview(rejected_parameters.get('command'), max_chars=300)
-                    cwd = _safe_activity_preview(rejected_parameters.get('cwd'), max_chars=120)
-                    completed_call = f'{cwd}$ {command}' if cwd else command
-                else:
-                    completed_call = _safe_activity_preview(rejected_parameters, max_chars=300)
-                if completed_call:
-                    completed_call = f' The completed action was {rejected_name}: {completed_call}.'
-        except ValueError:
-            pass
-
-        objective = requested_outcome or original_request
-        objective_instruction = f' The requested outcome is: {objective}.' if objective else ''
-        return (
-            f'The last plan repeated a completed call ({reason}). This does not mean the command failed; it means '
-            f'the command already succeeded and its evidence is still available.{completed_call}{objective_instruction} '
-            'Compare the requested outcome with what that completed action actually accomplished, identify the still '
-            'missing result, and select the next action that closes that gap. Repeating the same read while its input '
-            'is unchanged would only return the same evidence. Return exactly one valid JSON object that either '
-            'contains a terminal call which concretely advances the unresolved outcome, or contains a final_answer '
-            'if the outcome is already complete. For a browser-app launch, inspecting existing entry files does not '
-            'launch them; if they are usable, start the HTTP server with '
-            'background=true; after it starts, use the next planning step to probe localhost. Do not include Markdown '
-            'or prose outside the JSON object.'
         )
     return (
         f'Your previous response could not be used ({reason}). Retry the same planning step now. '
@@ -1543,9 +1611,17 @@ def render_tool_history(records: list[dict[str, Any]], max_chars: int = TATER_AG
         iteration = record.get('iteration', position)
         tool = str(record.get('tool') or 'unknown')
         status = str(record.get('status') or 'unknown')
+        mutation_note = ''
+        if tool == 'terminal' and status == 'completed':
+            record_parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+            if _FILE_MUTATION_COMMAND_RE.search(str(record_parameters.get('command') or '')):
+                mutation_note = (
+                    ' note="This file mutation completed. Earlier reads of files changed by it are stale; '
+                    'verify current state instead of repeating the write."'
+                )
         summaries.append(
             f'{position}. iteration={iteration} tool={tool} status={status} '
-            f'parameters={parameters} result={result_metadata_text}'
+            f'parameters={parameters} result={result_metadata_text}{mutation_note}'
         )
         if result_detail:
             details.append((f'--- result {position}: {tool} ---', result_detail))

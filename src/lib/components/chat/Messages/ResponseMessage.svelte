@@ -912,6 +912,16 @@
 											<ActivityText
 												text={renderedContent}
 												mode={$settings?.taterActivityAnimation ?? 'fade'}
+												block={true}
+											/>
+										</div>
+									{:else if !renderedDone}
+										<div class="markdown-prose min-w-0 w-full">
+											<ActivityText
+												text={renderedContent}
+												mode={$settings?.taterActivityAnimation ?? 'fade'}
+												incremental={true}
+												block={true}
 											/>
 										</div>
 									{:else}
