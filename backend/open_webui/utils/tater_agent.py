@@ -1134,9 +1134,20 @@ def parse_tool_plan_response(
             if not isinstance(raw_call, dict):
                 raise ValueError(f'Every call in {field} must be an object')
             name = str(raw_call.get('name') or '').strip()
+            inferred_parameters = None
+            if not name and isinstance(raw_call.get('command'), str):
+                name = 'terminal'
+                inferred_parameters = {
+                    key: raw_call[key]
+                    for key in ('command', 'cwd', 'background', 'timeout_seconds')
+                    if key in raw_call
+                }
+            elif not name and isinstance(raw_call.get('request'), str):
+                name = 'tater_hydra'
+                inferred_parameters = {'request': raw_call['request']}
             if not name:
                 raise ValueError(f'Every call in {field} must have a name')
-            parameters = raw_call.get('parameters', {})
+            parameters = raw_call.get('parameters', inferred_parameters or {})
             if not isinstance(parameters, dict):
                 raise ValueError(f'Tool parameters for {name} must be an object')
             parsed_calls.append({'name': name, 'parameters': parameters})
@@ -1240,8 +1251,29 @@ def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STE
     return parse_tool_plan_response(content, max_calls=max_calls)['tool_calls']
 
 
-def tool_plan_retry_instruction(error: Exception | str) -> str:
+def tool_plan_retry_instruction(
+    error: Exception | str,
+    previous_response: str = '',
+) -> str:
     reason = str(error).strip()[:300] or 'invalid tool-plan response'
+    previous_response = str(previous_response or '')
+    attempted_multiline_write = bool(
+        re.search(
+            r'(?:<<\s*[\'\"]?[A-Za-z_][A-Za-z0-9_]*|\btee\s+[^\n]+|\b(?:cat|printf)\b[^\n]*>\s*[^\s])',
+            previous_response,
+            re.IGNORECASE,
+        )
+    )
+    if attempted_multiline_write:
+        return (
+            f'Your previous file-writing plan could not be used ({reason}). Preserve that write step; do not '
+            'return to directory listing or reread files whose output is already in the execution history. Retry '
+            'with exactly one terminal call for the next file. The entire response must be one valid JSON object '
+            'with task_title, progress, tool_calls, parallel_tasks, final_answer, and context fields. Do not place a '
+            'heredoc or raw multiline file body inside the JSON command string. Encode multiline content as base64 '
+            'and decode it in the terminal command, keeping the command a valid JSON string. Do not include '
+            'Markdown, tool-call markup, or prose outside the JSON object.'
+        )
     return (
         f'Your previous response could not be used ({reason}). Retry the same planning step now. '
         'Return exactly one valid JSON object with task_title, progress, tool_calls, parallel_tasks, final_answer, '
@@ -1457,8 +1489,72 @@ def tool_call_signature(name: str, parameters: dict[str, Any], *, cwd: str = '')
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
+def _terminal_file_read_targets(command: Any, cwd: str = '') -> tuple[str, ...]:
+    """Return concrete files read by simple commands whose result can be safely reused."""
+
+    command = str(command or '').strip()
+    if not terminal_command_is_obviously_read_only(command):
+        return ()
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return ()
+    if not arguments or arguments[0].rsplit('/', 1)[-1] != 'cat':
+        return ()
+
+    targets = []
+    for argument in arguments[1:]:
+        if argument == '--':
+            continue
+        if argument.startswith('-') or argument == '/dev/stdin':
+            continue
+        target = argument if os.path.isabs(argument) else os.path.join(cwd or '.', argument)
+        targets.append(os.path.normpath(target))
+    return tuple(targets)
+
+
+def _terminal_action_may_change_targets(record: dict[str, Any], targets: tuple[str, ...]) -> bool:
+    """Return true when a later terminal action plausibly changed one of the read files."""
+
+    if not targets or str(record.get('tool') or '') != 'terminal':
+        return False
+    parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+    command = str(parameters.get('command') or '').strip()
+    if not command or terminal_command_is_obviously_read_only(command):
+        return False
+
+    command_cwd = str(parameters.get('cwd') or '').strip()
+    for target in targets:
+        relative_target = ''
+        if command_cwd:
+            try:
+                relative_target = os.path.relpath(target, command_cwd)
+            except ValueError:
+                relative_target = ''
+        candidates = {target, os.path.basename(target)}
+        if relative_target and relative_target != '.':
+            candidates.add(relative_target)
+        if any(candidate and candidate in command for candidate in candidates):
+            return True
+
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return False
+    if len(arguments) < 2 or arguments[0].rsplit('/', 1)[-1] != 'git':
+        return False
+    return arguments[1] in {
+        'checkout',
+        'merge',
+        'pull',
+        'rebase',
+        'reset',
+        'restore',
+    }
+
+
 def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
-    """Reject unchanged calls from the latest execution step before rerunning them."""
+    """Reject repeated calls whose relevant inputs have not changed."""
 
     if not isinstance(tool_calls, list) or not tool_calls or not isinstance(records, list):
         return ''
@@ -1521,6 +1617,22 @@ def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
             if record_signature != signature:
                 continue
             calls_since = execution_records[record_index + 1 :]
+            record_parameters = (
+                record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+            )
+            record_cwd = str(record_parameters.get('cwd') or terminal_result_cwd(record)).strip()
+            read_targets = (
+                _terminal_file_read_targets(record_parameters.get('command'), record_cwd)
+                if name == 'terminal'
+                else ()
+            )
+            target_unchanged_since = bool(
+                read_targets
+                and not any(
+                    _terminal_action_may_change_targets(item, read_targets)
+                    for item in calls_since
+                )
+            )
             unchanged_since = bool(
                 name == 'terminal'
                 and all(
@@ -1531,7 +1643,11 @@ def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
                     for item in calls_since
                 )
             )
-            if record.get('iteration') == latest_iteration or unchanged_since:
+            if (
+                record.get('iteration') == latest_iteration
+                or unchanged_since
+                or target_unchanged_since
+            ):
                 previous = record
             break
         if not previous:

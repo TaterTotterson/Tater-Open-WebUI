@@ -1617,8 +1617,10 @@ async def chat_completion_tools_handler(
         'terminal for every local action; each call already returns its command output and exit status. For a '
         'terminal command, exit code zero means the command ran; it does not mean the output answered the task. If '
         'a read does not reveal the needed information, change the path, search, line range, or inspection method '
-        'instead of repeating it. An unchanged call from the immediately preceding execution step is rejected '
-        'before execution. If a command failed, inspect its error and correct the command or choose another approach '
+        'instead of repeating it. A successful file read remains available in execution history. Never issue that '
+        'exact read again unless a completed intervening action actually changed the same file; creating or changing '
+        'an unrelated path does not qualify. An unchanged call is rejected before execution. If a command failed, '
+        'inspect its error and correct the command or choose another approach '
         'before retrying. For a '
         'large file or directory, prefer focused rg, sed -n, head, or tail commands instead of unbounded cat or '
         'recursive listings. If a terminal result says truncated=true, do not repeat the same command: narrow the '
@@ -1631,6 +1633,10 @@ async def chat_completion_tools_handler(
         'build, typecheck, lint, compile, or syntax check available after the last edit. For a bug fix or behavioral '
         'change, add or update a focused regression test when the repository has a test harness. Never claim the '
         'work succeeded while verification is failing; fix it or report the concrete failure as a blocker. '
+        'Every planner response must remain valid JSON. Never embed a heredoc or a raw multiline file body in a '
+        'terminal command JSON string. For multiline file creation, base64-encode the content and decode it in the '
+        'terminal command. Prefer writing one file per planning step so a malformed large response cannot discard '
+        'the rest of the work. '
         'When asked to create an interactive app or game and launch it for the user, build a browser app unless they '
         'explicitly request a native or terminal interface. Start its server on 0.0.0.0 with terminal background=true, '
         'then use a separate foreground curl or wget call against localhost to verify it. Before finishing, keep the '
@@ -2040,6 +2046,7 @@ async def chat_completion_tools_handler(
                 render_tool_history(history_records, max_chars=planner_tool_history_max_chars),
             )
 
+            failed_planner_responses = []
             for planning_attempt in range(TATER_AGENT_PLAN_RETRY_LIMIT + 1):
                 attempt_payload = payload
                 if planning_attempt:
@@ -2049,7 +2056,10 @@ async def chat_completion_tools_handler(
                             *payload['messages'],
                             {
                                 'role': 'user',
-                                'content': tool_plan_retry_instruction(planning_error or 'invalid response'),
+                                'content': tool_plan_retry_instruction(
+                                    planning_error or 'invalid response',
+                                    '\n'.join(failed_planner_responses),
+                                ),
                             },
                         ],
                     }
@@ -2105,6 +2115,8 @@ async def chat_completion_tools_handler(
                     break
                 except Exception as e:
                     planning_error = e
+                    if content:
+                        failed_planner_responses.append(content)
                     ledger_event(
                         'planner_attempt_finished',
                         iteration=iteration,

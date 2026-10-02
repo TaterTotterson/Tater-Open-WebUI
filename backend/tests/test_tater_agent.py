@@ -110,6 +110,24 @@ class TaterAgentTests(unittest.TestCase):
     def test_parses_empty_plan(self):
         self.assertEqual(tater_agent.parse_tool_plan('{"tool_calls":[]}'), [])
 
+    def test_infers_terminal_name_from_flat_command_call(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"tool_calls":[{"command":"ls -R web_version","cwd":"/projects/game"}]}'
+        )
+
+        self.assertEqual(
+            plan['tool_calls'],
+            [
+                {
+                    'name': 'terminal',
+                    'parameters': {
+                        'command': 'ls -R web_version',
+                        'cwd': '/projects/game',
+                    },
+                }
+            ],
+        )
+
     def test_parses_progress_and_final_answer(self):
         plan = tater_agent.parse_tool_plan_response(
             '{"progress":"I’ll inspect the project first.","tool_calls":[],"final_answer":"Done."}'
@@ -832,6 +850,18 @@ class TaterAgentTests(unittest.TestCase):
 
         self.assertLess(len(instruction), 600)
 
+    def test_retry_instruction_preserves_malformed_multiline_write(self):
+        instruction = tater_agent.tool_plan_retry_instruction(
+            'No tool-plan JSON object found',
+            '{"tool_calls":[{"name":"terminal","parameters":{"command":"cat > index.html <<EOF\n'
+            '<html>game</html>\nEOF"}}]}',
+        )
+
+        self.assertIn('Preserve that write step', instruction)
+        self.assertIn('do not return to directory listing or reread files', instruction)
+        self.assertIn('base64', instruction)
+        self.assertIn('exactly one terminal call', instruction)
+
     def test_recent_history_keeps_latest_messages_within_budget(self):
         history = tater_agent.render_recent_chat_history(
             [
@@ -1115,6 +1145,73 @@ class TaterAgentTests(unittest.TestCase):
         )
 
         self.assertIn('no intervening action changed its inputs', gap)
+
+    def test_repeated_file_read_is_rejected_after_unrelated_mutation(self):
+        records = [
+            {
+                'iteration': 2,
+                'tool': 'terminal',
+                'parameters': {'command': 'cat game.py', 'cwd': '/projects/woodchuck_game'},
+                'status': 'completed',
+                'result': {'output': 'terminal game', 'exit_code': 0},
+            },
+            {
+                'iteration': 3,
+                'tool': 'terminal',
+                'parameters': {
+                    'command': 'mkdir -p web_version && touch web_version/index.html',
+                    'cwd': '/projects/woodchuck_game',
+                },
+                'status': 'completed',
+                'result': {'output': '', 'exit_code': 0},
+            },
+        ]
+
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [
+                {
+                    'name': 'terminal',
+                    'parameters': {'command': 'cat game.py', 'cwd': '/projects/woodchuck_game'},
+                }
+            ],
+            records,
+        )
+
+        self.assertIn('already completed', gap)
+        self.assertIn('choose a different command', gap)
+
+    def test_repeated_file_read_is_allowed_after_same_file_change(self):
+        records = [
+            {
+                'iteration': 2,
+                'tool': 'terminal',
+                'parameters': {'command': 'cat game.py', 'cwd': '/projects/woodchuck_game'},
+                'status': 'completed',
+                'result': {'output': 'terminal game', 'exit_code': 0},
+            },
+            {
+                'iteration': 3,
+                'tool': 'terminal',
+                'parameters': {
+                    'command': "printf '%s' 'browser game' > game.py",
+                    'cwd': '/projects/woodchuck_game',
+                },
+                'status': 'completed',
+                'result': {'output': '', 'exit_code': 0},
+            },
+        ]
+
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [
+                {
+                    'name': 'terminal',
+                    'parameters': {'command': 'cat game.py', 'cwd': '/projects/woodchuck_game'},
+                }
+            ],
+            records,
+        )
+
+        self.assertEqual(gap, '')
 
     def test_repeated_terminal_call_matches_persisted_cwd_when_omitted(self):
         gap = tater_agent.repeated_tool_call_plan_gap(
