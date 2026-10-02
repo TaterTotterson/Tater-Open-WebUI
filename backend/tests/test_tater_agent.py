@@ -862,6 +862,36 @@ class TaterAgentTests(unittest.TestCase):
         self.assertIn('base64', instruction)
         self.assertIn('exactly one terminal call', instruction)
 
+    def test_retry_instruction_explains_unresolved_outcome_after_repeated_read(self):
+        instruction = tater_agent.tool_plan_retry_instruction(
+            'The identical terminal call already completed and no intervening action changed its inputs.',
+            json.dumps(
+                {
+                    'task_title': 'Launch Woodchuck Game',
+                    'progress': 'Inspecting the web files.',
+                    'tool_calls': [
+                        {
+                            'name': 'terminal',
+                            'parameters': {
+                                'command': 'cat web_version/index.html',
+                                'cwd': '/projects/woodchuck_game',
+                            },
+                        }
+                    ],
+                    'parallel_tasks': [],
+                    'final_answer': '',
+                    'context': {},
+                }
+            ),
+            'try again',
+        )
+
+        self.assertIn('does not mean the command failed', instruction)
+        self.assertIn('The completed action was terminal', instruction)
+        self.assertIn('The requested outcome is: Launch Woodchuck Game', instruction)
+        self.assertIn('identify the still missing result', instruction)
+        self.assertIn('start the HTTP server', instruction)
+
     def test_recent_history_keeps_latest_messages_within_budget(self):
         history = tater_agent.render_recent_chat_history(
             [

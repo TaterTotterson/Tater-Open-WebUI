@@ -1254,9 +1254,11 @@ def parse_tool_plan(content: str, max_calls: int = TATER_AGENT_MAX_CALLS_PER_STE
 def tool_plan_retry_instruction(
     error: Exception | str,
     previous_response: str = '',
+    original_request: str = '',
 ) -> str:
     reason = str(error).strip()[:300] or 'invalid tool-plan response'
     previous_response = str(previous_response or '')
+    original_request = _safe_activity_preview(original_request, max_chars=500)
     attempted_multiline_write = bool(
         re.search(
             r'(?:<<\s*[\'\"]?[A-Za-z_][A-Za-z0-9_]*|\btee\s+[^\n]+|\b(?:cat|printf)\b[^\n]*>\s*[^\s])',
@@ -1273,6 +1275,46 @@ def tool_plan_retry_instruction(
             'heredoc or raw multiline file body inside the JSON command string. Encode multiline content as base64 '
             'and decode it in the terminal command, keeping the command a valid JSON string. Do not include '
             'Markdown, tool-call markup, or prose outside the JSON object.'
+        )
+    if 'identical' in reason.casefold() and 'call already' in reason.casefold():
+        completed_call = ''
+        requested_outcome = ''
+        try:
+            rejected_plan = parse_tool_plan_response(previous_response)
+            requested_outcome = _safe_activity_preview(rejected_plan.get('task_title'), max_chars=160)
+            rejected_calls = rejected_plan.get('tool_calls') or []
+            if rejected_calls:
+                rejected = rejected_calls[0]
+                rejected_name = str(rejected.get('name') or 'tool').strip()
+                rejected_parameters = (
+                    rejected.get('parameters')
+                    if isinstance(rejected.get('parameters'), dict)
+                    else {}
+                )
+                if rejected_name == 'terminal':
+                    command = _safe_activity_preview(rejected_parameters.get('command'), max_chars=300)
+                    cwd = _safe_activity_preview(rejected_parameters.get('cwd'), max_chars=120)
+                    completed_call = f'{cwd}$ {command}' if cwd else command
+                else:
+                    completed_call = _safe_activity_preview(rejected_parameters, max_chars=300)
+                if completed_call:
+                    completed_call = f' The completed action was {rejected_name}: {completed_call}.'
+        except ValueError:
+            pass
+
+        objective = requested_outcome or original_request
+        objective_instruction = f' The requested outcome is: {objective}.' if objective else ''
+        return (
+            f'The last plan repeated a completed call ({reason}). This does not mean the command failed; it means '
+            f'the command already succeeded and its evidence is still available.{completed_call}{objective_instruction} '
+            'Compare the requested outcome with what that completed action actually accomplished, identify the still '
+            'missing result, and select the next action that closes that gap. Repeating the same read while its input '
+            'is unchanged would only return the same evidence. Return exactly one valid JSON object that either '
+            'contains a terminal call which concretely advances the unresolved outcome, or contains a final_answer '
+            'if the outcome is already complete. For a browser-app launch, inspecting existing entry files does not '
+            'launch them; if they are usable, start the HTTP server with '
+            'background=true; after it starts, use the next planning step to probe localhost. Do not include Markdown '
+            'or prose outside the JSON object.'
         )
     return (
         f'Your previous response could not be used ({reason}). Retry the same planning step now. '

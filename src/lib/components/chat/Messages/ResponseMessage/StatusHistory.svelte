@@ -1,10 +1,11 @@
-<script>
+<script lang="ts">
 	import { getContext } from 'svelte';
-	const i18n = getContext('i18n');
+	const i18n: any = getContext('i18n');
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
+	import TaterAgentActivity from './StatusHistory/TaterAgentActivity.svelte';
 	import equal from 'fast-deep-equal';
-	export let statusHistory = [];
+	export let statusHistory: any[] = [];
 	export let expand = false;
 
 	let showHistory = true;
@@ -15,8 +16,9 @@
 		showHistory = false;
 	}
 
-	let history = [];
-	let status = null;
+	let history: any[] = [];
+	let status: any = null;
+	let hasTaterAgentActivity = false;
 
 	$: if (history && history.length > 0) {
 		status = history.at(-1);
@@ -25,10 +27,14 @@
 	$: if (!equal(statusHistory, history)) {
 		history = statusHistory;
 	}
+
+	$: hasTaterAgentActivity = history.some((item: any) => item?.action === 'tater_agent_progress');
 </script>
 
 {#if history && history.length > 0}
-	{#if status?.hidden !== true}
+	{#if hasTaterAgentActivity}
+		<TaterAgentActivity {history} />
+	{:else if status?.hidden !== true}
 		<div class="text-[0.9375rem] flex flex-col w-full">
 			<button
 				class="w-full"
@@ -60,7 +66,7 @@
 										{#if idx !== history.length - 1}
 											<div
 												class="w-[0.03125rem] ml-[0.40625rem] h-[calc(100%-14px)] bg-gray-300 dark:bg-gray-700"
-											/>
+											></div>
 										{/if}
 									</div>
 

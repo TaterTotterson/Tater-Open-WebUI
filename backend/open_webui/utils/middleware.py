@@ -1500,6 +1500,8 @@ async def chat_completion_tools_handler(
         or metadata.get('chat_id')
         or ''
     ) or None
+    agent_progress_status_id = f'tater-agent-progress-{agent_run_id}'
+    current_progress_message = ''
 
     def ledger_event(event: str, **data: Any) -> None:
         record_tater_run_event(
@@ -1642,7 +1644,10 @@ async def chat_completion_tools_handler(
         'then use a separate foreground curl or wget call against localhost to verify it. Before finishing, keep the '
         'server running and report its exact port and that it can be opened from the Files panel Ports section. Do '
         'not substitute a terminal game because a desktop GUI cannot open. Do not count a syntax check, timeout, '
-        'stdin EOF, or telling the user how to start it themselves as successful launch evidence. '
+        'stdin EOF, or telling the user how to start it themselves as successful launch evidence. For a request to '
+        'launch an existing browser app, use at most one inspection step. Once its entry files are confirmed, the '
+        'next action must start the server or repair a specific defect found in those files; never reread them merely '
+        'to plan the launch again. '
         'Whenever tool_calls is nonempty, put one short, natural user-facing activity update in progress describing '
         'the concrete step currently underway and why it matters. Write it in present tense, normally beginning with '
         'an action such as "Inspecting", "Tracing", "Updating", "Testing", or "Verifying". Never begin with "I", '
@@ -1729,11 +1734,20 @@ async def chat_completion_tools_handler(
         except Exception as e:
             log.debug('Could not emit tool status for %s: %s', tool_name, e)
 
-    async def emit_progress_update(message: str):
+    async def emit_progress_update(
+        message: str,
+        *,
+        done: bool = False,
+        failed: bool = False,
+        record: bool = True,
+    ):
+        nonlocal current_progress_message
         message = naturalize_progress_update(message)
         if message:
+            current_progress_message = message.strip()
+        if record and message:
             ledger_event('progress_update', message=message.strip())
-        if background_task_id and message:
+        if record and background_task_id and message:
             try:
                 from open_webui.utils.tater_tasks import record_tater_task_progress
 
@@ -1750,8 +1764,14 @@ async def chat_completion_tools_handler(
         try:
             await event_emitter(
                 {
-                    'type': 'message',
-                    'data': {'content': f'{message.strip()}\n\n'},
+                    'type': 'status',
+                    'data': {
+                        'id': agent_progress_status_id,
+                        'action': 'tater_agent_progress',
+                        'description': message.strip(),
+                        'done': done,
+                        **({'error': True} if failed else {}),
+                    },
                 }
             )
         except Exception as e:
@@ -2059,6 +2079,7 @@ async def chat_completion_tools_handler(
                                 'content': tool_plan_retry_instruction(
                                     planning_error or 'invalid response',
                                     '\n'.join(failed_planner_responses),
+                                    effective_agent_request(),
                                 ),
                             },
                         ],
@@ -2618,6 +2639,13 @@ async def chat_completion_tools_handler(
         loop_stopped = True
 
     direct_answer = prepared_final_answer if not loop_stopped else agent_stop_message
+    if current_progress_message:
+        await emit_progress_update(
+            current_progress_message,
+            done=True,
+            failed=loop_stopped,
+            record=False,
+        )
     if loop_stopped:
         request.state.tater_agent_stop_reason = agent_stop_message or 'The agent loop stopped before completion.'
 
@@ -2691,7 +2719,7 @@ async def chat_completion_tools_handler(
     if direct_answer and (history_records or loop_stopped):
         body['_tater_agent_response'] = {
             'content': direct_answer,
-            'display_content': '\n\n'.join([*emitted_progress_updates, direct_answer]),
+            'display_content': direct_answer,
         }
 
     ledger_event(

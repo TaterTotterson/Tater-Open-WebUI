@@ -1188,6 +1188,12 @@
 					} else {
 						message.statusHistory = [data];
 					}
+					if (data?.action === 'tater_agent_progress' || data?.action === 'tool_execution') {
+						await tick();
+						if (shouldAutoScrollResponse()) {
+							scrollToBottom('smooth');
+						}
+					}
 				} else if (type === 'context_compaction') {
 					handleContextCompactionStatus(data);
 				} else if (type === 'chat:active') {
