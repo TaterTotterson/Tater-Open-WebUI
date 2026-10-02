@@ -86,6 +86,7 @@ class ProcessRecord:
     cwd: str
     created_at: float
     timeout_seconds: int | None
+    background: bool = False
     status: str = 'running'
     exit_code: int | None = None
     timed_out: bool = False
@@ -117,6 +118,7 @@ class ProcessRecord:
             'exit_code': self.exit_code,
             'created_at': self.created_at,
             'timed_out': self.timed_out,
+            'background': self.background,
         }
 
     def output_since(self, offset: int = 0, max_chars: int | None = None) -> dict[str, Any]:
@@ -205,6 +207,7 @@ class LocalTerminalRuntime:
         *,
         cwd: str | None = None,
         timeout_seconds: int | None = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+        background: bool = False,
     ) -> ProcessRecord:
         command = command.strip()
         if not command:
@@ -224,6 +227,7 @@ class LocalTerminalRuntime:
             cwd=str(context.cwd),
             created_at=time.time(),
             timeout_seconds=timeout_seconds,
+            background=background,
         )
         context.processes[record.id] = record
         record.task = asyncio.create_task(self._run_process(record))
@@ -325,6 +329,7 @@ class LocalTerminalRuntime:
             command,
             cwd=cwd,
             timeout_seconds=timeout_seconds,
+            background=background,
         )
         if background:
             return record.tool_result()
@@ -348,6 +353,8 @@ class LocalTerminalRuntime:
 
     async def kill_process(self, user_id: str, session_id: str | None, process_id: str) -> dict[str, Any]:
         record = self.get_process(user_id, session_id, process_id)
+        if record.status != 'running':
+            return record.summary()
         await self._terminate_process(record)
         record.done.set()
         return record.summary()
