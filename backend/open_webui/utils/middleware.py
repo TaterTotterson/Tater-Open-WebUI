@@ -1500,8 +1500,6 @@ async def chat_completion_tools_handler(
         or metadata.get('chat_id')
         or ''
     ) or None
-    agent_progress_status_id = f'tater-agent-progress-{agent_run_id}'
-    current_progress_message = ''
 
     def ledger_event(event: str, **data: Any) -> None:
         record_tater_run_event(
@@ -1635,10 +1633,10 @@ async def chat_completion_tools_handler(
         'build, typecheck, lint, compile, or syntax check available after the last edit. For a bug fix or behavioral '
         'change, add or update a focused regression test when the repository has a test harness. Never claim the '
         'work succeeded while verification is failing; fix it or report the concrete failure as a blocker. '
-        'Every planner response must remain valid JSON. Never embed a heredoc or a raw multiline file body in a '
-        'terminal command JSON string. For multiline file creation, base64-encode the content and decode it in the '
-        'terminal command. Prefer writing one file per planning step so a malformed large response cannot discard '
-        'the rest of the work. '
+        'Keep planner responses focused and write one file per planning step. For multiline file creation, use one '
+        'ordinary quoted heredoc terminal command. Do not generate base64 file bodies: they are expensive, difficult '
+        'to inspect, and prone to corruption. After each write, continue to the next unfinished file instead of '
+        'rereading unchanged inputs. '
         'When asked to create an interactive app or game and launch it for the user, build a browser app unless they '
         'explicitly request a native or terminal interface. Start its server on 0.0.0.0 with terminal background=true, '
         'then use a separate foreground curl or wget call against localhost to verify it. Before finishing, keep the '
@@ -1734,20 +1732,11 @@ async def chat_completion_tools_handler(
         except Exception as e:
             log.debug('Could not emit tool status for %s: %s', tool_name, e)
 
-    async def emit_progress_update(
-        message: str,
-        *,
-        done: bool = False,
-        failed: bool = False,
-        record: bool = True,
-    ):
-        nonlocal current_progress_message
+    async def emit_progress_update(message: str):
         message = naturalize_progress_update(message)
         if message:
-            current_progress_message = message.strip()
-        if record and message:
             ledger_event('progress_update', message=message.strip())
-        if record and background_task_id and message:
+        if background_task_id and message:
             try:
                 from open_webui.utils.tater_tasks import record_tater_task_progress
 
@@ -1764,13 +1753,10 @@ async def chat_completion_tools_handler(
         try:
             await event_emitter(
                 {
-                    'type': 'status',
+                    'type': 'replace',
                     'data': {
-                        'id': agent_progress_status_id,
-                        'action': 'tater_agent_progress',
-                        'description': message.strip(),
-                        'done': done,
-                        **({'error': True} if failed else {}),
+                        'content': message.strip(),
+                        'tater_progress': True,
                     },
                 }
             )
@@ -2639,13 +2625,6 @@ async def chat_completion_tools_handler(
         loop_stopped = True
 
     direct_answer = prepared_final_answer if not loop_stopped else agent_stop_message
-    if current_progress_message:
-        await emit_progress_update(
-            current_progress_message,
-            done=True,
-            failed=loop_stopped,
-            record=False,
-        )
     if loop_stopped:
         request.state.tater_agent_stop_reason = agent_stop_message or 'The agent loop stopped before completion.'
 

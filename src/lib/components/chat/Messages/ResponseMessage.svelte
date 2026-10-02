@@ -95,6 +95,7 @@
 			urls?: string[];
 			query?: string;
 		};
+		taterProgressRevision?: number;
 		done: boolean;
 		error?: boolean | { content: string };
 		sources?: string[];
@@ -903,64 +904,68 @@
 							{#if hasResponseContent && message.error !== true}
 								<!-- always show message contents even if there's an error -->
 								<!-- unless message.error === true which is legacy error handling, where the error message is stored in message.content -->
-								<ContentRenderer
-									id={`${chatId}-${message.id}`}
-									{chatId}
-									messageId={message.id}
-									content={renderedContent}
-									output={message.output}
-									sources={message.sources}
-									floatingButtons={renderedDone &&
-										!readOnly &&
-										($settings?.showFloatingActionButtons ?? true)}
-									save={!readOnly}
-									preview={!readOnly}
-									{compactPreview}
-									{editCodeBlock}
-									{topPadding}
-									done={renderedDone}
-									allowEmbeds={!readOnly}
-									{model}
-									onTaskClick={async (e) => {
-										console.log(e);
-									}}
-									{onToolCallResolved}
-									onSourceClick={async (id) => {
-										console.log(id);
+								{#key message.taterProgressRevision ?? 0}
+									<div in:fade={{ duration: 220 }} out:fade={{ duration: 100 }}>
+										<ContentRenderer
+											id={`${chatId}-${message.id}`}
+											{chatId}
+											messageId={message.id}
+											content={renderedContent}
+											output={message.output}
+											sources={message.sources}
+											floatingButtons={renderedDone &&
+												!readOnly &&
+												($settings?.showFloatingActionButtons ?? true)}
+											save={!readOnly}
+											preview={!readOnly}
+											{compactPreview}
+											{editCodeBlock}
+											{topPadding}
+											done={renderedDone}
+											allowEmbeds={!readOnly}
+											{model}
+											onTaskClick={async (e) => {
+												console.log(e);
+											}}
+											{onToolCallResolved}
+											onSourceClick={async (id) => {
+												console.log(id);
 
-										if (citationsElement) {
-											citationsElement?.showSourceModal(id);
-										}
-									}}
-									onSetInputText={(text) => {
-										setInputText(text);
-									}}
-									onSave={({ raw, oldContent, newContent }) => {
-										const sourceMessage = history.messages[message.id];
-										if (sourceMessage.output?.length) {
-											const updatedOutput = replaceOutputMessageText(
-												sourceMessage.output,
-												oldContent,
-												newContent
-											);
-											if (updatedOutput !== sourceMessage.output) {
-												sourceMessage.output = updatedOutput;
-											} else {
-												sourceMessage.content = sourceMessage.content.replace(
-													raw,
-													raw.replace(oldContent, newContent)
-												);
-											}
-										} else {
-											sourceMessage.content = sourceMessage.content.replace(
-												raw,
-												raw.replace(oldContent, newContent)
-											);
-										}
+												if (citationsElement) {
+													citationsElement?.showSourceModal(id);
+												}
+											}}
+											onSetInputText={(text) => {
+												setInputText(text);
+											}}
+											onSave={({ raw, oldContent, newContent }) => {
+												const sourceMessage = history.messages[message.id];
+												if (sourceMessage.output?.length) {
+													const updatedOutput = replaceOutputMessageText(
+														sourceMessage.output,
+														oldContent,
+														newContent
+													);
+													if (updatedOutput !== sourceMessage.output) {
+														sourceMessage.output = updatedOutput;
+													} else {
+														sourceMessage.content = sourceMessage.content.replace(
+															raw,
+															raw.replace(oldContent, newContent)
+														);
+													}
+												} else {
+													sourceMessage.content = sourceMessage.content.replace(
+														raw,
+														raw.replace(oldContent, newContent)
+													);
+												}
 
-										updateChat();
-									}}
-								/>
+												updateChat();
+											}}
+										/>
+									</div>
+								{/key}
 							{/if}
 
 							{#if !renderedDone && !message.error && (hasResponseContent || !hasVisibleStatus)}

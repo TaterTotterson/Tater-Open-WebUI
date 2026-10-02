@@ -1188,7 +1188,7 @@
 					} else {
 						message.statusHistory = [data];
 					}
-					if (data?.action === 'tater_agent_progress' || data?.action === 'tool_execution') {
+					if (data?.action === 'tool_execution') {
 						await tick();
 						if (shouldAutoScrollResponse()) {
 							scrollToBottom('smooth');
@@ -1237,6 +1237,9 @@
 					autoScrollToBottom();
 				} else if (type === 'chat:message' || type === 'replace') {
 					message.content = data.content;
+					if (data?.tater_progress === true) {
+						message.taterProgressRevision = (message.taterProgressRevision ?? 0) + 1;
+					}
 					autoScrollToBottom();
 				} else if (type === 'chat:message:files' || type === 'files') {
 					message.files = data.files;

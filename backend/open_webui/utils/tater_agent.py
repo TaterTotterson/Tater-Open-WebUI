@@ -1027,6 +1027,115 @@ def _model_tool_call_plan(content: str, max_calls: int) -> dict[str, Any] | None
     }
 
 
+def _decode_json_like_string(value: str) -> str:
+    """Decode common JSON escapes without requiring an otherwise-valid JSON string."""
+
+    return (
+        value.replace('\\n', '\n')
+        .replace('\\r', '\r')
+        .replace('\\t', '\t')
+        .replace('\\"', '"')
+        .replace('\\/', '/')
+        .replace('\\\\', '\\')
+    )
+
+
+def _json_like_tool_plan(content: str, max_calls: int) -> dict[str, Any] | None:
+    """Recover complete tool calls whose multiline command made the outer JSON invalid."""
+
+    calls_header = re.search(r'"tool_calls"\s*:\s*\[', content)
+    if not calls_header:
+        return None
+    calls_tail = re.search(
+        r'\]\s*,\s*"parallel_tasks"\s*:\s*\[\s*\]',
+        content[calls_header.end() :],
+        re.DOTALL,
+    )
+    if not calls_tail:
+        return None
+
+    calls_content = content[calls_header.end() : calls_header.end() + calls_tail.start()]
+    call_pattern = re.compile(
+        r'\{\s*"name"\s*:\s*"([^"\r\n]+)"\s*,\s*"parameters"\s*:\s*\{',
+        re.DOTALL,
+    )
+    call_matches = list(call_pattern.finditer(calls_content))
+    if not call_matches:
+        return None
+
+    calls = []
+    for index, call_match in enumerate(call_matches):
+        segment_end = call_matches[index + 1].start() if index + 1 < len(call_matches) else len(calls_content)
+        segment = calls_content[call_match.end() : segment_end]
+        if not re.search(r'\}\s*(?:\}\s*)?,?\s*$', segment, re.DOTALL):
+            continue
+
+        name = call_match.group(1).strip()
+        parameter_name = 'command' if name == 'terminal' else 'request' if name == 'tater_hydra' else ''
+        if not parameter_name:
+            continue
+        value_header = re.search(rf'"{parameter_name}"\s*:\s*"', segment)
+        if not value_header:
+            continue
+        value_tail = segment[value_header.end() :]
+
+        delimiter_positions = []
+        for following_name in ('cwd', 'background', 'timeout_seconds'):
+            matches = list(
+                re.finditer(
+                    rf'"\s*,\s*"{following_name}"\s*:',
+                    value_tail,
+                    re.DOTALL,
+                )
+            )
+            if matches:
+                delimiter_positions.append(matches[-1].start())
+        if delimiter_positions:
+            value_end = min(delimiter_positions)
+        else:
+            value_end_match = re.search(
+                r'"\s*\}\s*(?:\}\s*)?,?\s*$',
+                value_tail,
+                re.DOTALL,
+            )
+            if not value_end_match:
+                continue
+            value_end = value_end_match.start()
+
+        raw_value = value_tail[:value_end]
+        parameters: dict[str, Any] = {parameter_name: _decode_json_like_string(raw_value)}
+        remaining = value_tail[value_end:]
+        cwd_match = re.search(r'"cwd"\s*:\s*"([^"\r\n]*)"', remaining)
+        if cwd_match:
+            parameters['cwd'] = _decode_json_like_string(cwd_match.group(1))
+        background_match = re.search(r'"background"\s*:\s*(true|false)', remaining, re.IGNORECASE)
+        if background_match:
+            parameters['background'] = background_match.group(1).casefold() == 'true'
+        calls.append({'name': name, 'parameters': parameters})
+
+    if not calls:
+        return None
+    if len(calls) > max(1, max_calls):
+        raise ValueError(f'Tool plan contains too many calls ({len(calls)} > {max(1, max_calls)})')
+
+    def text_field(field: str, following_field: str) -> str:
+        match = re.search(
+            rf'"{field}"\s*:\s*"(.*?)"\s*,\s*"{following_field}"\s*:',
+            content[: calls_header.end()],
+            re.DOTALL,
+        )
+        return _decode_json_like_string(match.group(1)).strip() if match else ''
+
+    return {
+        'progress': text_field('progress', 'tool_calls')[:TATER_AGENT_PROGRESS_MAX_CHARS],
+        'task_title': text_field('task_title', 'progress')[:TATER_AGENT_TASK_TITLE_MAX_CHARS],
+        'tool_calls': calls,
+        'parallel_tasks': [],
+        'final_answer': '',
+        'context': {},
+    }
+
+
 def _json_like_final_answer_plan(content: str) -> dict[str, Any] | None:
     """Recover a no-tools final response containing unescaped prose quotes."""
 
@@ -1106,6 +1215,9 @@ def parse_tool_plan_response(
         model_tool_plan = _model_tool_call_plan(content, max_calls)
         if model_tool_plan is not None:
             return model_tool_plan
+        json_like_tool_plan = _json_like_tool_plan(content, max_calls)
+        if json_like_tool_plan is not None:
+            return json_like_tool_plan
         json_like_answer = _json_like_final_answer_plan(content)
         if json_like_answer is not None:
             return json_like_answer
@@ -1271,9 +1383,8 @@ def tool_plan_retry_instruction(
             f'Your previous file-writing plan could not be used ({reason}). Preserve that write step; do not '
             'return to directory listing or reread files whose output is already in the execution history. Retry '
             'with exactly one terminal call for the next file. The entire response must be one valid JSON object '
-            'with task_title, progress, tool_calls, parallel_tasks, final_answer, and context fields. Do not place a '
-            'heredoc or raw multiline file body inside the JSON command string. Encode multiline content as base64 '
-            'and decode it in the terminal command, keeping the command a valid JSON string. Do not include '
+            'with task_title, progress, tool_calls, parallel_tasks, final_answer, and context fields. Use one ordinary '
+            'quoted heredoc command for the file and do not encode its contents as base64. Do not include '
             'Markdown, tool-call markup, or prose outside the JSON object.'
         )
     if 'identical' in reason.casefold() and 'call already' in reason.casefold():

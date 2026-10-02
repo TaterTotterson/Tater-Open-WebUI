@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	const i18n: any = getContext('i18n');
+	import { fade } from 'svelte/transition';
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
-	import TaterAgentActivity from './StatusHistory/TaterAgentActivity.svelte';
 	import equal from 'fast-deep-equal';
 	export let statusHistory: any[] = [];
 	export let expand = false;
@@ -18,7 +18,7 @@
 
 	let history: any[] = [];
 	let status: any = null;
-	let hasTaterAgentActivity = false;
+	let statusKey = '';
 
 	$: if (history && history.length > 0) {
 		status = history.at(-1);
@@ -28,13 +28,11 @@
 		history = statusHistory;
 	}
 
-	$: hasTaterAgentActivity = history.some((item: any) => item?.action === 'tater_agent_progress');
+	$: statusKey = `${status?.id ?? ''}:${status?.description ?? ''}:${status?.detail ?? ''}:${status?.done ?? ''}`;
 </script>
 
 {#if history && history.length > 0}
-	{#if hasTaterAgentActivity}
-		<TaterAgentActivity {history} />
-	{:else if status?.hidden !== true}
+	{#if status?.hidden !== true}
 		<div class="text-[0.9375rem] flex flex-col w-full">
 			<button
 				class="w-full"
@@ -44,9 +42,15 @@
 					showHistory = !showHistory;
 				}}
 			>
-				<div class="flex items-start gap-2">
-					<StatusItem {status} />
-				</div>
+				{#key statusKey}
+					<div
+						class="flex items-start gap-2"
+						in:fade={{ duration: 220 }}
+						out:fade={{ duration: 100 }}
+					>
+						<StatusItem {status} />
+					</div>
+				{/key}
 			</button>
 
 			{#if showHistory}

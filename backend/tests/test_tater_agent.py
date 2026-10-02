@@ -110,6 +110,52 @@ class TaterAgentTests(unittest.TestCase):
     def test_parses_empty_plan(self):
         self.assertEqual(tater_agent.parse_tool_plan('{"tool_calls":[]}'), [])
 
+    def test_recovers_multiline_heredoc_calls_from_malformed_json(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '''{"task_title":"Write browser game","progress":"Writing the game files.","tool_calls":[
+{"name":"terminal","parameters":{"command":"cat <<'EOF' > web/index.html
+<div id="game">Woodchuck</div>
+EOF","cwd":"/projects/game"}},
+{"name":"terminal","parameters":{"command":"cat <<'EOF' > web/script.js
+document.querySelector("#game").textContent = "Ready";
+EOF","cwd":"/projects/game"}}
+],"parallel_tasks":[],"final_answer":"","context":{}}'''
+        )
+
+        self.assertEqual(plan['task_title'], 'Write browser game')
+        self.assertEqual(plan['progress'], 'Writing the game files.')
+        self.assertEqual(len(plan['tool_calls']), 2)
+        self.assertIn('<div id="game">Woodchuck</div>', plan['tool_calls'][0]['parameters']['command'])
+        self.assertIn(
+            'document.querySelector("#game").textContent = "Ready";',
+            plan['tool_calls'][1]['parameters']['command'],
+        )
+        self.assertEqual(plan['tool_calls'][1]['parameters']['cwd'], '/projects/game')
+
+    def test_recovers_multiline_calls_missing_outer_call_braces(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '''{"task_title":"Write browser game","progress":"Writing files.","tool_calls":[
+{"name":"terminal","parameters":{"command":"cat <<'EOF' > web/index.html
+<div id="game">Woodchuck</div>
+EOF","cwd":"/projects/game"},
+{"name":"terminal","parameters":{"command":"cat <<'EOF' > web/style.css
+#game { color: "brown"; }
+EOF","cwd":"/projects/game"}
+],"parallel_tasks":[],"final_answer":"","context":{}}'''
+        )
+
+        self.assertEqual(len(plan['tool_calls']), 2)
+        self.assertIn('web/index.html', plan['tool_calls'][0]['parameters']['command'])
+        self.assertIn('color: "brown"', plan['tool_calls'][1]['parameters']['command'])
+
+    def test_does_not_recover_truncated_multiline_tool_plan(self):
+        with self.assertRaisesRegex(ValueError, 'No tool-plan JSON object found'):
+            tater_agent.parse_tool_plan_response(
+                '''{"task_title":"Write browser game","progress":"Writing.","tool_calls":[
+{"name":"terminal","parameters":{"command":"cat <<'EOF' > web/index.html
+<div id="game">'''
+            )
+
     def test_infers_terminal_name_from_flat_command_call(self):
         plan = tater_agent.parse_tool_plan_response(
             '{"tool_calls":[{"command":"ls -R web_version","cwd":"/projects/game"}]}'
@@ -859,7 +905,8 @@ class TaterAgentTests(unittest.TestCase):
 
         self.assertIn('Preserve that write step', instruction)
         self.assertIn('do not return to directory listing or reread files', instruction)
-        self.assertIn('base64', instruction)
+        self.assertIn('quoted heredoc', instruction)
+        self.assertIn('do not encode its contents as base64', instruction)
         self.assertIn('exactly one terminal call', instruction)
 
     def test_retry_instruction_explains_unresolved_outcome_after_repeated_read(self):
