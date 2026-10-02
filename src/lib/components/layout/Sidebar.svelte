@@ -696,6 +696,11 @@
 		}
 	};
 
+	const newRegularChatHandler = async () => {
+		await newChatHandler();
+		await goto(`/?new-chat=${Date.now()}`);
+	};
+
 	const isWindows = /Windows/i.test(navigator.userAgent);
 </script>
 
@@ -991,27 +996,6 @@
 				>
 					<div class="tater-sidebar-quick-actions px-2 pb-1">
 						<div class="px-1 flex justify-center text-gray-700 dark:text-gray-300">
-							<a
-								id="sidebar-new-chat-button"
-								class="tater-sidebar-primary-action group grow flex items-center space-x-2 rounded-xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
-								href="/"
-								draggable="false"
-								on:click={newChatHandler}
-								aria-label={$i18n.t('New Chat')}
-							>
-								<div class="self-center flex size-4 shrink-0 items-center justify-center">
-									<EditPencilIcon className=" size-4" strokeWidth="1.5" />
-								</div>
-
-								<div class="flex flex-1 self-center translate-y-[0.5px]">
-									<div class=" self-center text-[0.8125rem] leading-5">{$i18n.t('New Chat')}</div>
-								</div>
-
-								<HotkeyHint name="newChat" className=" hover-reveal " />
-							</a>
-						</div>
-
-						<div class="px-1 flex justify-center text-gray-700 dark:text-gray-300">
 							<button
 								id="sidebar-search-button"
 								class="tater-sidebar-secondary-action group grow flex items-center space-x-2 rounded-xl px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
@@ -1079,6 +1063,8 @@
 					<SidebarSection
 						id="sidebar-chats"
 						name={$i18n.t('Chats')}
+						onAdd={newRegularChatHandler}
+						onAddLabel={$i18n.t('New Chat')}
 						on:change={async (e) => {
 							selectedFolder.set(null);
 						}}

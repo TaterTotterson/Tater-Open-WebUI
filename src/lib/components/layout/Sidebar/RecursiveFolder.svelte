@@ -38,11 +38,13 @@
 	import MoreHorizontal from './icons/MoreHorizontal.svelte';
 
 	import ChatItem from './ChatItem.svelte';
+	import ChatPlus from '$lib/components/icons/ChatPlus.svelte';
 	import FolderMenu from './Folders/FolderMenu.svelte';
 	import FolderShareModal from './Folders/FolderShareModal.svelte';
 	import FolderModal from './Folders/FolderModal.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	export let folderRegistry = {};
 	export let open = false;
@@ -607,6 +609,27 @@
 			showSidebar.set(!$showSidebar);
 		}
 	};
+
+	const newChatInProjectHandler = async (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+
+		const folder = await getFolderById(localStorage.token, folderId).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (!folder) return;
+
+		await selectedFolder.set({ ...folders[folderId], ...folder });
+		await chatId.set('');
+		await goto(`/projects/${folderId}?new-chat=${Date.now()}`);
+
+		if ($mobile) {
+			showSidebar.set(false);
+		}
+	};
 	$: if (!open && chats !== null) {
 		chats = null;
 		chatsPage = 1;
@@ -778,7 +801,7 @@
 					{/if}
 				</button>
 
-				<div class="translate-y-[0.5px] flex min-w-0 flex-1 items-center gap-1.5 pr-6 text-start">
+				<div class="translate-y-[0.5px] flex min-w-0 flex-1 items-center gap-1.5 pr-14 text-start">
 					{#if edit}
 						<input
 							id="folder-{folderId}-input"
@@ -822,32 +845,43 @@
 				</div>
 
 				{#if isWritable}
-					<button
-						class="absolute z-10 right-2 hover-reveal self-center flex items-center dark:text-gray-300"
-					>
-						<FolderMenu
-							canDelete={!folders[folderId]?.shared}
-							onEdit={() => {
-								showFolderModal = true;
-							}}
-							onShare={() => {
-								showShareModal = true;
-							}}
-							onExport={() => {
-								exportHandler();
-							}}
-							onMarkAllRead={markAllReadHandler}
-							onDelete={() => {
-								showDeleteProjectConfirm = true;
-							}}
-						>
-							<div
-								class="flex size-5 items-center justify-center self-center dark:hover:text-white transition m-0 touch-auto"
+					<div class="tater-project-actions absolute z-10 right-1.5 flex items-center gap-0.5">
+						<Tooltip content={`${$i18n.t('New Chat')} · ${folders[folderId].name}`}>
+							<button
+								type="button"
+								class="tater-project-new-chat flex size-6 items-center justify-center rounded-lg transition"
+								on:click={newChatInProjectHandler}
+								aria-label={`${$i18n.t('New Chat')} · ${folders[folderId].name}`}
 							>
-								<MoreHorizontal className="size-3.5" strokeWidth="2" />
-							</div>
-						</FolderMenu>
-					</button>
+								<ChatPlus className="size-3.5" strokeWidth="1.8" />
+							</button>
+						</Tooltip>
+
+						<button class="hover-reveal self-center flex items-center dark:text-gray-300">
+							<FolderMenu
+								canDelete={!folders[folderId]?.shared}
+								onEdit={() => {
+									showFolderModal = true;
+								}}
+								onShare={() => {
+									showShareModal = true;
+								}}
+								onExport={() => {
+									exportHandler();
+								}}
+								onMarkAllRead={markAllReadHandler}
+								onDelete={() => {
+									showDeleteProjectConfirm = true;
+								}}
+							>
+								<div
+									class="flex size-5 items-center justify-center self-center dark:hover:text-white transition m-0 touch-auto"
+								>
+									<MoreHorizontal className="size-3.5" strokeWidth="2" />
+								</div>
+							</FolderMenu>
+						</button>
+					</div>
 				{/if}
 			</div>
 		</div>
