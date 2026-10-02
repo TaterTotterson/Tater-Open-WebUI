@@ -7,6 +7,7 @@
 	export let mode: TaterActivityAnimation = 'fade';
 	export let incremental = false;
 	export let block = false;
+	export let compact = false;
 
 	type CharacterState = {
 		id: number;
@@ -18,6 +19,9 @@
 	};
 
 	const MATRIX_GLYPHS = Array.from('ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽ01<>/*+=#');
+	const GHOST_LETTERS = Array.from(
+		'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+	);
 	let nextCharacterId = 1;
 	let characters: CharacterState[] = Array.from(text).map((actual) => ({
 		id: nextCharacterId++,
@@ -43,12 +47,12 @@
 		return (hash >>> 0) / 4294967295;
 	};
 
-	const stopMatrixAnimation = () => {
+	const stopCharacterAnimation = () => {
 		if (matrixInterval) clearInterval(matrixInterval);
 		matrixInterval = null;
 	};
 
-	const updateMatrixCharacters = () => {
+	const updateAnimatedCharacters = () => {
 		matrixFrame += 1;
 		const now = performance.now();
 		let unfinished = false;
@@ -57,6 +61,7 @@
 				return { ...character, display: character.actual, settled: true };
 			}
 			unfinished = true;
+			if (mode === 'ghost') return character;
 			return {
 				...character,
 				display:
@@ -67,12 +72,12 @@
 					]
 			};
 		});
-		if (!unfinished) stopMatrixAnimation();
+		if (!unfinished) stopCharacterAnimation();
 	};
 
-	const ensureMatrixAnimation = () => {
+	const ensureCharacterAnimation = () => {
 		if (matrixInterval || !characters.some((character) => !character.settled)) return;
-		matrixInterval = setInterval(updateMatrixCharacters, 38);
+		matrixInterval = setInterval(updateAnimatedCharacters, 38);
 	};
 
 	const matchingPrefixLength = (left: string[], right: string[]) => {
@@ -93,18 +98,22 @@
 		const additions = nextCharacters.slice(prefixLength).map((actual, offset) => {
 			const index = prefixLength + offset;
 			const whitespace = /\s/.test(actual);
-			const delay = whitespace ? 0 : Math.round(seededValue(nextText, index, 17) * 190);
-			const matrix = mode === 'matrix' && !whitespace && !reducedMotion;
+			const delay = whitespace ? 0 : Math.round(seededValue(actual, index, 17) * 190);
+			const glyph = (mode === 'matrix' || mode === 'ghost') && !whitespace && !reducedMotion;
+			const glyphs = mode === 'ghost' ? GHOST_LETTERS : MATRIX_GLYPHS;
 			return {
 				id: nextCharacterId++,
 				actual,
-				display: matrix
-					? MATRIX_GLYPHS[Math.floor(seededValue(actual, index, 71) * MATRIX_GLYPHS.length)]
+				display: glyph
+					? glyphs[Math.floor(seededValue(actual, index, 71) * glyphs.length)]
 					: actual,
 				delay,
-				settled: !matrix,
-				settleAt: matrix
-					? now + 105 + delay + Math.round(seededValue(nextText, index, 41) * 120)
+				settled: !glyph,
+				settleAt: glyph
+					? now +
+						(mode === 'ghost' ? 190 : 105) +
+						delay +
+						Math.round(seededValue(actual, index, 41) * 120)
 					: 0
 			};
 		});
@@ -112,8 +121,8 @@
 		characters = [...preserved, ...additions];
 		currentText = nextText;
 		currentMode = mode;
-		if (mode === 'matrix' && !reducedMotion) ensureMatrixAnimation();
-		else stopMatrixAnimation();
+		if ((mode === 'matrix' || mode === 'ghost') && !reducedMotion) ensureCharacterAnimation();
+		else stopCharacterAnimation();
 	};
 
 	onMount(() => {
@@ -126,16 +135,25 @@
 		syncCharacters(text, mode !== currentMode);
 	}
 
-	onDestroy(stopMatrixAnimation);
+	onDestroy(stopCharacterAnimation);
 </script>
 
 {#if mode === 'fade' && !incremental}
-	<span class="activity-text" class:block in:fade={{ duration: 220 }} out:fade={{ duration: 100 }}
-		>{text}</span
+	<span
+		class="activity-text"
+		class:block
+		class:compact
+		in:fade={{ duration: 220 }}
+		out:fade={{ duration: 100 }}>{text}</span
 	>
 {:else}
-	<span class="activity-text character-reveal {mode}" class:block class:incremental>
-		<span class="screen-reader-copy">{text}</span>
+	<span
+		class="activity-text character-reveal {mode}"
+		class:block
+		class:incremental
+		class:compact
+		aria-label={text}
+	>
 		<span class="animated-copy" aria-hidden="true">
 			{#each characters as character (character.id)}
 				{#if character.actual === '\n'}
@@ -143,7 +161,11 @@
 				{:else if /\s/.test(character.actual)}
 					<span class="activity-space">{character.actual}</span>
 				{:else}
-					<span class="activity-character" style={`--character-delay: ${character.delay}ms`}>
+					<span
+						class="activity-character"
+						class:settled={character.settled}
+						style={`--character-delay: ${character.delay}ms`}
+					>
 						<span class="character-measure">{character.actual}</span>
 						<span class="character-face">{character.display}</span>
 					</span>
@@ -165,21 +187,17 @@
 		width: 100%;
 	}
 
-	.character-reveal:not(.block),
-	.animated-copy {
-		display: inline;
+	.activity-text.compact {
+		display: block;
+		width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.screen-reader-copy {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
+	.character-reveal:not(.block):not(.compact),
+	.animated-copy {
+		display: inline;
 	}
 
 	.activity-character {
@@ -205,8 +223,12 @@
 		animation: character-fade-in 190ms ease-out var(--character-delay) both;
 	}
 
-	.ghost .character-face {
-		animation: character-ghost-in 230ms ease-out var(--character-delay) both;
+	.ghost .activity-character:not(.settled) .character-face {
+		animation: ghost-glyph-in 180ms ease-out var(--character-delay) both;
+	}
+
+	.ghost .activity-character.settled .character-face {
+		animation: ghost-letter-in 130ms ease-out both;
 	}
 
 	@keyframes character-fade-in {
@@ -218,22 +240,27 @@
 		}
 	}
 
-	@keyframes character-ghost-in {
+	@keyframes ghost-glyph-in {
 		from {
 			opacity: 0;
-			filter: blur(5px);
-			transform: translateY(2px) scale(0.98);
+		}
+		to {
+			opacity: 0.55;
+		}
+	}
+
+	@keyframes ghost-letter-in {
+		from {
+			opacity: 0.55;
 		}
 		to {
 			opacity: 1;
-			filter: blur(0);
-			transform: translateY(0) scale(1);
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.fade.incremental .character-face,
-		.ghost .character-face {
+		.ghost .activity-character .character-face {
 			animation: none;
 		}
 	}

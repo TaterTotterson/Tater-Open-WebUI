@@ -151,6 +151,11 @@ _INTERACTIVE_BUILD_RE = re.compile(
     r'\b(?:app|application|game|website|web site|dashboard|demo|interface|ui)\b',
     re.IGNORECASE,
 )
+_INTERACTIVE_EXISTING_LAUNCH_RE = re.compile(
+    r'\b(?:launch|serve|host|start|run|open)\b[^\n]{0,160}'
+    r'\b(?:app|application|game|website|web site|dashboard|demo)\b',
+    re.IGNORECASE,
+)
 
 _PROGRESS_FUTURE_PREFIX_RE = re.compile(
     r'^(?:(?:okay|ok|alright|sure)[,!.:\-\s]+)?(?:next[,.:\-\s]+)?'
@@ -198,6 +203,10 @@ _LOCAL_HTTP_PROBE_RE = re.compile(
     r'\b(?:urlopen|requests\.get|httpx\.get)\s*\([^\n]*(?:localhost|127\.0\.0\.1|::1)',
     re.IGNORECASE,
 )
+_HTTP_SUCCESS_RE = re.compile(r'(?mi)^HTTP/\d(?:\.\d)?\s+[23]\d\d\b')
+_LOCAL_HTTP_PORT_RE = re.compile(r'(?i)https?://(?:localhost|127\.0\.0\.1|\[::1\]):(\d{1,5})\b')
+_HTTP_SERVER_PORT_RE = re.compile(r'\b(?:http\.server|vite|serve|uvicorn)\b[^\n]*?\b(\d{2,5})\b')
+_TERMINAL_COMMAND_ALIASES = {'curl', 'wget', 'git', 'ls', 'cat', 'rg', 'python', 'python3', 'node', 'npm'}
 _PORT_REFERENCE_RE = re.compile(
     r'(?:\bport\s*(?:is|:)?\s*|(?:localhost|127\.0\.0\.1):)\d{1,5}\b',
     re.IGNORECASE,
@@ -483,7 +492,13 @@ def requires_live_browser_delivery(request: Any) -> bool:
     """Return true when a created interactive result was explicitly requested to be launched."""
 
     text = re.sub(r'\s+', ' ', str(request or '')).strip()
-    return bool(_INTERACTIVE_BUILD_RE.search(text) and _INTERACTIVE_LAUNCH_RE.search(text))
+    return bool(
+        (_INTERACTIVE_BUILD_RE.search(text) and _INTERACTIVE_LAUNCH_RE.search(text))
+        or (
+            _INTERACTIVE_EXISTING_LAUNCH_RE.search(text)
+            and re.search(r'\b(?:browser|web|port|connect|play)\b', text, re.IGNORECASE)
+        )
+    )
 
 
 def parallel_browser_weather_plan_gap(request: Any, parallel_tasks: Any) -> str:
@@ -583,12 +598,10 @@ def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any)
         return ''
     records = records if isinstance(records, list) else []
     background_started = False
-    local_http_verified = False
     for record in records:
         if not isinstance(record, dict) or record.get('tool') != 'terminal':
             continue
         parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '')
         result = record.get('result')
         if isinstance(result, str):
             try:
@@ -598,20 +611,12 @@ def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any)
         result = result if isinstance(result, dict) else {}
         if parameters.get('background') is True and result.get('status') == 'running':
             background_started = True
-        if (
-            record.get('status') == 'completed'
-            and result.get('exit_code') == 0
-            and result.get('timed_out') is not True
-            and _LOCAL_HTTP_PROBE_RE.search(command)
-        ):
-            local_http_verified = True
-
     if not background_started:
         return (
             'The interactive app was not left running as a background server. Start its server with '
             'terminal background=true before finishing.'
         )
-    if not local_http_verified:
+    if not verified_browser_launch_port(records):
         return (
             'The running app has not been verified over local HTTP. Probe its localhost URL with a successful '
             'foreground curl or wget command before finishing.'
@@ -622,6 +627,74 @@ def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any)
             'they can open it from the Files panel Ports section.'
         )
     return ''
+
+
+def verified_browser_launch_port(records: Any) -> int | None:
+    """Return the port only after a background server answers an HTTP probe."""
+
+    records = records if isinstance(records, list) else []
+    server_ports: set[int] = set()
+    for record in records:
+        if not isinstance(record, dict) or record.get('tool') != 'terminal':
+            continue
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        result = _terminal_result(record)
+        command = str(parameters.get('command') or '')
+        if parameters.get('background') is not True or result.get('status') != 'running':
+            continue
+        match = _HTTP_SERVER_PORT_RE.search(command)
+        if match:
+            server_ports.add(int(match.group(1)))
+
+    if not server_ports:
+        return None
+    for record in reversed(records):
+        if not isinstance(record, dict) or record.get('tool') != 'terminal':
+            continue
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '')
+        match = _LOCAL_HTTP_PORT_RE.search(command)
+        if not match or int(match.group(1)) not in server_ports or not _successful_local_http_probe(record):
+            continue
+        return int(match.group(1))
+    return None
+
+
+def completed_browser_launch_answer(request: Any, records: Any, proposed_calls: Any) -> str:
+    """Finish a verified launch when the planner tries to rerun its server or probe."""
+
+    if not isinstance(proposed_calls, list) or len(proposed_calls) != 1:
+        return ''
+    call = proposed_calls[0]
+    if not isinstance(call, dict) or call.get('name') != 'terminal':
+        return ''
+    parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
+    command = str(parameters.get('command') or '')
+    if not (_LOCAL_HTTP_PROBE_RE.search(command) or (parameters.get('background') and _HTTP_SERVER_PORT_RE.search(command))):
+        return ''
+    if not any(
+        isinstance(record, dict)
+        and record.get('tool') == 'terminal'
+        and isinstance(record.get('parameters'), dict)
+        and record['parameters'].get('command') == command
+        and record['parameters'].get('background', False) == parameters.get('background', False)
+        and (
+            not parameters.get('cwd')
+            or record['parameters'].get('cwd') == parameters.get('cwd')
+        )
+        for record in (records if isinstance(records, list) else [])
+    ):
+        return ''
+    port = verified_browser_launch_port(records)
+    if port is None:
+        return ''
+    proposed_port = _LOCAL_HTTP_PORT_RE.search(command) or _HTTP_SERVER_PORT_RE.search(command)
+    if not proposed_port or int(proposed_port.group(1)) != port:
+        return ''
+    answer = f'The browser app is running on port {port}, and the server returned HTTP success. Open it from the Files panel’s Ports section.'
+    if coding_change_completion_gap(request, records, answer):
+        return ''
+    return answer
 
 
 def _terminal_result(record: dict[str, Any]) -> dict[str, Any]:
@@ -691,6 +764,19 @@ def _successful_terminal_record(record: dict[str, Any]) -> bool:
         and result.get('exit_code') == 0
         and result.get('timed_out') is not True
         and not terminal_result_has_shell_error(result)
+    )
+
+
+def _successful_local_http_probe(record: dict[str, Any]) -> bool:
+    parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+    command = str(parameters.get('command') or '')
+    if not _LOCAL_HTTP_PROBE_RE.search(command) or not _successful_terminal_record(record):
+        return False
+    output = str(_terminal_result(record).get('output') or '')
+    return bool(
+        _HTTP_SUCCESS_RE.search(output)
+        or re.search(r'\bcurl\s+[^\n]*-[A-Za-z]*f[A-Za-z]*\b', command)
+        or re.search(r'\bwget\s+[^\n]*--spider\b', command)
     )
 
 
@@ -1304,7 +1390,9 @@ def parse_tool_plan_response(
                 raise ValueError(f'Every call in {field} must be an object')
             name = str(raw_call.get('name') or '').strip()
             inferred_parameters = None
-            if not name and isinstance(raw_call.get('command'), str):
+            if isinstance(raw_call.get('command'), str) and (
+                not name or name == 'terminal' or name in _TERMINAL_COMMAND_ALIASES
+            ):
                 name = 'terminal'
                 inferred_parameters = {
                     key: raw_call[key]
@@ -1319,6 +1407,10 @@ def parse_tool_plan_response(
             parameters = raw_call.get('parameters', inferred_parameters or {})
             if not isinstance(parameters, dict):
                 raise ValueError(f'Tool parameters for {name} must be an object')
+            if name in _TERMINAL_COMMAND_ALIASES and isinstance(parameters.get('command'), str):
+                name = 'terminal'
+            if name == 'terminal' and not isinstance(parameters.get('command'), str):
+                raise ValueError('terminal requires a command string')
             parsed_calls.append({'name': name, 'parameters': parameters})
         return parsed_calls
 
@@ -1849,6 +1941,28 @@ def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
             record_parameters = (
                 record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
             )
+            if name == 'terminal' and record_parameters.get('background') is True:
+                prior_result = _terminal_result(record)
+                if prior_result.get('status') == 'running' and not any(
+                    str((item.get('parameters') or {}).get('command') or '').strip().startswith(('kill ', 'pkill '))
+                    for item in calls_since
+                ):
+                    return (
+                        'The identical background terminal command is already running. Do not launch a second '
+                        'server. Probe its localhost port, or finish if a successful HTTP probe is already in history.'
+                    )
+            if name == 'terminal' and _successful_local_http_probe(record):
+                if not any(
+                    (item.get('parameters') or {}).get('background') is True
+                    or _FILE_MUTATION_COMMAND_RE.search(
+                        str((item.get('parameters') or {}).get('command') or '')
+                    )
+                    for item in calls_since
+                ):
+                    return (
+                        'The identical local HTTP probe already returned success. Do not probe it again. '
+                        'Report the verified port and finish.'
+                    )
             record_cwd = str(record_parameters.get('cwd') or terminal_result_cwd(record)).strip()
             read_targets = (
                 _terminal_file_read_targets(record_parameters.get('command'), record_cwd)

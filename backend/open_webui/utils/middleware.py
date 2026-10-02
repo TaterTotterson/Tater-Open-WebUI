@@ -116,6 +116,7 @@ from open_webui.utils.tater_agent import (
     agent_history_char_limit,
     agent_iteration_limit,
     browser_launch_completion_gap,
+    completed_browser_launch_answer,
     coding_change_completion_gap,
     completed_hydra_delegation_answer,
     continuation_progress_update,
@@ -2046,6 +2047,7 @@ async def chat_completion_tools_handler(
     for iteration in range(1, max_iterations + 1):
         await consume_live_steering(iteration)
         planning_error = None
+        verified_browser_launch_adopted = False
         if iteration == 1 and not history_records and isinstance(initial_task_plan, dict):
             plan = copy.deepcopy(initial_task_plan)
             tool_calls = protect_terminal_tool_calls(plan.get('tool_calls') or [])
@@ -2125,6 +2127,21 @@ async def chat_completion_tools_handler(
                     routing_gap = execution_routing_plan_gap(tool_calls, parallel_tasks)
                     if routing_gap:
                         raise ValueError(routing_gap)
+                    verified_launch_answer = completed_browser_launch_answer(
+                        effective_agent_request(), history_records, tool_calls
+                    )
+                    if verified_launch_answer:
+                        verified_browser_launch_adopted = True
+                        tool_calls = []
+                        plan['tool_calls'] = []
+                        plan['progress'] = ''
+                        plan['task_title'] = ''
+                        plan['final_answer'] = verified_launch_answer
+                        ledger_event(
+                            'verified_browser_launch_adopted',
+                            iteration=iteration,
+                            answer=verified_launch_answer,
+                        )
                     repeat_gap = repeated_tool_call_plan_gap(tool_calls, history_records)
                     if repeat_gap:
                         raise ValueError(repeat_gap)
@@ -2494,7 +2511,11 @@ async def chat_completion_tools_handler(
                 loop_stopped = True
                 break
 
-            if history_records and not simple_read_only_terminal_history(history_records):
+            if (
+                history_records
+                and not verified_browser_launch_adopted
+                and not simple_read_only_terminal_history(history_records)
+            ):
                 review_started_at = time.monotonic()
                 review_payload = {}
                 try:
@@ -2546,7 +2567,11 @@ async def chat_completion_tools_handler(
                 ledger_event(
                     'completion_review_skipped',
                     iteration=iteration,
-                    reason='verified_simple_read_only_terminal_history',
+                    reason=(
+                        'verified_browser_launch_evidence'
+                        if verified_browser_launch_adopted
+                        else 'verified_simple_read_only_terminal_history'
+                    ),
                 )
             break
 

@@ -609,6 +609,27 @@ EOF","cwd":"/projects/game"}
                 '"final_answer":"Done."}'
             )
 
+    def test_terminal_call_accepts_command_beside_name(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"tool_calls":[{"name":"terminal","command":"curl -I http://localhost:8000/"}]}'
+        )
+
+        self.assertEqual(
+            plan['tool_calls'],
+            [{'name': 'terminal', 'parameters': {'command': 'curl -I http://localhost:8000/'}}],
+        )
+
+    def test_shell_command_alias_uses_terminal(self):
+        plan = tater_agent.parse_tool_plan_response(
+            '{"tool_calls":[{"name":"curl","parameters":{"command":"curl -I http://localhost:8000/"}}]}'
+        )
+
+        self.assertEqual(plan['tool_calls'][0]['name'], 'terminal')
+
+    def test_terminal_call_without_command_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'requires a command string'):
+            tater_agent.parse_tool_plan_response('{"tool_calls":[{"name":"terminal","parameters":{}}]}')
+
     def test_parses_completion_review(self):
         self.assertEqual(
             tater_agent.parse_completion_review('{"complete":false,"reason":"face_id is still uninspected"}'),
@@ -646,6 +667,64 @@ EOF","cwd":"/projects/game"}
             ),
             '',
         )
+
+    def test_verified_browser_launch_finishes_redundant_server_call(self):
+        request = 'Lets try again.'
+        cwd = '/projects/woodchuck_game/web_version'
+        records = [
+            {
+                'iteration': 5,
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'python3 -m http.server 8000', 'cwd': cwd, 'background': True},
+                'result': {'status': 'running', 'exit_code': None, 'cwd': cwd},
+            },
+            {
+                'iteration': 8,
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'curl -I http://localhost:8000/index.html', 'cwd': cwd},
+                'result': {'status': 'done', 'exit_code': 0, 'output': 'HTTP/1.0 200 OK\r\n', 'cwd': cwd},
+            },
+        ]
+        proposed = [
+            {'name': 'terminal', 'parameters': {'command': 'python3 -m http.server 8000', 'cwd': cwd, 'background': True}}
+        ]
+
+        self.assertEqual(tater_agent.verified_browser_launch_port(records), 8000)
+        self.assertIn(
+            'port 8000',
+            tater_agent.completed_browser_launch_answer(request, records, proposed),
+        )
+        self.assertIn('already running', tater_agent.repeated_tool_call_plan_gap(proposed, records))
+        self.assertEqual(
+            tater_agent.completed_browser_launch_answer(
+                request,
+                records,
+                [{'name': 'terminal', 'parameters': {'command': 'curl -I http://localhost:8000/style.css', 'cwd': cwd}}],
+            ),
+            '',
+        )
+
+    def test_http_404_does_not_verify_browser_launch(self):
+        request = 'Make a woodchuck game and launch it in a browser.'
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'python3 -m http.server 8000', 'background': True},
+                'result': {'status': 'running', 'exit_code': None},
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'curl -I http://localhost:8000/index.html'},
+                'result': {'status': 'done', 'exit_code': 0, 'output': 'HTTP/1.0 404 Not Found\r\n'},
+            },
+        ]
+
+        self.assertIsNone(tater_agent.verified_browser_launch_port(records))
+        self.assertIn('verified over local HTTP', tater_agent.browser_launch_completion_gap(request, records, 'port 8000'))
 
     def test_noninteractive_work_does_not_require_browser_launch(self):
         self.assertFalse(tater_agent.requires_live_browser_delivery('Run the tests for this app.'))
