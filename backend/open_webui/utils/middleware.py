@@ -129,6 +129,7 @@ from open_webui.utils.tater_agent import (
     parse_completion_review,
     parse_tool_plan_response,
     partition_parallel_tasks,
+    pending_browser_launch_verification_call,
     protect_terminal_file_write_command,
     protect_terminal_tool_calls,
     recent_history_char_limit,
@@ -2127,6 +2128,22 @@ async def chat_completion_tools_handler(
                     routing_gap = execution_routing_plan_gap(tool_calls, parallel_tasks)
                     if routing_gap:
                         raise ValueError(routing_gap)
+                    verification_call = (
+                        pending_browser_launch_verification_call(
+                            effective_agent_request(), history_records, tool_calls
+                        )
+                        if not parallel_tasks else None
+                    )
+                    if verification_call:
+                        tool_calls = [verification_call]
+                        plan['tool_calls'] = tool_calls
+                        plan['final_answer'] = ''
+                        plan['progress'] = 'Verifying that the launched browser app answers HTTP.'
+                        ledger_event(
+                            'browser_launch_verification_selected',
+                            iteration=iteration,
+                            call=verification_call,
+                        )
                     verified_launch_answer = completed_browser_launch_answer(
                         effective_agent_request(), history_records, tool_calls
                     )

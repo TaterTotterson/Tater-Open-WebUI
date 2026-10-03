@@ -120,6 +120,7 @@ class BackendSurfaceTests(unittest.TestCase):
         self.assertIn('The context object may be empty', middleware_source)
         self.assertIn('simple_read_only_terminal_history', middleware_source)
         self.assertIn('repeated_tool_call_plan_gap(tool_calls, history_records)', middleware_source)
+        self.assertIn('pending_browser_launch_verification_call(', middleware_source)
         self.assertIn('exit code zero means the command ran', middleware_source)
         self.assertNotIn("missing_completion_fields.append('context')", middleware_source)
         self.assertIn("{'taterAgentContext': saved_agent_context}", middleware_source)

@@ -639,6 +639,8 @@ EOF","cwd":"/projects/game"}
     def test_browser_launch_requires_live_server_http_probe_and_port(self):
         request = 'Make a funny woodchuck game and launch it so we can play it.'
         self.assertTrue(tater_agent.requires_live_browser_delivery(request))
+        self.assertTrue(tater_agent.requires_live_browser_delivery('lets launch the game again so we can test'))
+        self.assertFalse(tater_agent.requires_live_browser_delivery('Run the tests for this game.'))
         self.assertIn('background server', tater_agent.browser_launch_completion_gap(request, [], 'Done.'))
 
         records = [
@@ -705,6 +707,49 @@ EOF","cwd":"/projects/game"}
             ),
             '',
         )
+        self.assertIn(
+            'port 8000',
+            tater_agent.completed_browser_launch_answer(
+                request,
+                records,
+                [{'name': 'terminal', 'parameters': {'command': 'tater jobs'}}],
+            ),
+        )
+
+    def test_browser_launch_status_loop_becomes_one_http_verification(self):
+        request = 'lets launch the game again so we can test'
+        cwd = '/projects/woodchuck_game/web_version'
+        records = [
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'python3 -m http.server 8000', 'cwd': cwd, 'background': True},
+                'result': {'status': 'running', 'cwd': cwd},
+            },
+            {
+                'tool': 'terminal',
+                'status': 'completed',
+                'parameters': {'command': 'tater jobs'},
+                'result': {'status': 'done', 'exit_code': 0, 'output': 'server running'},
+            },
+        ]
+        repeated_jobs = [{'name': 'terminal', 'parameters': {'command': 'tater jobs'}}]
+        probe = tater_agent.pending_browser_launch_verification_call(request, records, repeated_jobs)
+
+        self.assertEqual(probe['name'], 'terminal')
+        self.assertIn('http://127.0.0.1:8000/', probe['parameters']['command'])
+        self.assertEqual(probe['parameters']['cwd'], cwd)
+        self.assertIsNone(tater_agent.pending_browser_launch_verification_call(request, records, [probe]))
+
+        records.append(
+            {
+                'tool': 'terminal',
+                'status': 'failed',
+                'parameters': probe['parameters'],
+                'result': {'status': 'done', 'exit_code': 7, 'output': 'Connection refused'},
+            }
+        )
+        self.assertIsNone(tater_agent.pending_browser_launch_verification_call(request, records, repeated_jobs))
 
     def test_http_404_does_not_verify_browser_launch(self):
         request = 'Make a woodchuck game and launch it in a browser.'

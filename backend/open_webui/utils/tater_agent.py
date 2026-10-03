@@ -156,6 +156,11 @@ _INTERACTIVE_EXISTING_LAUNCH_RE = re.compile(
     r'\b(?:app|application|game|website|web site|dashboard|demo)\b',
     re.IGNORECASE,
 )
+_EXPLICIT_INTERACTIVE_LAUNCH_RE = re.compile(
+    r'\b(?:launch|serve|host)\b[^\n]{0,160}'
+    r'\b(?:app|application|game|website|web site|dashboard|demo)\b',
+    re.IGNORECASE,
+)
 
 _PROGRESS_FUTURE_PREFIX_RE = re.compile(
     r'^(?:(?:okay|ok|alright|sure)[,!.:\-\s]+)?(?:next[,.:\-\s]+)?'
@@ -494,6 +499,7 @@ def requires_live_browser_delivery(request: Any) -> bool:
     text = re.sub(r'\s+', ' ', str(request or '')).strip()
     return bool(
         (_INTERACTIVE_BUILD_RE.search(text) and _INTERACTIVE_LAUNCH_RE.search(text))
+        or _EXPLICIT_INTERACTIVE_LAUNCH_RE.search(text)
         or (
             _INTERACTIVE_EXISTING_LAUNCH_RE.search(text)
             and re.search(r'\b(?:browser|web|port|connect|play)\b', text, re.IGNORECASE)
@@ -660,8 +666,72 @@ def verified_browser_launch_port(records: Any) -> int | None:
     return None
 
 
+def pending_browser_launch_verification_call(
+    request: Any, records: Any, proposed_calls: Any
+) -> dict[str, Any] | None:
+    """Probe a newly started browser server before another status read or final answer.
+
+    A background process being listed as running does not establish that it
+    serves the app. Only do this once per launch; a failed probe must go back
+    to the planner so it can diagnose the actual startup error.
+    """
+
+    if not requires_live_browser_delivery(request) or verified_browser_launch_port(records):
+        return None
+    records = records if isinstance(records, list) else []
+    latest_server = None
+    for index, record in enumerate(records):
+        if not isinstance(record, dict) or record.get('tool') != 'terminal':
+            continue
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        result = _terminal_result(record)
+        if parameters.get('background') is not True or result.get('status') != 'running':
+            continue
+        match = _HTTP_SERVER_PORT_RE.search(str(parameters.get('command') or ''))
+        if match:
+            latest_server = (index, int(match.group(1)), str(result.get('cwd') or parameters.get('cwd') or ''))
+    if latest_server is None:
+        return None
+
+    server_index, port, cwd = latest_server
+    for record in records[server_index + 1 :]:
+        if not isinstance(record, dict) or record.get('tool') != 'terminal':
+            continue
+        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '')
+        match = _LOCAL_HTTP_PORT_RE.search(command)
+        if match and int(match.group(1)) == port and _LOCAL_HTTP_PROBE_RE.search(command):
+            return None
+
+    calls = proposed_calls if isinstance(proposed_calls, list) else []
+    if len(calls) > 1:
+        return None
+    if calls:
+        call = calls[0]
+        if not isinstance(call, dict) or call.get('name') != 'terminal':
+            return None
+        parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
+        command = str(parameters.get('command') or '').strip()
+        match = _LOCAL_HTTP_PORT_RE.search(command)
+        if match and int(match.group(1)) == port and _LOCAL_HTTP_PROBE_RE.search(command):
+            return None
+        is_status_read = command == 'tater jobs' or terminal_command_is_obviously_read_only(command)
+        is_repeated_server = parameters.get('background') is True and bool(_HTTP_SERVER_PORT_RE.search(command))
+        if not is_status_read and not is_repeated_server:
+            return None
+
+    command = (
+        'curl --fail --silent --show-error --head --retry 5 --retry-delay 1 '
+        f'--retry-connrefused http://127.0.0.1:{port}/'
+    )
+    parameters = {'command': command}
+    if cwd:
+        parameters['cwd'] = cwd
+    return {'name': 'terminal', 'parameters': parameters}
+
+
 def completed_browser_launch_answer(request: Any, records: Any, proposed_calls: Any) -> str:
-    """Finish a verified launch when the planner tries to rerun its server or probe."""
+    """Finish a verified launch when the planner repeats server, probe, or job checks."""
 
     if not isinstance(proposed_calls, list) or len(proposed_calls) != 1:
         return ''
@@ -670,9 +740,14 @@ def completed_browser_launch_answer(request: Any, records: Any, proposed_calls: 
         return ''
     parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
     command = str(parameters.get('command') or '')
-    if not (_LOCAL_HTTP_PROBE_RE.search(command) or (parameters.get('background') and _HTTP_SERVER_PORT_RE.search(command))):
+    is_jobs_read = command.strip() == 'tater jobs'
+    if not (
+        is_jobs_read
+        or _LOCAL_HTTP_PROBE_RE.search(command)
+        or (parameters.get('background') and _HTTP_SERVER_PORT_RE.search(command))
+    ):
         return ''
-    if not any(
+    if not is_jobs_read and not any(
         isinstance(record, dict)
         and record.get('tool') == 'terminal'
         and isinstance(record.get('parameters'), dict)
@@ -689,7 +764,7 @@ def completed_browser_launch_answer(request: Any, records: Any, proposed_calls: 
     if port is None:
         return ''
     proposed_port = _LOCAL_HTTP_PORT_RE.search(command) or _HTTP_SERVER_PORT_RE.search(command)
-    if not proposed_port or int(proposed_port.group(1)) != port:
+    if not is_jobs_read and (not proposed_port or int(proposed_port.group(1)) != port):
         return ''
     answer = f'The browser app is running on port {port}, and the server returned HTTP success. Open it from the Files panel’s Ports section.'
     if coding_change_completion_gap(request, records, answer):
