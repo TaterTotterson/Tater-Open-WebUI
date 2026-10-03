@@ -13,8 +13,7 @@ MAX_TATER_AGENT_MAX_ITERATIONS = 128
 TATER_AGENT_MAX_CALLS_PER_STEP = 16
 TATER_AGENT_PARALLEL_TASK_PROMPT_MAX_CHARS = 4_000
 TATER_AGENT_HISTORY_MAX_CHARS = 120_000
-TATER_AGENT_PLAN_RETRY_LIMIT = 2
-TATER_AGENT_REPEAT_LIMIT = 3
+TATER_AGENT_PLAN_RETRY_LIMIT = 1
 TATER_AGENT_PROGRESS_MAX_CHARS = 600
 TATER_AGENT_TASK_TITLE_MAX_CHARS = 80
 TATER_AGENT_FINAL_ANSWER_MAX_CHARS = 40_000
@@ -38,16 +37,6 @@ TATER_AGENT_CONTEXT_LIST_FIELDS = (
     'tests',
     'blockers',
 )
-
-_VOLATILE_RESULT_KEYS = {
-    'created_at',
-    'duration',
-    'ended_at',
-    'first_offset',
-    'id',
-    'next_offset',
-    'started_at',
-}
 
 _CONVERSATIONAL_CONFIRMATIONS = {
     'ok',
@@ -146,21 +135,6 @@ _SENSITIVE_FLAG_RE = re.compile(
     r'(?i)(--?(?:api[-_]?key|token|secret|password|passwd|credential)(?:=|\s+))([^\s;&|]+)'
 )
 _BEARER_RE = re.compile(r'(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+')
-_INTERACTIVE_BUILD_RE = re.compile(
-    r'\b(?:build|create|develop|make|write|put together|set up)\b[^\n]{0,160}'
-    r'\b(?:app|application|game|website|web site|dashboard|demo|interface|ui)\b',
-    re.IGNORECASE,
-)
-_INTERACTIVE_EXISTING_LAUNCH_RE = re.compile(
-    r'\b(?:launch|serve|host|start|run|open)\b[^\n]{0,160}'
-    r'\b(?:app|application|game|website|web site|dashboard|demo)\b',
-    re.IGNORECASE,
-)
-_EXPLICIT_INTERACTIVE_LAUNCH_RE = re.compile(
-    r'\b(?:launch|serve|host)\b[^\n]{0,160}'
-    r'\b(?:app|application|game|website|web site|dashboard|demo)\b',
-    re.IGNORECASE,
-)
 
 _PROGRESS_FUTURE_PREFIX_RE = re.compile(
     r'^(?:(?:okay|ok|alright|sure)[,!.:\-\s]+)?(?:next[,.:\-\s]+)?'
@@ -198,40 +172,7 @@ _PROGRESS_VERB_FORMS = {
     'update': 'Updating',
     'verify': 'Verifying',
 }
-_INTERACTIVE_LAUNCH_RE = re.compile(
-    r'\b(?:launch|serve|host|start|run|open)\b[^\n]{0,100}'
-    r'\b(?:it|app|application|game|website|web site|dashboard|demo|interface|ui)?\b',
-    re.IGNORECASE,
-)
-_LOCAL_HTTP_PROBE_RE = re.compile(
-    r'\b(?:curl|wget)\b[^\n]*(?:localhost|127\.0\.0\.1|\[::1\])|'
-    r'\b(?:urlopen|requests\.get|httpx\.get)\s*\([^\n]*(?:localhost|127\.0\.0\.1|::1)',
-    re.IGNORECASE,
-)
-_HTTP_SUCCESS_RE = re.compile(r'(?mi)^HTTP/\d(?:\.\d)?\s+[23]\d\d\b')
-_LOCAL_HTTP_PORT_RE = re.compile(r'(?i)https?://(?:localhost|127\.0\.0\.1|\[::1\]):(\d{1,5})\b')
-_HTTP_SERVER_PORT_RE = re.compile(r'\b(?:http\.server|vite|serve|uvicorn)\b[^\n]*?\b(\d{2,5})\b')
 _TERMINAL_COMMAND_ALIASES = {'curl', 'wget', 'git', 'ls', 'cat', 'rg', 'python', 'python3', 'node', 'npm'}
-_PORT_REFERENCE_RE = re.compile(
-    r'(?:\bport\s*(?:is|:)?\s*|(?:localhost|127\.0\.0\.1):)\d{1,5}\b',
-    re.IGNORECASE,
-)
-_INDEPENDENT_WEATHER_COMPANION_RE = re.compile(
-    r'\b(?:also|and(?:\s+also)?)\s+(?:please\s+)?'
-    r'(?:(?:tell|show|give)\s+me\b|(?:check|find|get|look up)\b|what(?:\'s| is)\b)'
-    r'[^.!?\n]{0,100}\b(?:weather|temperature|temp)\b',
-    re.IGNORECASE,
-)
-_CODE_CHANGE_REQUEST_RE = re.compile(
-    r'\b(?:add|build|change|create|develop|edit|fix|implement|make|modify|remove|refactor|repair|replace|'
-    r'rewrite|update|write)\b[^\n]{0,180}\b(?:app|application|bug|code|component|endpoint|feature|file|'
-    r'function|game|implementation|interface|library|module|package|project|repo|repository|script|service|'
-    r'site|test|ui|website)\b|'
-    r'\b(?:bug|code|component|endpoint|feature|file|function|implementation|module|project|repo|repository|'
-    r'script|service|test|ui)\b[^\n]{0,180}\b(?:add|change|create|edit|fix|implement|modify|remove|refactor|'
-    r'repair|replace|rewrite|update|write)\b',
-    re.IGNORECASE,
-)
 _FILE_MUTATION_COMMAND_RE = re.compile(
     r'(?:^|[;&|]\s*)(?:apply_patch\b|(?:sed|perl)\b[^\n;&|]*\s-(?:i|pi)\b|'
     r'(?:cp|install|mkdir|mv|rm|touch|truncate)\b|'
@@ -240,42 +181,14 @@ _FILE_MUTATION_COMMAND_RE = re.compile(
     r'\b(?:open|write_text|write_bytes)\s*\([^\n]*(?:["\'](?:a|w|x)[+bt]?["\']|\.write)',
     re.IGNORECASE,
 )
-_GIT_REPOSITORY_COMMAND_RE = re.compile(r'\bgit\s+(?:[^\s]+\s+)*(?:rev-parse|status)\b', re.IGNORECASE)
-_GIT_DIFF_COMMAND_RE = re.compile(r'\bgit\s+(?:[^\s]+\s+)*diff\b', re.IGNORECASE)
-_CODE_VERIFICATION_COMMAND_RE = re.compile(
-    r'\b(?:pytest|py\.test|unittest|vitest|jest|mocha|ava|playwright|cypress|rspec|rubocop|ruff|pylint|'
-    r'mypy|eslint|biome|stylelint|shellcheck)\b|'
-    r'\bpython(?:\d+(?:\.\d+)*)?\b[^\n;&|]*\s-m\s+(?:compileall|py_compile|pytest|unittest)\b|'
-    r'\bnode\b[^\n;&|]*\s--check\b|'
-    r'\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:build|check|lint|test|typecheck|validate)\b|'
-    r'\b(?:cargo\s+(?:build|check|clippy|test)|go\s+test|dotnet\s+(?:build|test)|'
-    r'mvn\s+(?:test|verify)|gradle\w*\s+(?:build|check|test)|make\s+(?:build|check|lint|test)|'
-    r'cmake\s+--build|ctest\b|swift\s+(?:build|test))',
+_GIT_WORKTREE_MUTATION_RE = re.compile(
+    r'\bgit\s+(?:-C\s+\S+\s+)?(?:checkout|merge|pull|rebase|reset|restore|switch|apply|cherry-pick)\b',
     re.IGNORECASE,
 )
 _UNQUOTED_HEREDOC_RE = re.compile(r'(?m)(<<-?)[ \t]*([A-Za-z_][A-Za-z0-9_]*)\b')
 _SHELL_DIAGNOSTIC_RE = re.compile(
     r'(?mi)^(?:/[^:\n]*sh|(?:ba|z|da|a|k)?sh):\s*(?:(?:line\s+)?\d+:\s*)?.*'
     r'(?:not found|syntax error|bad substitution|unexpected|permission denied)\s*$'
-)
-_CODE_TEST_COMMAND_RE = re.compile(
-    r'\b(?:pytest|py\.test|unittest|vitest|jest|mocha|ava|playwright|cypress|rspec)\b|'
-    r'\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|'
-    r'\b(?:cargo\s+test|go\s+test|dotnet\s+test|mvn\s+test|gradle\w*\s+test|ctest\b|swift\s+test)',
-    re.IGNORECASE,
-)
-_REGRESSION_TEST_REQUEST_RE = re.compile(
-    r'\b(?:bug|defect|regression|broken|fix|repair)\b',
-    re.IGNORECASE,
-)
-_NO_TEST_HARNESS_ANSWER_RE = re.compile(
-    r'\b(?:no|without)\s+(?:existing\s+)?test(?:ing)?\s+(?:framework|harness|suite)|'
-    r'\bno\s+(?:automated\s+)?tests?\b',
-    re.IGNORECASE,
-)
-_VERIFICATION_BLOCKER_ANSWER_RE = re.compile(
-    r"\b(?:blocked|could not|couldn't|failed|failing|failure|unable|unresolved error)\b",
-    re.IGNORECASE,
 )
 
 
@@ -493,52 +406,6 @@ def continuation_progress_update(answer: Any) -> str:
     return text[:TATER_AGENT_PROGRESS_MAX_CHARS].rstrip()
 
 
-def requires_live_browser_delivery(request: Any) -> bool:
-    """Return true when a created interactive result was explicitly requested to be launched."""
-
-    text = re.sub(r'\s+', ' ', str(request or '')).strip()
-    return bool(
-        (_INTERACTIVE_BUILD_RE.search(text) and _INTERACTIVE_LAUNCH_RE.search(text))
-        or _EXPLICIT_INTERACTIVE_LAUNCH_RE.search(text)
-        or (
-            _INTERACTIVE_EXISTING_LAUNCH_RE.search(text)
-            and re.search(r'\b(?:browser|web|port|connect|play)\b', text, re.IGNORECASE)
-        )
-    )
-
-
-def parallel_browser_weather_plan_gap(request: Any, parallel_tasks: Any) -> str:
-    """Require separate local-app and live-weather tasks for an explicitly independent request."""
-
-    text = re.sub(r'\s+', ' ', str(request or '')).strip()
-    if not requires_live_browser_delivery(text) or not _INDEPENDENT_WEATHER_COMPANION_RE.search(text):
-        return ''
-    tasks = parallel_tasks if isinstance(parallel_tasks, list) else []
-    terminal_task_indexes = set()
-    hydra_task_indexes = set()
-    for index, task in enumerate(tasks):
-        calls = task.get('tool_calls') if isinstance(task, dict) else []
-        names = {
-            str(call.get('name') or '')
-            for call in calls
-            if isinstance(call, dict)
-        }
-        if 'terminal' in names:
-            terminal_task_indexes.add(index)
-        if 'tater_hydra' in names:
-            hydra_task_indexes.add(index)
-    if any(
-        terminal_index != hydra_index
-        for terminal_index in terminal_task_indexes
-        for hydra_index in hydra_task_indexes
-    ):
-        return ''
-    return (
-        'This request has two independent outcomes. Return parallel_tasks with a terminal task that builds, serves, '
-        'and verifies the interactive app and a different tater_hydra task that retrieves the live weather.'
-    )
-
-
 def partition_parallel_tasks(
     parallel_tasks: Any,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -595,181 +462,6 @@ def execution_routing_plan_gap(tool_calls: Any, parallel_tasks: Any) -> str:
             'and use a separate Hydra task for every independent Hydra outcome.'
         )
     return ''
-
-
-def browser_launch_completion_gap(request: Any, records: Any, final_answer: Any) -> str:
-    """Describe missing launch evidence for an interactive browser deliverable."""
-
-    if not requires_live_browser_delivery(request):
-        return ''
-    records = records if isinstance(records, list) else []
-    background_started = False
-    for record in records:
-        if not isinstance(record, dict) or record.get('tool') != 'terminal':
-            continue
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        result = record.get('result')
-        if isinstance(result, str):
-            try:
-                result = json.loads(result)
-            except (json.JSONDecodeError, TypeError):
-                result = {}
-        result = result if isinstance(result, dict) else {}
-        if parameters.get('background') is True and result.get('status') == 'running':
-            background_started = True
-    if not background_started:
-        return (
-            'The interactive app was not left running as a background server. Start its server with '
-            'terminal background=true before finishing.'
-        )
-    if not verified_browser_launch_port(records):
-        return (
-            'The running app has not been verified over local HTTP. Probe its localhost URL with a successful '
-            'foreground curl or wget command before finishing.'
-        )
-    if not _PORT_REFERENCE_RE.search(str(final_answer or '')):
-        return (
-            'The answer does not identify the verified listening port. Report the exact port and tell the user '
-            'they can open it from the Files panel Ports section.'
-        )
-    return ''
-
-
-def verified_browser_launch_port(records: Any) -> int | None:
-    """Return the port only after a background server answers an HTTP probe."""
-
-    records = records if isinstance(records, list) else []
-    server_ports: set[int] = set()
-    for record in records:
-        if not isinstance(record, dict) or record.get('tool') != 'terminal':
-            continue
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        result = _terminal_result(record)
-        command = str(parameters.get('command') or '')
-        if parameters.get('background') is not True or result.get('status') != 'running':
-            continue
-        match = _HTTP_SERVER_PORT_RE.search(command)
-        if match:
-            server_ports.add(int(match.group(1)))
-
-    if not server_ports:
-        return None
-    for record in reversed(records):
-        if not isinstance(record, dict) or record.get('tool') != 'terminal':
-            continue
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '')
-        match = _LOCAL_HTTP_PORT_RE.search(command)
-        if not match or int(match.group(1)) not in server_ports or not _successful_local_http_probe(record):
-            continue
-        return int(match.group(1))
-    return None
-
-
-def pending_browser_launch_verification_call(
-    request: Any, records: Any, proposed_calls: Any
-) -> dict[str, Any] | None:
-    """Probe a newly started browser server before another status read or final answer.
-
-    A background process being listed as running does not establish that it
-    serves the app. Only do this once per launch; a failed probe must go back
-    to the planner so it can diagnose the actual startup error.
-    """
-
-    if not requires_live_browser_delivery(request) or verified_browser_launch_port(records):
-        return None
-    records = records if isinstance(records, list) else []
-    latest_server = None
-    for index, record in enumerate(records):
-        if not isinstance(record, dict) or record.get('tool') != 'terminal':
-            continue
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        result = _terminal_result(record)
-        if parameters.get('background') is not True or result.get('status') != 'running':
-            continue
-        match = _HTTP_SERVER_PORT_RE.search(str(parameters.get('command') or ''))
-        if match:
-            latest_server = (index, int(match.group(1)), str(result.get('cwd') or parameters.get('cwd') or ''))
-    if latest_server is None:
-        return None
-
-    server_index, port, cwd = latest_server
-    for record in records[server_index + 1 :]:
-        if not isinstance(record, dict) or record.get('tool') != 'terminal':
-            continue
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '')
-        match = _LOCAL_HTTP_PORT_RE.search(command)
-        if match and int(match.group(1)) == port and _LOCAL_HTTP_PROBE_RE.search(command):
-            return None
-
-    calls = proposed_calls if isinstance(proposed_calls, list) else []
-    if len(calls) > 1:
-        return None
-    if calls:
-        call = calls[0]
-        if not isinstance(call, dict) or call.get('name') != 'terminal':
-            return None
-        parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '').strip()
-        match = _LOCAL_HTTP_PORT_RE.search(command)
-        if match and int(match.group(1)) == port and _LOCAL_HTTP_PROBE_RE.search(command):
-            return None
-        is_status_read = command == 'tater jobs' or terminal_command_is_obviously_read_only(command)
-        is_repeated_server = parameters.get('background') is True and bool(_HTTP_SERVER_PORT_RE.search(command))
-        if not is_status_read and not is_repeated_server:
-            return None
-
-    command = (
-        'curl --fail --silent --show-error --head --retry 5 --retry-delay 1 '
-        f'--retry-connrefused http://127.0.0.1:{port}/'
-    )
-    parameters = {'command': command}
-    if cwd:
-        parameters['cwd'] = cwd
-    return {'name': 'terminal', 'parameters': parameters}
-
-
-def completed_browser_launch_answer(request: Any, records: Any, proposed_calls: Any) -> str:
-    """Finish a verified launch when the planner repeats server, probe, or job checks."""
-
-    if not isinstance(proposed_calls, list) or len(proposed_calls) != 1:
-        return ''
-    call = proposed_calls[0]
-    if not isinstance(call, dict) or call.get('name') != 'terminal':
-        return ''
-    parameters = call.get('parameters') if isinstance(call.get('parameters'), dict) else {}
-    command = str(parameters.get('command') or '')
-    is_jobs_read = command.strip() == 'tater jobs'
-    if not (
-        is_jobs_read
-        or _LOCAL_HTTP_PROBE_RE.search(command)
-        or (parameters.get('background') and _HTTP_SERVER_PORT_RE.search(command))
-    ):
-        return ''
-    if not is_jobs_read and not any(
-        isinstance(record, dict)
-        and record.get('tool') == 'terminal'
-        and isinstance(record.get('parameters'), dict)
-        and record['parameters'].get('command') == command
-        and record['parameters'].get('background', False) == parameters.get('background', False)
-        and (
-            not parameters.get('cwd')
-            or record['parameters'].get('cwd') == parameters.get('cwd')
-        )
-        for record in (records if isinstance(records, list) else [])
-    ):
-        return ''
-    port = verified_browser_launch_port(records)
-    if port is None:
-        return ''
-    proposed_port = _LOCAL_HTTP_PORT_RE.search(command) or _HTTP_SERVER_PORT_RE.search(command)
-    if not is_jobs_read and (not proposed_port or int(proposed_port.group(1)) != port):
-        return ''
-    answer = f'The browser app is running on port {port}, and the server returned HTTP success. Open it from the Files panel’s Ports section.'
-    if coding_change_completion_gap(request, records, answer):
-        return ''
-    return answer
 
 
 def _terminal_result(record: dict[str, Any]) -> dict[str, Any]:
@@ -830,105 +522,6 @@ def terminal_result_has_shell_error(value: Any) -> bool:
             pass
     output = parsed.get('output') if isinstance(parsed, dict) else parsed
     return isinstance(output, str) and bool(_SHELL_DIAGNOSTIC_RE.search(output))
-
-
-def _successful_terminal_record(record: dict[str, Any]) -> bool:
-    result = _terminal_result(record)
-    return (
-        record.get('status') == 'completed'
-        and result.get('exit_code') == 0
-        and result.get('timed_out') is not True
-        and not terminal_result_has_shell_error(result)
-    )
-
-
-def _successful_local_http_probe(record: dict[str, Any]) -> bool:
-    parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-    command = str(parameters.get('command') or '')
-    if not _LOCAL_HTTP_PROBE_RE.search(command) or not _successful_terminal_record(record):
-        return False
-    output = str(_terminal_result(record).get('output') or '')
-    return bool(
-        _HTTP_SUCCESS_RE.search(output)
-        or re.search(r'\bcurl\s+[^\n]*-[A-Za-z]*f[A-Za-z]*\b', command)
-        or re.search(r'\bwget\s+[^\n]*--spider\b', command)
-    )
-
-
-def coding_change_completion_gap(request: Any, records: Any, final_answer: Any) -> str:
-    """Require diff inspection and post-edit verification before reporting coding success."""
-
-    records = records if isinstance(records, list) else []
-    terminal_records = [
-        (index, record)
-        for index, record in enumerate(records)
-        if isinstance(record, dict) and record.get('tool') == 'terminal'
-    ]
-    if not terminal_records:
-        return ''
-
-    mutation_indexes = []
-    for index, record in terminal_records:
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '')
-        if _FILE_MUTATION_COMMAND_RE.search(command):
-            mutation_indexes.append(index)
-
-    coding_request = bool(_CODE_CHANGE_REQUEST_RE.search(str(request or '')))
-    if not mutation_indexes and not coding_request:
-        return ''
-    last_mutation = max(mutation_indexes, default=-1)
-
-    repository_confirmed = False
-    diff_inspected = False
-    verification_attempted = False
-    verification_succeeded = False
-    test_attempted = False
-    test_succeeded = False
-    for index, record in terminal_records:
-        parameters = record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
-        command = str(parameters.get('command') or '')
-        successful = _successful_terminal_record(record)
-        if successful and _GIT_REPOSITORY_COMMAND_RE.search(command):
-            repository_confirmed = True
-        if index >= last_mutation and successful and _GIT_DIFF_COMMAND_RE.search(command):
-            diff_inspected = True
-        if index >= last_mutation and _CODE_VERIFICATION_COMMAND_RE.search(command):
-            verification_attempted = True
-            verification_succeeded = verification_succeeded or successful
-        if index >= last_mutation and _CODE_TEST_COMMAND_RE.search(command):
-            test_attempted = True
-            test_succeeded = test_succeeded or successful
-
-    if repository_confirmed and not diff_inspected:
-        return (
-            'Files were changed in a Git repository, but the final diff was not inspected after the last edit. '
-            'Run git diff (and preferably git diff --check) now, review the actual changes, then continue.'
-        )
-    if not verification_attempted:
-        return (
-            'Code was changed without a post-edit verification command. Run the most relevant focused tests and '
-            'a proportionate build, typecheck, lint, compile, or syntax check before finishing.'
-        )
-    needs_regression_test = bool(_REGRESSION_TEST_REQUEST_RE.search(str(request or '')))
-    no_test_harness = bool(_NO_TEST_HARNESS_ANSWER_RE.search(str(final_answer or '')))
-    if needs_regression_test and not test_attempted and not no_test_harness:
-        return (
-            'This is a bug fix or regression-sensitive change, but no focused test ran after the last edit. Add or '
-            'update a regression test when the project has a test harness and run it before finishing. If the project '
-            'has no test harness, verify that fact and explain it explicitly.'
-        )
-    if test_attempted and not test_succeeded and not _VERIFICATION_BLOCKER_ANSWER_RE.search(str(final_answer or '')):
-        return (
-            'A post-edit test command failed. Fix the failure and rerun the focused test, or clearly report the '
-            'verified test failure as a blocker instead of claiming success.'
-        )
-    if not verification_succeeded and not _VERIFICATION_BLOCKER_ANSWER_RE.search(str(final_answer or '')):
-        return (
-            'The post-edit verification did not pass. Fix the failure and rerun it, or clearly report the verified '
-            'failure as a blocker instead of claiming the coding work succeeded.'
-        )
-    return ''
 
 
 def background_task_result_answer(content: Any) -> str:
@@ -1133,6 +726,11 @@ def normalize_agent_context(value: Any, previous: Any = None) -> dict[str, Any]:
 def render_agent_context(value: Any) -> str:
     context = normalize_agent_context(value)
     context.pop('updated_at', None)
+    # Recent conversation and task history already contain older completions;
+    # keep the working record focused on the current objective and constraints.
+    context.pop('completed', None)
+    for field in ('requirements', 'plan', 'files_changed', 'tests', 'blockers'):
+        context[field] = context[field][-5:]
     if not any(context.values()):
         return 'No persistent working context has been recorded yet.'
     return json.dumps(context, ensure_ascii=False, separators=(',', ':'))
@@ -1592,81 +1190,21 @@ def tool_plan_retry_instruction(
     previous_response: str = '',
     original_request: str = '',
 ) -> str:
-    reason = str(error).strip()[:300] or 'invalid tool-plan response'
-    previous_response = str(previous_response or '')
-    original_request = _safe_activity_preview(original_request, max_chars=500)
-    if 'identical' in reason.casefold() and 'call already' in reason.casefold():
-        completed_call = ''
-        requested_outcome = ''
-        repeated_file_write = False
-        try:
-            rejected_plan = parse_tool_plan_response(previous_response)
-            requested_outcome = _safe_activity_preview(rejected_plan.get('task_title'), max_chars=160)
-            rejected_calls = rejected_plan.get('tool_calls') or []
-            if rejected_calls:
-                rejected = rejected_calls[0]
-                rejected_name = str(rejected.get('name') or 'tool').strip()
-                rejected_parameters = (
-                    rejected.get('parameters')
-                    if isinstance(rejected.get('parameters'), dict)
-                    else {}
-                )
-                if rejected_name == 'terminal':
-                    raw_command = str(rejected_parameters.get('command') or '')
-                    repeated_file_write = bool(_FILE_MUTATION_COMMAND_RE.search(raw_command))
-                    command = _safe_activity_preview(raw_command, max_chars=300)
-                    cwd = _safe_activity_preview(rejected_parameters.get('cwd'), max_chars=120)
-                    completed_call = f'{cwd}$ {command}' if cwd else command
-                else:
-                    completed_call = _safe_activity_preview(rejected_parameters, max_chars=300)
-                if completed_call:
-                    completed_call = f' The completed action was {rejected_name}: {completed_call}.'
-        except ValueError:
-            pass
+    """Give the planner one concise chance to correct an invalid or stale plan."""
 
-        objective = requested_outcome or original_request
-        objective_instruction = f' The requested outcome is: {objective}.' if objective else ''
-        next_action_instruction = (
-            ' This exact file write already succeeded. Earlier reads of that file are now stale. Do not write it '
-            'again and do not try to repair an error from an older read. Inspect the current file with a focused '
-            'read, run a syntax check or test, work on a different missing file, or finish.'
-            if repeated_file_write
-            else ''
-        )
+    reason = str(error).strip()[:300] or 'invalid tool-plan response'
+    objective = _safe_activity_preview(original_request, max_chars=300)
+    if 'identical' in reason.casefold() or 'repeated' in reason.casefold():
         return (
-            f'The last plan repeated a completed call ({reason}). This does not mean the command failed; it means '
-            f'the command already succeeded and its evidence is still available.{completed_call}'
-            f'{objective_instruction}{next_action_instruction} '
-            'Compare the requested outcome with what that completed action actually accomplished, identify the still '
-            'missing result, and select the next action that closes that gap. Repeating the same read while its input '
-            'is unchanged would only return the same evidence. Return exactly one valid JSON object that either '
-            'contains a terminal call which concretely advances the unresolved outcome, or contains a final_answer '
-            'if the outcome is already complete. For a browser-app launch, inspecting existing entry files does not '
-            'launch them; if they are usable, start the HTTP server with '
-            'background=true; after it starts, use the next planning step to probe localhost. Do not include Markdown '
-            'or prose outside the JSON object.'
-        )
-    attempted_multiline_write = bool(
-        re.search(
-            r'(?:<<\s*[\'\"]?[A-Za-z_][A-Za-z0-9_]*|\btee\s+[^\n]+|\b(?:cat|printf)\b[^\n]*>\s*[^\s])',
-            previous_response,
-            re.IGNORECASE,
-        )
-    )
-    if attempted_multiline_write:
-        return (
-            f'Your previous file-writing plan could not be used ({reason}). Preserve that write step; do not '
-            'return to directory listing or reread files whose output is already in the execution history. Retry '
-            'with exactly one terminal call for the next file. The entire response must be one valid JSON object '
-            'with task_title, progress, tool_calls, parallel_tasks, final_answer, and context fields. Use one ordinary '
-            'quoted heredoc command for the file and do not encode its contents as base64. Do not include '
-            'Markdown, tool-call markup, or prose outside the JSON object.'
+            f'That action is already in the execution history ({reason}). Do not submit it again. '
+            f'The request is: {objective}. Use the recorded result to choose one genuinely different action, '
+            'or return no tool calls and a truthful final_answer stating what is known and what remains uncertain. '
+            'It is acceptable to say you cannot determine how to finish. Return one valid JSON object only.'
         )
     return (
-        f'Your previous response could not be used ({reason}). Retry the same planning step now. '
-        'Return exactly one valid JSON object with task_title, progress, tool_calls, parallel_tasks, final_answer, '
-        'and context fields. '
-        'Do not include Markdown, tool-call markup, or prose outside the JSON object.'
+        f'That response could not be used ({reason}). Return one valid JSON object with task_title, progress, '
+        'tool_calls, parallel_tasks, final_answer, and context. Choose the next action from the evidence already '
+        'available, or finish with an honest partial answer if no useful action is clear.'
     )
 
 
@@ -1840,34 +1378,6 @@ def render_tool_history(records: list[dict[str, Any]], max_chars: int = TATER_AG
     return rendered
 
 
-def _stable_result(value: Any) -> Any:
-    if isinstance(value, str) and value[:1] in {'{', '['}:
-        try:
-            return _stable_result(json.loads(value))
-        except json.JSONDecodeError:
-            pass
-    if isinstance(value, dict):
-        return {
-            key: _stable_result(item)
-            for key, item in value.items()
-            if key not in _VOLATILE_RESULT_KEYS
-        }
-    if isinstance(value, list):
-        return [_stable_result(item) for item in value]
-    return value
-
-
-def tool_outcome_signature(name: str, parameters: dict[str, Any], result: Any) -> str:
-    payload = json.dumps(
-        {'name': name, 'parameters': parameters, 'result': _stable_result(result)},
-        ensure_ascii=False,
-        default=str,
-        sort_keys=True,
-        separators=(',', ':'),
-    )
-    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
-
-
 def tool_call_signature(name: str, parameters: dict[str, Any], *, cwd: str = '') -> str:
     """Return a stable signature for a proposed tool call before it executes."""
 
@@ -2016,28 +1526,6 @@ def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
             record_parameters = (
                 record.get('parameters') if isinstance(record.get('parameters'), dict) else {}
             )
-            if name == 'terminal' and record_parameters.get('background') is True:
-                prior_result = _terminal_result(record)
-                if prior_result.get('status') == 'running' and not any(
-                    str((item.get('parameters') or {}).get('command') or '').strip().startswith(('kill ', 'pkill '))
-                    for item in calls_since
-                ):
-                    return (
-                        'The identical background terminal command is already running. Do not launch a second '
-                        'server. Probe its localhost port, or finish if a successful HTTP probe is already in history.'
-                    )
-            if name == 'terminal' and _successful_local_http_probe(record):
-                if not any(
-                    (item.get('parameters') or {}).get('background') is True
-                    or _FILE_MUTATION_COMMAND_RE.search(
-                        str((item.get('parameters') or {}).get('command') or '')
-                    )
-                    for item in calls_since
-                ):
-                    return (
-                        'The identical local HTTP probe already returned success. Do not probe it again. '
-                        'Report the verified port and finish.'
-                    )
             record_cwd = str(record_parameters.get('cwd') or terminal_result_cwd(record)).strip()
             read_targets = (
                 _terminal_file_read_targets(record_parameters.get('command'), record_cwd)
@@ -2051,16 +1539,29 @@ def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
                     for item in calls_since
                 )
             )
-            unchanged_since = bool(
-                name == 'terminal'
-                and all(
+            proposed_command = str(parameters.get('command') or '')
+            if name == 'terminal' and terminal_command_is_obviously_read_only(proposed_command):
+                unchanged_since = all(
                     str(item.get('tool') or '') == 'terminal'
-                    and terminal_command_is_obviously_read_only(
-                        (item.get('parameters') or {}).get('command')
+                    and not _FILE_MUTATION_COMMAND_RE.search(
+                        str((item.get('parameters') or {}).get('command') or '')
+                    )
+                    and not _GIT_WORKTREE_MUTATION_RE.search(
+                        str((item.get('parameters') or {}).get('command') or '')
                     )
                     for item in calls_since
                 )
-            )
+            else:
+                unchanged_since = bool(
+                    name == 'terminal'
+                    and all(
+                        str(item.get('tool') or '') == 'terminal'
+                        and terminal_command_is_obviously_read_only(
+                            (item.get('parameters') or {}).get('command')
+                        )
+                        for item in calls_since
+                    )
+                )
             if (
                 record.get('iteration') == latest_iteration
                 or unchanged_since
@@ -2084,3 +1585,43 @@ def repeated_tool_call_plan_gap(tool_calls: Any, records: Any) -> str:
             'parameters, use another approach, or report the concrete blocker.'
         )
     return ''
+
+
+def no_progress_answer(records: Any, *, repeated: bool = False) -> str:
+    """Report observed work without inventing completion after a stalled plan."""
+
+    terminal_records = [
+        record for record in records if isinstance(record, dict) and record.get('tool') == 'terminal'
+    ] if isinstance(records, list) else []
+    facts = []
+    background = next(
+        (
+            record for record in reversed(terminal_records)
+            if (record.get('parameters') or {}).get('background') is True
+            and _terminal_result(record).get('status') == 'running'
+        ),
+        None,
+    )
+    if background:
+        command = _safe_activity_preview((background.get('parameters') or {}).get('command'), max_chars=180)
+        facts.append(f'The background command `{command}` reported that it started.')
+
+    last = terminal_records[-1] if terminal_records else None
+    if last and last is not background:
+        result = _terminal_result(last)
+        command = _safe_activity_preview((last.get('parameters') or {}).get('command'), max_chars=180)
+        exit_code = result.get('exit_code')
+        status = f'exit code {exit_code}' if exit_code is not None else str(result.get('status') or 'unknown status')
+        facts.append(f'The last command was `{command}` ({status}).')
+        output = _safe_activity_preview(result.get('output'), max_chars=600)
+        if output:
+            facts.append(f'It returned: {output}')
+
+    observed = ' '.join(facts)
+    if observed:
+        observed += ' '
+    why_stopped = (
+        'I stopped rather than repeat an unchanged command.'
+        if repeated else 'I stopped because I could not establish a useful next step.'
+    )
+    return f'{observed}I cannot confirm the requested outcome from those results. {why_stopped} I am not sure what to do next.'

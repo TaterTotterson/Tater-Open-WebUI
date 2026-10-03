@@ -636,355 +636,27 @@ EOF","cwd":"/projects/game"}
             {'complete': False, 'reason': 'face_id is still uninspected'},
         )
 
-    def test_browser_launch_requires_live_server_http_probe_and_port(self):
-        request = 'Make a funny woodchuck game and launch it so we can play it.'
-        self.assertTrue(tater_agent.requires_live_browser_delivery(request))
-        self.assertTrue(tater_agent.requires_live_browser_delivery('lets launch the game again so we can test'))
-        self.assertFalse(tater_agent.requires_live_browser_delivery('Run the tests for this game.'))
-        self.assertIn('background server', tater_agent.browser_launch_completion_gap(request, [], 'Done.'))
-
+    def test_no_progress_answer_reports_observed_work_without_claiming_success(self):
         records = [
             {
                 'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {
-                    'command': 'python3 -m http.server 4173 --bind 0.0.0.0',
-                    'background': True,
-                },
-                'result': json.dumps({'status': 'running', 'exit_code': None, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'curl -fsS http://127.0.0.1:4173/'},
-                'result': json.dumps({'status': 'done', 'exit_code': 0, 'timed_out': False}),
-            },
-        ]
-
-        self.assertEqual(
-            tater_agent.browser_launch_completion_gap(
-                request,
-                records,
-                'The game is running on port 4173. Open it from Files > Ports.',
-            ),
-            '',
-        )
-
-    def test_verified_browser_launch_finishes_redundant_server_call(self):
-        request = 'Lets try again.'
-        cwd = '/projects/woodchuck_game/web_version'
-        records = [
-            {
-                'iteration': 5,
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'python3 -m http.server 8000', 'cwd': cwd, 'background': True},
-                'result': {'status': 'running', 'exit_code': None, 'cwd': cwd},
-            },
-            {
-                'iteration': 8,
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'curl -I http://localhost:8000/index.html', 'cwd': cwd},
-                'result': {'status': 'done', 'exit_code': 0, 'output': 'HTTP/1.0 200 OK\r\n', 'cwd': cwd},
-            },
-        ]
-        proposed = [
-            {'name': 'terminal', 'parameters': {'command': 'python3 -m http.server 8000', 'cwd': cwd, 'background': True}}
-        ]
-
-        self.assertEqual(tater_agent.verified_browser_launch_port(records), 8000)
-        self.assertIn(
-            'port 8000',
-            tater_agent.completed_browser_launch_answer(request, records, proposed),
-        )
-        self.assertIn('already running', tater_agent.repeated_tool_call_plan_gap(proposed, records))
-        self.assertEqual(
-            tater_agent.completed_browser_launch_answer(
-                request,
-                records,
-                [{'name': 'terminal', 'parameters': {'command': 'curl -I http://localhost:8000/style.css', 'cwd': cwd}}],
-            ),
-            '',
-        )
-        self.assertIn(
-            'port 8000',
-            tater_agent.completed_browser_launch_answer(
-                request,
-                records,
-                [{'name': 'terminal', 'parameters': {'command': 'tater jobs'}}],
-            ),
-        )
-
-    def test_browser_launch_status_loop_becomes_one_http_verification(self):
-        request = 'lets launch the game again so we can test'
-        cwd = '/projects/woodchuck_game/web_version'
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'python3 -m http.server 8000', 'cwd': cwd, 'background': True},
-                'result': {'status': 'running', 'cwd': cwd},
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'tater jobs'},
-                'result': {'status': 'done', 'exit_code': 0, 'output': 'server running'},
-            },
-        ]
-        repeated_jobs = [{'name': 'terminal', 'parameters': {'command': 'tater jobs'}}]
-        probe = tater_agent.pending_browser_launch_verification_call(request, records, repeated_jobs)
-
-        self.assertEqual(probe['name'], 'terminal')
-        self.assertIn('http://127.0.0.1:8000/', probe['parameters']['command'])
-        self.assertEqual(probe['parameters']['cwd'], cwd)
-        self.assertIsNone(tater_agent.pending_browser_launch_verification_call(request, records, [probe]))
-
-        records.append(
-            {
-                'tool': 'terminal',
-                'status': 'failed',
-                'parameters': probe['parameters'],
-                'result': {'status': 'done', 'exit_code': 7, 'output': 'Connection refused'},
-            }
-        )
-        self.assertIsNone(tater_agent.pending_browser_launch_verification_call(request, records, repeated_jobs))
-
-    def test_http_404_does_not_verify_browser_launch(self):
-        request = 'Make a woodchuck game and launch it in a browser.'
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
                 'parameters': {'command': 'python3 -m http.server 8000', 'background': True},
-                'result': {'status': 'running', 'exit_code': None},
+                'result': {'status': 'running', 'exit_code': None, 'output': ''},
             },
             {
                 'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'curl -I http://localhost:8000/index.html'},
-                'result': {'status': 'done', 'exit_code': 0, 'output': 'HTTP/1.0 404 Not Found\r\n'},
+                'parameters': {'command': 'ls -R'},
+                'result': {'status': 'done', 'exit_code': 0, 'output': 'index.html\\n'},
             },
         ]
 
-        self.assertIsNone(tater_agent.verified_browser_launch_port(records))
-        self.assertIn('verified over local HTTP', tater_agent.browser_launch_completion_gap(request, records, 'port 8000'))
+        answer = tater_agent.no_progress_answer(records, repeated=True)
+        self.assertIn('reported that it started', answer)
+        self.assertIn('ls -R', answer)
+        self.assertIn('index.html', answer)
+        self.assertIn('cannot confirm', answer)
+        self.assertIn('rather than repeat', answer)
 
-    def test_noninteractive_work_does_not_require_browser_launch(self):
-        self.assertFalse(tater_agent.requires_live_browser_delivery('Run the tests for this app.'))
-        self.assertEqual(
-            tater_agent.browser_launch_completion_gap('Run the tests for this app.', [], 'Tests pass.'),
-            '',
-        )
-
-    def test_coding_change_requires_final_diff_inspection(self):
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git status --short'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': "python3 -c \"open('app.py', 'w').write('pass')\""},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'python3 -m py_compile app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-        ]
-
-        self.assertIn(
-            'final diff was not inspected',
-            tater_agent.coding_change_completion_gap('Fix the bug in app.py', records, 'Fixed.'),
-        )
-
-    def test_coding_change_requires_post_edit_verification(self):
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git status --short'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': "python3 -c \"open('app.py', 'w').write('pass')\""},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git diff --check && git diff -- app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-        ]
-
-        self.assertIn(
-            'post-edit verification command',
-            tater_agent.coding_change_completion_gap('Fix the bug in app.py', records, 'Fixed.'),
-        )
-
-    def test_verified_coding_change_can_complete(self):
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git status --short'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': "python3 -c \"open('app.py', 'w').write('pass')\""},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git diff --check && git diff -- app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'python3 -m unittest tests.test_app'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-        ]
-
-        self.assertEqual(
-            tater_agent.coding_change_completion_gap('Fix the bug in app.py', records, 'Fixed and tested.'),
-            '',
-        )
-
-    def test_bug_fix_requires_a_focused_regression_test(self):
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git status --short'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'touch app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git diff -- app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'python3 -m py_compile app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-        ]
-
-        self.assertIn(
-            'no focused test ran',
-            tater_agent.coding_change_completion_gap('Fix the app bug', records, 'Fixed and compiled.'),
-        )
-
-    def test_verification_must_run_again_after_a_later_edit(self):
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'pytest -q'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'sed -i.bak s/old/new/ app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git diff -- app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-        ]
-
-        self.assertIn(
-            'post-edit verification command',
-            tater_agent.coding_change_completion_gap('Update the app code', records, 'Done.'),
-        )
-
-    def test_failed_verification_can_be_reported_as_a_blocker(self):
-        records = [
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git status --short'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'touch app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'completed',
-                'parameters': {'command': 'git diff -- app.py'},
-                'result': json.dumps({'exit_code': 0, 'timed_out': False}),
-            },
-            {
-                'tool': 'terminal',
-                'status': 'failed',
-                'parameters': {'command': 'pytest -q'},
-                'result': json.dumps({'exit_code': 1, 'timed_out': False}),
-            },
-        ]
-
-        self.assertEqual(
-            tater_agent.coding_change_completion_gap(
-                'Fix the app bug',
-                records,
-                'Verification is blocked because pytest failed with an existing dependency error.',
-            ),
-            '',
-        )
-
-    def test_game_and_live_weather_require_separate_task_types(self):
-        request = (
-            'Make a funny woodchuck game and launch it so we can play it. '
-            'Also tell me the current temperature outside.'
-        )
-        combined_plan = [
-            {
-                'tool_calls': [
-                    {'name': 'terminal', 'parameters': {'command': 'pwd'}},
-                    {'name': 'tater_hydra', 'parameters': {'request': 'Get the weather'}},
-                ]
-            }
-        ]
-        split_plan = [
-            {'tool_calls': [{'name': 'terminal', 'parameters': {'command': 'pwd'}}]},
-            {'tool_calls': [{'name': 'tater_hydra', 'parameters': {'request': 'Get the weather'}}]},
-        ]
-
-        self.assertIn(
-            'two independent outcomes',
-            tater_agent.parallel_browser_weather_plan_gap(request, combined_plan),
-        )
-        self.assertEqual(tater_agent.parallel_browser_weather_plan_gap(request, split_plan), '')
 
     def test_incomplete_review_requires_reason(self):
         with self.assertRaisesRegex(ValueError, 'must explain'):
@@ -1008,88 +680,29 @@ EOF","cwd":"/projects/game"}
         with self.assertRaisesRegex(ValueError, 'too many calls'):
             tater_agent.parse_tool_plan(json.dumps(payload))
 
-    def test_retry_instruction_demands_plain_json(self):
+    def test_retry_instruction_keeps_json_protocol(self):
         instruction = tater_agent.tool_plan_retry_instruction('No tool-plan JSON object found')
 
-        self.assertIn('Retry the same planning step', instruction)
-        self.assertIn('task_title, progress, tool_calls, parallel_tasks, final_answer', instruction)
-        self.assertIn('Do not include Markdown', instruction)
+        self.assertIn('one valid JSON object', instruction)
+        self.assertIn('tool_calls', instruction)
+        self.assertIn('honest partial answer', instruction)
 
     def test_retry_instruction_limits_error_length(self):
         instruction = tater_agent.tool_plan_retry_instruction('x' * 500)
 
         self.assertLess(len(instruction), 600)
 
-    def test_retry_instruction_preserves_malformed_multiline_write(self):
-        instruction = tater_agent.tool_plan_retry_instruction(
-            'No tool-plan JSON object found',
-            '{"tool_calls":[{"name":"terminal","parameters":{"command":"cat > index.html <<EOF\n'
-            '<html>game</html>\nEOF"}}]}',
-        )
-
-        self.assertIn('Preserve that write step', instruction)
-        self.assertIn('do not return to directory listing or reread files', instruction)
-        self.assertIn('quoted heredoc', instruction)
-        self.assertIn('do not encode its contents as base64', instruction)
-        self.assertIn('exactly one terminal call', instruction)
-
-    def test_retry_instruction_explains_unresolved_outcome_after_repeated_read(self):
+    def test_repeated_plan_can_finish_with_uncertainty(self):
         instruction = tater_agent.tool_plan_retry_instruction(
             'The identical terminal call already completed and no intervening action changed its inputs.',
-            json.dumps(
-                {
-                    'task_title': 'Launch Woodchuck Game',
-                    'progress': 'Inspecting the web files.',
-                    'tool_calls': [
-                        {
-                            'name': 'terminal',
-                            'parameters': {
-                                'command': 'cat web_version/index.html',
-                                'cwd': '/projects/woodchuck_game',
-                            },
-                        }
-                    ],
-                    'parallel_tasks': [],
-                    'final_answer': '',
-                    'context': {},
-                }
-            ),
-            'try again',
+            original_request='launch the game',
         )
 
-        self.assertIn('does not mean the command failed', instruction)
-        self.assertIn('The completed action was terminal', instruction)
-        self.assertIn('The requested outcome is: Launch Woodchuck Game', instruction)
-        self.assertIn('identify the still missing result', instruction)
-        self.assertIn('start the HTTP server', instruction)
+        self.assertIn('Do not submit it again', instruction)
+        self.assertIn('launch the game', instruction)
+        self.assertIn('uncertain', instruction)
+        self.assertIn('cannot determine how to finish', instruction)
 
-    def test_retry_instruction_does_not_repeat_a_completed_heredoc_write(self):
-        instruction = tater_agent.tool_plan_retry_instruction(
-            'The identical terminal call already completed and no intervening action changed its inputs.',
-            json.dumps(
-                {
-                    'task_title': 'Launch Woodchuck Game',
-                    'progress': 'Writing the browser game.',
-                    'tool_calls': [
-                        {
-                            'name': 'terminal',
-                            'parameters': {
-                                'command': "cat <<'EOF' > web/script.js\nconst ready = true;\nEOF",
-                                'cwd': '/projects/woodchuck_game',
-                            },
-                        }
-                    ],
-                    'parallel_tasks': [],
-                    'final_answer': '',
-                    'context': {},
-                }
-            ),
-        )
-
-        self.assertIn('This exact file write already succeeded', instruction)
-        self.assertIn('Earlier reads of that file are now stale', instruction)
-        self.assertIn('run a syntax check or test', instruction)
-        self.assertNotIn('Preserve that write step', instruction)
 
     def test_terminal_file_write_quotes_unquoted_heredoc(self):
         command = (
@@ -1137,11 +750,6 @@ EOF","cwd":"/projects/game"}
         }
 
         self.assertTrue(tater_agent.terminal_result_has_shell_error(result))
-        self.assertFalse(
-            tater_agent._successful_terminal_record(
-                {'status': 'completed', 'result': result}
-            )
-        )
 
     def test_normal_command_output_is_not_a_shell_error(self):
         result = {'output': 'HTTP/1.0 200 OK\n', 'exit_code': 0, 'status': 'done'}
@@ -1331,26 +939,6 @@ EOF","cwd":"/projects/game"}
         self.assertIn('THIRD-END', history)
         self.assertIn('characters omitted', history)
 
-    def test_outcome_signature_is_stable_across_parameter_order(self):
-        first = tater_agent.tool_outcome_signature('tool', {'b': 2, 'a': 1}, {'ok': True})
-        second = tater_agent.tool_outcome_signature('tool', {'a': 1, 'b': 2}, {'ok': True})
-
-        self.assertEqual(first, second)
-
-    def test_outcome_signature_ignores_process_identity_and_timestamps(self):
-        first = tater_agent.tool_outcome_signature(
-            'terminal',
-            {'command': 'false'},
-            {'id': 'first', 'created_at': 1, 'status': 'done', 'exit_code': 1, 'output': ''},
-        )
-        second = tater_agent.tool_outcome_signature(
-            'terminal',
-            {'command': 'false'},
-            '{"id":"second","created_at":2,"status":"done","exit_code":1,"output":""}',
-        )
-
-        self.assertEqual(first, second)
-
     def test_repeated_successful_call_requires_a_different_next_action(self):
         records = [
             {
@@ -1431,6 +1019,35 @@ EOF","cwd":"/projects/game"}
         )
 
         self.assertIn('no intervening action changed its inputs', gap)
+
+    def test_repeated_directory_listing_is_rejected_after_starting_background_service(self):
+        records = [
+            {
+                'iteration': 1,
+                'tool': 'terminal',
+                'parameters': {'command': 'ls -R', 'cwd': '/projects/woodchuck_game'},
+                'status': 'completed',
+                'result': {'output': 'game.py\nweb_version/', 'exit_code': 0},
+            },
+            {
+                'iteration': 2,
+                'tool': 'terminal',
+                'parameters': {
+                    'command': 'python3 -m http.server 8000 --directory web_version',
+                    'cwd': '/projects/woodchuck_game',
+                    'background': True,
+                },
+                'status': 'completed',
+                'result': {'status': 'running', 'exit_code': None},
+            },
+        ]
+
+        gap = tater_agent.repeated_tool_call_plan_gap(
+            [{'name': 'terminal', 'parameters': {'command': 'ls -R', 'cwd': '/projects/woodchuck_game'}}],
+            records,
+        )
+
+        self.assertIn('already completed', gap)
 
     def test_repeated_file_read_is_rejected_after_unrelated_mutation(self):
         records = [
