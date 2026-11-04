@@ -190,3 +190,7 @@ Open WebUI name and brand identity alongside Tater branding, as well as the
 upstream license, historical license terms, notice, contributor agreement, and
 copyright attribution. See `LICENSE`, `LICENSE_HISTORY`, `LICENSE_NOTICE`, and
 `CONTRIBUTOR_LICENSE_AGREEMENT`.
+
+## Trademarks
+
+The Tater name and logo are governed by the [Tater Trademark Policy](TRADEMARKS.md).
